@@ -1,3 +1,5 @@
+//go:build darwin
+
 // Command dadi is the C interface to the node package, built with
 // -buildmode=c-archive into Dadi.xcframework for the dadi packet-tunnel
 // extensions. One extension process runs at most one node.

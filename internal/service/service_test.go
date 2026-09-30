@@ -15,8 +15,10 @@ import (
 
 type fakeNode struct{ stopped bool }
 
-func (f *fakeNode) Stop()               { f.stopped = true }
-func (f *fakeNode) Status() node.Status { return node.Status{BackendState: "Running", Peers: []node.Peer{}} }
+func (f *fakeNode) Stop() { f.stopped = true }
+func (f *fakeNode) Status() node.Status {
+	return node.Status{BackendState: "Running", Peers: []node.Peer{}}
+}
 
 // starter records every node config the service starts and can be told to fail.
 type starter struct {
