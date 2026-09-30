@@ -1,0 +1,14 @@
+[Unit]
+Description=dadi network (dadid)
+Wants=network-pre.target
+After=network-pre.target NetworkManager.service systemd-resolved.service
+
+[Service]
+ExecStart=/usr/lib/dadi/dadid --state-dir=/var/lib/dadi --socket=/run/dadi/dadid.sock
+RuntimeDirectory=dadi
+StateDirectory=dadi
+StateDirectoryMode=0700
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: khisso-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Vet (linux, windows, darwin)
+        run: |
+          GOOS=linux go vet ./...
+          GOOS=windows go vet ./...
+          GOOS=darwin go vet ./...
+      - name: Test
+        run: go test ./...
+
+  apple:
+    needs: ci
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Build Dadi.xcframework
+        run: ./scripts/build-xcframework.sh
+      - name: Build DadiTunnel (macOS, iOS)
+        working-directory: apple
+        run: |
+          swift build
+          xcodebuild -scheme DadiTunnel -destination 'generic/platform=iOS' build
+      - name: Package xcframework
+        run: |
+          cd build
+          ditto -c -k --keepParent Dadi.xcframework Dadi.xcframework.zip
+          shasum -a 256 Dadi.xcframework.zip | tee Dadi.xcframework.zip.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xcframework
+          path: build/Dadi.xcframework.zip*
+
+  service:
+    needs: ci
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Build dadid
+        run: |
+          mkdir -p dist
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -o dist/dadid-linux-amd64 ./cmd/dadid
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -o dist/dadid-linux-arm64 ./cmd/dadid
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -o dist/dadid-windows-amd64.exe ./cmd/dadid
+          cp packaging/linux/dadid.service dist/
+          curl -fsSL -o wintun.zip https://www.wintun.net/builds/wintun-0.14.1.zip
+          unzip -q wintun.zip && cp wintun/bin/amd64/wintun.dll dist/wintun.dll
+          (cd dist && sha256sum * | tee SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: service
+          path: dist/*
+
+  release:
+    needs: [apple, service]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: khisso-network-${{ github.sha }}
+          name: khisso network ${{ github.sha }}
+          files: dist/*
+          fail_on_unmatched_files: true
