@@ -134,9 +134,11 @@ open class PacketTunnelProvider: NEPacketTunnelProvider {
     /// Applies the node's addresses and IPv4 peer routes, with `*.dadi` resolved by MagicDNS.
     fileprivate func apply(routesJSON: String) {
         settingsQueue.async { [self] in
-            guard let data = routesJSON.data(using: .utf8),
-                  let decoded = try? JSONDecoder().decode(RouteSettings.self, from: data) else {
-                log.error("unreadable route settings: \(routesJSON, privacy: .public)")
+            let decoded: RouteSettings
+            do {
+                decoded = try JSONDecoder().decode(RouteSettings.self, from: Data(routesJSON.utf8))
+            } catch {
+                log.error("unreadable route settings \(routesJSON, privacy: .public): \(String(describing: error), privacy: .public)")
                 return
             }
             let addresses = decoded.localAddrs.compactMap(IPv4Prefix.init).filter { $0.bits == 32 }
@@ -181,9 +183,12 @@ open class PacketTunnelProvider: NEPacketTunnelProvider {
         return data
     }
 
+    /// The node's most recent failure message. `dadi_last_error` always returns
+    /// a C string (empty when the last call succeeded); Swift only sees it as
+    /// optional because it is a `char *`.
     private static func lastError() -> String {
         guard let message = dadi_last_error() else {
-            return "unknown node error"
+            preconditionFailure("dadi_last_error always returns a string")
         }
         defer { dadi_free(message) }
         return String(cString: message)

@@ -31,6 +31,8 @@ type handler struct {
 	run func(context.Context) error
 }
 
+// Execute runs h.run, reports the service running, and cancels it on a stop
+// or shutdown request. It returns exit code 1 when run fails.
 func (h *handler) Execute(_ []string, requests <-chan svc.ChangeRequest, status chan<- svc.Status) (bool, uint32) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

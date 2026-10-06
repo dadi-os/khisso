@@ -292,8 +292,11 @@ type extensionRouter struct {
 	onSet func(RouteSettings)
 }
 
+// Up does nothing; the extension owns the tunnel interface.
 func (r *extensionRouter) Up() error { return nil }
 
+// Set reports cfg's addresses and routes to the extension, or empty lists
+// when cfg is nil.
 func (r *extensionRouter) Set(cfg *router.Config) error {
 	if cfg == nil {
 		r.onSet(RouteSettings{LocalAddrs: []string{}, Routes: []string{}})
@@ -303,10 +306,13 @@ func (r *extensionRouter) Set(cfg *router.Config) error {
 	return nil
 }
 
+// UpdateMagicsockPort does nothing; the extension needs no port rules.
 func (r *extensionRouter) UpdateMagicsockPort(uint16, string) error { return nil }
 
+// Close does nothing; the extension tears down its own network settings.
 func (r *extensionRouter) Close() error { return nil }
 
+// prefixStrings formats each prefix in CIDR notation.
 func prefixStrings(prefixes []netip.Prefix) []string {
 	out := make([]string, 0, len(prefixes))
 	for _, p := range prefixes {

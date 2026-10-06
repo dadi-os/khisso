@@ -53,6 +53,7 @@ type callbacks struct {
 	ctx      unsafe.Pointer
 }
 
+// text hands s to the extension through fn as a C string freed after the call.
 func (c callbacks) text(fn C.dadi_text_fn, s string) {
 	cs := C.CString(s)
 	defer C.free(unsafe.Pointer(cs))
@@ -90,6 +91,9 @@ func dadi_start(configJSON *C.char, onRoutes C.dadi_text_fn, onChange C.dadi_cha
 	return 0
 }
 
+// start parses configJSON as node.Config, opens the extension's utun as the
+// tunnel device and starts the node, wiring its routes, changes and logs to cb.
+// The caller holds mu.
 func start(configJSON string, cb callbacks) error {
 	if running != nil {
 		return errors.New("a node is already running")
@@ -176,4 +180,5 @@ func dadi_free(s *C.char) {
 	C.free(unsafe.Pointer(s))
 }
 
+// main is unused; the package is built as a C archive.
 func main() {}

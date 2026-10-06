@@ -22,6 +22,7 @@ import (
 // tunName is the tunnel interface dadid creates.
 const tunName = "dadi"
 
+// main parses the required flags and runs dadid until stopped.
 func main() {
 	stateDir := flag.String("state-dir", "", "directory for settings and node state (required)")
 	socket := flag.String("socket", "", "local API socket path, or named pipe on Windows (required)")

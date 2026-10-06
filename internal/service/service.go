@@ -146,8 +146,11 @@ var errNotProvisioned = errors.New("this device is not provisioned")
 // invalidRequest marks a request the caller must fix.
 type invalidRequest struct{ msg string }
 
+// Error returns the message the caller sees.
 func (e invalidRequest) Error() string { return e.msg }
 
+// status reports the settings, the last start error and the running node's
+// status.
 func (s *Service) status() StatusResponse {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -190,6 +193,8 @@ func (s *Service) provision(req ProvisionRequest) error {
 	return nil
 }
 
+// setWantRunning saves whether dadi should run and starts or stops the node to
+// match. It returns errNotProvisioned before any setup code was given.
 func (s *Service) setWantRunning(want bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -227,6 +232,8 @@ func (s *Service) forget() error {
 	return nil
 }
 
+// startLocked starts a node from the saved settings, recording a failure in
+// lastErr. The caller holds mu.
 func (s *Service) startLocked() {
 	n, err := s.start(node.Config{
 		ControlURL: s.settings.ControlURL,
@@ -242,6 +249,7 @@ func (s *Service) startLocked() {
 	s.lastErr = ""
 }
 
+// stopLocked stops the running node, if any. The caller holds mu.
 func (s *Service) stopLocked() {
 	if s.node != nil {
 		s.node.Stop()
@@ -249,6 +257,8 @@ func (s *Service) stopLocked() {
 	}
 }
 
+// load reads the saved settings, returning nil settings when the device was
+// never provisioned.
 func (s *Service) load() (*Settings, error) {
 	b, err := os.ReadFile(filepath.Join(s.stateDir, SettingsFile))
 	if errors.Is(err, os.ErrNotExist) {
@@ -264,6 +274,7 @@ func (s *Service) load() (*Settings, error) {
 	return &saved, nil
 }
 
+// save writes settings atomically through a temporary file.
 func (s *Service) save(settings *Settings) error {
 	b, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
@@ -280,6 +291,8 @@ func (s *Service) save(settings *Settings) error {
 	return nil
 }
 
+// writeServiceError maps err to its status and error type: invalid_request,
+// not_provisioned or internal_error.
 func (s *Service) writeServiceError(w http.ResponseWriter, err error) {
 	var invalid invalidRequest
 	switch {
@@ -292,10 +305,12 @@ func (s *Service) writeServiceError(w http.ResponseWriter, err error) {
 	}
 }
 
+// writeError writes the {error: {type, message}} body with status.
 func (s *Service) writeError(w http.ResponseWriter, status int, code, msg string) {
 	s.writeJSON(w, status, map[string]any{"error": map[string]string{"type": code, "message": msg}})
 }
 
+// writeJSON writes v as the JSON body with status.
 func (s *Service) writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
