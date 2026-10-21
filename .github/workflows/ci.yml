@@ -11,37 +11,31 @@ concurrency:
 
 jobs:
   ci:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-      - name: Vet (linux, darwin)
-        run: |
-          go vet ./...
-          GOOS=darwin go vet ./...
-      - name: Test
-        run: go test ./...
-
-  apple:
-    needs: ci
     runs-on: macos-26
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v6
+
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test the network layer
+        run: go test ./...
+
       - name: Build Dadi.xcframework
         run: ./scripts/build-xcframework.sh
+
       - name: Build DadiTunnel (macOS, iOS)
         working-directory: apple
         run: |
           swift build
           xcodebuild -scheme DadiTunnel -destination 'generic/platform=iOS' build
-      - name: Test the dadi app (macOS) and build it for iOS
+
+      - name: Test the app on macOS; build it for iOS with the watch app
         working-directory: app
         run: |
           brew install xcodegen
@@ -49,18 +43,20 @@ jobs:
           xcodegen generate
           xcodebuild -project Khisso.xcodeproj -scheme Dadi -destination 'platform=macOS,arch=arm64' CODE_SIGNING_ALLOWED=NO test
           xcodebuild -project Khisso.xcodeproj -scheme Dadi -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
+
       - name: Package xcframework
         run: |
           cd build
           ditto -c -k --keepParent Dadi.xcframework Dadi.xcframework.zip
           shasum -a 256 Dadi.xcframework.zip | tee Dadi.xcframework.zip.sha256
+
       - uses: actions/upload-artifact@v4
         with:
           name: xcframework
           path: build/Dadi.xcframework.zip*
 
-  release:
-    needs: [apple]
+  publish:
+    needs: ci
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -69,9 +65,11 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
+          name: xcframework
           path: dist
-          merge-multiple: true
-      - uses: softprops/action-gh-release@v2
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: khisso-network-${{ github.sha }}
           name: khisso network ${{ github.sha }}
