@@ -29,7 +29,7 @@ jobs:
   apple:
     needs: ci
     runs-on: macos-26
-    timeout-minutes: 20
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v7
@@ -42,6 +42,14 @@ jobs:
         run: |
           swift build
           xcodebuild -scheme DadiTunnel -destination 'generic/platform=iOS' build
+      - name: Test the dadi app (macOS) and build it for iOS
+        working-directory: app
+        run: |
+          brew install xcodegen
+          printf 'DEVELOPMENT_TEAM =\n' > Signing.xcconfig
+          xcodegen generate
+          xcodebuild -project Khisso.xcodeproj -scheme Dadi -destination 'platform=macOS,arch=arm64' CODE_SIGNING_ALLOWED=NO test
+          xcodebuild -project Khisso.xcodeproj -scheme Dadi -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
       - name: Package xcframework
         run: |
           cd build

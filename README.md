@@ -76,7 +76,7 @@ sudo go run ./cmd/dadid --state-dir=/tmp/dadid --socket=/tmp/dadid.sock   # Linu
 | Workflow | When | What |
 | --- | --- | --- |
 | `ci.yml` → `ci` | PR + push to `main` | `go vet` for Linux, Windows and macOS; `go test` |
-| `ci.yml` → `apple` | after `ci` | build `Dadi.xcframework`; compile DadiTunnel for macOS and iOS |
+| `ci.yml` → `apple` | after `ci` | build `Dadi.xcframework`; compile DadiTunnel for macOS and iOS; test the dadi app on macOS and build it for iOS, unsigned |
 | `ci.yml` → `service` | after `ci` | `dadid` for Linux amd64/arm64 and Windows amd64, the systemd unit, `wintun.dll` |
 | `ci.yml` → `release` | `main` after both | GitHub Release `khisso-network-<sha>` with every artifact and checksums |
 
