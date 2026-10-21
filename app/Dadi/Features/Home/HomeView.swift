@@ -12,6 +12,7 @@ struct HomeView: View {
         case timeline
         case ghar
         case chaavi
+        case system
     }
 
     let services: Services

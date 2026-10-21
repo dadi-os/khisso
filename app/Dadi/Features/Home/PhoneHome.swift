@@ -69,6 +69,9 @@ struct PhoneHome: View {
             case .chaavi:
                 ChaaviPage(chaavi: services.chaavi)
                     .transition(.opacity)
+            case .system:
+                SystemPage(nas: services.nas)
+                    .transition(.opacity)
             }
         }
     }
@@ -96,6 +99,8 @@ struct PhoneHome: View {
                     Text("Ghar")
                 case .chaavi:
                     Text("Chaavi")
+                case .system:
+                    Text("System")
                 }
             }
             .font(.headline)
@@ -203,6 +208,7 @@ private struct Drawer: View {
                 pageRow("Timeline", systemImage: "calendar", page: .timeline)
                 pageRow("Ghar", systemImage: "house", page: .ghar)
                 pageRow("Chaavi", systemImage: "key", page: .chaavi)
+                pageRow("System", systemImage: "server.rack", page: .system)
             }
             .padding(.horizontal, 8)
             .padding(.top, 6)

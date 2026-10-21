@@ -6,6 +6,8 @@ import Foundation
 enum PlannerLayout {
     /// The least open time between two blocks that is drawn as a gap.
     static let gapMinimum = 10
+    /// The least open time that is labeled with its length.
+    static let labeledGapMinimum = 30
     /// Hours the axis shows on a day with no blocks.
     static let emptyHours = 7..<22
 

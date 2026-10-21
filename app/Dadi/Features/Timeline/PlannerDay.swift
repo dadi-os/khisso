@@ -119,7 +119,7 @@ struct PlannerDay: View {
                             }
                             .offset(y: CGFloat(hour * 60 - origin) * scale)
                         }
-                        ForEach(PlannerLayout.gaps(segments), id: \.self) { gap in
+                        ForEach(PlannerLayout.gaps(segments).filter { $0.endMin - $0.startMin >= PlannerLayout.labeledGapMinimum }, id: \.self) { gap in
                             Text("\(PlannerLayout.span(gap.endMin - gap.startMin)) open")
                                 .font(.caption2)
                                 .foregroundStyle(.inkFaint)

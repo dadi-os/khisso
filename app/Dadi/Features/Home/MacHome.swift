@@ -22,6 +22,8 @@ struct MacHome: View {
                     .tag(HomeView.Page.ghar)
                 Label("Chaavi", systemImage: "key")
                     .tag(HomeView.Page.chaavi)
+                Label("System", systemImage: "server.rack")
+                    .tag(HomeView.Page.system)
                 Section("Agents") {
                     ForEach(store.threads) { thread in
                         ThreadRow(thread: thread, running: store.running.contains(thread.agentId), selected: false)
@@ -65,6 +67,9 @@ struct MacHome: View {
                         .transition(.opacity)
                 case .chaavi:
                     ChaaviPage(chaavi: services.chaavi)
+                        .transition(.opacity)
+                case .system:
+                    SystemPage(nas: services.nas)
                         .transition(.opacity)
                 }
             }
