@@ -61,7 +61,7 @@ struct PhoneHome: View {
                 }
                 .transition(.opacity)
             case .thread(let agentId):
-                ThreadView(hath: hath, agentId: agentId, name: store.name(of: agentId), live: store.live)
+                ThreadView(hath: hath, agentId: agentId, name: store.name(of: agentId), live: store.live, running: store.running.contains(agentId))
                     .id(agentId)
                     .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .opacity))
             }

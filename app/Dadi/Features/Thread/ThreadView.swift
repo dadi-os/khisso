@@ -1,70 +1,175 @@
 import SwiftUI
 
-/// One agent's thread: its history, live replies from Hath's events, and the
-/// composer to reply as Ankur.
+/// One agent's thread: its history by day, live replies from Hath's events, a
+/// wave while the agent works, and the composer to reply as Ankur. Agent text
+/// sits on the field as rendered markdown; Ankur's words are sage bubbles.
 struct ThreadView: View {
     let hath: HathClient
     let agentId: String
     let name: String
     /// The newest event from Home's stream; messages for this agent are added.
     let live: HathEvent?
+    /// Whether one of the agent's lanes is running.
+    let running: Bool
 
     @State private var messages: [DurableMessage] = []
+    @State private var loaded = false
     @State private var loadError: String?
     @State private var sendError: String?
     @State private var draft = ""
     @State private var sending = false
+    @State private var sent = 0
+    @State private var received = 0
 
     var body: some View {
-        VStack(spacing: 0) {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 10) {
-                    if let loadError {
-                        Label(loadError, systemImage: "exclamationmark.triangle")
-                            .foregroundStyle(.red)
-                    }
-                    ForEach(messages) { message in
-                        bubble(message)
-                    }
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                if let loadError {
+                    Label(loadError, systemImage: "exclamationmark.triangle")
+                        .font(.callout)
+                        .foregroundStyle(.danger)
+                        .padding(.vertical, 20)
                 }
-                .padding()
-                .frame(maxWidth: 760)
-                .frame(maxWidth: .infinity)
+                if loaded && messages.isEmpty && loadError == nil {
+                    empty
+                }
+                ForEach(Array(messages.enumerated()), id: \.element.id) { index, message in
+                    let previous = index > 0 ? messages[index - 1] : nil
+                    if previous.map({ !Calendar.current.isDate($0.createdAt, inSameDayAs: message.createdAt) }) ?? true {
+                        DayMark(date: message.createdAt)
+                    }
+                    row(message, opensGroup: previous.map { $0.fromUser != message.fromUser || $0.kind == .notice } ?? true)
+                        .transition(.asymmetric(insertion: .move(edge: .bottom).combined(with: .opacity).combined(with: .scale(scale: 0.96, anchor: message.fromUser ? .bottomTrailing : .bottomLeading)), removal: .opacity))
+                }
+                if running {
+                    Working(name: name)
+                        .padding(.top, 14)
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                }
             }
-            .defaultScrollAnchor(.bottom)
-            .scrollDismissesKeyboard(.interactively)
-            VStack(spacing: 6) {
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+            .frame(maxWidth: 760)
+            .frame(maxWidth: .infinity)
+            .animation(Motion.settle, value: messages)
+            .animation(Motion.settle, value: running)
+        }
+        .defaultScrollAnchor(.bottom)
+        .scrollDismissesKeyboard(.interactively)
+        .safeAreaInset(edge: .bottom) {
+            VStack(spacing: 8) {
                 if let sendError {
-                    Text(sendError).font(.callout).foregroundStyle(.red)
+                    Label(sendError, systemImage: "exclamationmark.circle")
+                        .font(.footnote)
+                        .foregroundStyle(.danger)
+                        .transition(.opacity)
                 }
                 Composer(text: $draft, placeholder: "Message \(name)…", busy: sending, send: send)
             }
-            .padding()
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 10)
         }
         .navigationTitle(name)
+        .sensoryFeedback(.impact(weight: .light), trigger: sent)
+        .sensoryFeedback(.impact(flexibility: .soft), trigger: received)
         .task { await load() }
         .onChange(of: live) { _, event in
             guard case .message(let id, let message)? = event, id == agentId else { return }
-            insert(message)
+            if insert(message), !message.fromUser { received += 1 }
+        }
+    }
+
+    private var empty: some View {
+        VStack(spacing: 10) {
+            Text(String(name.prefix(1)))
+                .font(.system(size: 30, weight: .semibold, design: .rounded))
+                .foregroundStyle(Agent.hue(agentId))
+                .frame(width: 64, height: 64)
+                .background(Agent.hue(agentId).opacity(0.14), in: .circle)
+            Text(name).font(.headline).foregroundStyle(.ink)
+            Text("No messages yet. Say something to get it started.")
+                .font(.callout)
+                .foregroundStyle(.inkMuted)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 80)
+    }
+
+    @ViewBuilder
+    private func row(_ message: DurableMessage, opensGroup: Bool) -> some View {
+        if message.kind == .notice {
+            Text(message.content)
+                .font(.footnote)
+                .foregroundStyle(.inkMuted)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
+                .background(.sage.opacity(0.08), in: .capsule)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+        } else if message.fromUser {
+            VStack(alignment: .trailing, spacing: 6) {
+                if !message.content.isEmpty {
+                    Text(MarkdownText.inline(message.content))
+                        .font(.body)
+                        .foregroundStyle(.bone)
+                        .textSelection(.enabled)
+                        .padding(.horizontal, 15)
+                        .padding(.vertical, 10)
+                        .background(.sageDeep, in: .rect(cornerRadius: 20, style: .continuous))
+                }
+                attachments(message.attachments)
+            }
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .padding(.leading, 56)
+            .padding(.top, opensGroup ? 16 : 4)
+        } else {
+            VStack(alignment: .leading, spacing: 8) {
+                if opensGroup {
+                    HStack(spacing: 8) {
+                        Text(String(name.prefix(1)))
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                            .foregroundStyle(Agent.hue(agentId))
+                            .frame(width: 24, height: 24)
+                            .background(Agent.hue(agentId).opacity(0.16), in: .circle)
+                        Text(name).font(.footnote.weight(.semibold)).foregroundStyle(.inkMuted)
+                        Text(message.createdAt, format: .dateTime.hour().minute())
+                            .font(.caption2)
+                            .foregroundStyle(.inkFaint)
+                    }
+                }
+                MarkdownText(source: message.content)
+                attachments(message.attachments)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.trailing, 24)
+            .padding(.top, opensGroup ? 18 : 6)
         }
     }
 
     @ViewBuilder
-    private func bubble(_ message: DurableMessage) -> some View {
-        if message.kind == .notice {
-            Text(message.content)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity)
-        } else {
-            HStack {
-                if message.fromUser { Spacer(minLength: 48) }
-                Text(LocalizedStringKey(message.content))
-                    .textSelection(.enabled)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 9)
-                    .background(message.fromUser ? AnyShapeStyle(.tint.opacity(0.16)) : AnyShapeStyle(.fill.quaternary), in: .rect(cornerRadius: 18))
-                if !message.fromUser { Spacer(minLength: 48) }
+    private func attachments(_ files: [AttachmentSummary]) -> some View {
+        if !files.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(files) { file in
+                    Label {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(file.filename).font(.footnote.weight(.medium)).foregroundStyle(.ink).lineLimit(1)
+                            Text(file.description ?? ByteCountFormatter.string(fromByteCount: Int64(file.sizeBytes), countStyle: .file))
+                                .font(.caption2)
+                                .foregroundStyle(.inkMuted)
+                                .lineLimit(2)
+                        }
+                    } icon: {
+                        Image(systemName: file.mediaType.hasPrefix("image/") ? "photo" : "doc")
+                            .foregroundStyle(.sageDeep)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(.boneRaised, in: .rect(cornerRadius: 14))
+                    .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(.rule))
+                }
             }
         }
     }
@@ -76,13 +181,16 @@ struct ThreadView: View {
         } catch {
             loadError = error.localizedDescription
         }
+        loaded = true
     }
 
-    /// Adds `message` in seq order unless it is already shown.
-    private func insert(_ message: DurableMessage) {
-        guard !messages.contains(where: { $0.seq == message.seq }) else { return }
+    /// Adds `message` in seq order unless it is already shown; true when added.
+    @discardableResult
+    private func insert(_ message: DurableMessage) -> Bool {
+        guard !messages.contains(where: { $0.seq == message.seq }) else { return false }
         messages.append(message)
         messages.sort { $0.seq < $1.seq }
+        return true
     }
 
     private func send() {
@@ -93,12 +201,63 @@ struct ThreadView: View {
         Task {
             defer { sending = false }
             do {
-                let sent = try await hath.send(words, to: agentId)
+                let reply = try await hath.send(words, to: agentId)
                 draft = ""
-                insert(DurableMessage(seq: sent.seq, fromAgentId: nil, toAgentId: agentId, content: sent.content, attachments: sent.attachments, kind: .message, createdAt: sent.createdAt))
+                sent += 1
+                insert(DurableMessage(seq: reply.seq, fromAgentId: nil, toAgentId: agentId, content: reply.content, attachments: reply.attachments, kind: .message, createdAt: reply.createdAt))
             } catch {
-                sendError = error.localizedDescription
+                withAnimation(Motion.snap) { sendError = error.localizedDescription }
             }
         }
+    }
+}
+
+/// A day's heading in a thread: Today, Yesterday, or the date.
+private struct DayMark: View {
+    let date: Date
+
+    var body: some View {
+        Text(label)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.inkFaint)
+            .frame(maxWidth: .infinity)
+            .padding(.top, 22)
+            .padding(.bottom, 4)
+    }
+
+    private var label: String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(date) { return "Today" }
+        if calendar.isDateInYesterday(date) { return "Yesterday" }
+        return date.formatted(.dateTime.weekday(.wide).month(.abbreviated).day())
+    }
+}
+
+/// Three sage dots rising in turn while the agent works.
+private struct Working: View {
+    let name: String
+    @State private var up = false
+
+    var body: some View {
+        HStack(spacing: 10) {
+            HStack(spacing: 5) {
+                ForEach(0..<3) { index in
+                    Circle()
+                        .fill(.sage)
+                        .frame(width: 7, height: 7)
+                        .offset(y: up ? -4 : 2)
+                        .opacity(up ? 1 : 0.45)
+                        .animation(.easeInOut(duration: 0.55).repeatForever().delay(Double(index) * 0.16), value: up)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(.sage.opacity(0.1), in: .capsule)
+            Text("\(name) is working")
+                .font(.footnote)
+                .foregroundStyle(.inkMuted)
+        }
+        .onAppear { up = true }
+        .accessibilityElement(children: .combine)
     }
 }
