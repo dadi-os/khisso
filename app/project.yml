@@ -4,6 +4,7 @@ options:
   deploymentTarget:
     iOS: "26.0"
     macOS: "26.0"
+    watchOS: "26.0"
   createIntermediateGroups: true
 configFiles:
   Debug: Signing.xcconfig
@@ -26,6 +27,8 @@ targets:
       - framework: ../build/Dadi.xcframework
         embed: false
       - sdk: libresolv.tbd
+      - target: DadiWatch
+        destinationFilters: [iOS]
     settings:
       base:
         PRODUCT_NAME: dadi
@@ -58,6 +61,40 @@ targets:
             dadi:
               NSIncludesSubdomains: true
               NSExceptionAllowsInsecureHTTPLoads: true
+  DadiWatch:
+    type: application
+    platform: watchOS
+    sources:
+      - DadiWatch
+      - Dadi/Shared/Watch
+      - Dadi/Shared/Design/Design.swift
+      - Dadi/Shared/Components/Lanes.swift
+      - Dadi/Shared/Components/Agent.swift
+      - Dadi/Types/Hath.swift
+      - Dadi/Fonts/NotoSansGujarati.ttf
+      - path: Dadi/Assets.xcassets
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_NAME: dadi
+        PRODUCT_MODULE_NAME: KhissoWatch
+        PRODUCT_BUNDLE_IDENTIFIER: com.dadi.khisso.watchkitapp
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        TARGETED_DEVICE_FAMILY: "4"
+        SKIP_INSTALL: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: WatchIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: YES
+    info:
+      path: DadiWatch/Info.plist
+      properties:
+        CFBundleDisplayName: dadi
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        WKApplication: true
+        WKCompanionAppBundleIdentifier: com.dadi.khisso
+        UIAppFonts: [NotoSansGujarati.ttf]
   DadiTests:
     type: bundle.unit-test
     platform: auto

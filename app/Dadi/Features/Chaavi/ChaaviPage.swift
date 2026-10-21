@@ -188,7 +188,7 @@ struct ChaaviPage: View {
         copies += 1
         copied = note
         Task {
-            try await Task.sleep(for: .seconds(2))
+            do { try await Task.sleep(for: .seconds(2)) } catch { return }
             if copied == note { copied = nil }
         }
     }

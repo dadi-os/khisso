@@ -166,6 +166,7 @@ struct PhoneHome: View {
 }
 
 /// Puts the keyboard away, whichever field has it.
+@MainActor
 private func dismissKeyboard() {
     UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
 }
