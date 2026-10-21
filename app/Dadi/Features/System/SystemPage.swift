@@ -2,7 +2,9 @@ import SwiftUI
 
 /// System: the box at a glance. Rings for its processor, memory and disk, how
 /// long it has been up, each module's health, every device on dadi, and the
-/// latest errors in the logs. Refreshes every five seconds while open.
+/// latest errors in the logs. The meters and devices refresh every two seconds
+/// while open, as in thaali; the slower log read keeps its own pace so it
+/// never holds them up.
 struct SystemPage: View {
     let nas: NasClient
 
@@ -12,7 +14,8 @@ struct SystemPage: View {
     @State private var problem: String?
     @State private var opened: NasLogEntry?
 
-    private let refresh: Duration = .seconds(5)
+    private let refresh: Duration = .seconds(2)
+    private let logRefresh: Duration = .seconds(10)
 
     var body: some View {
         ScrollView {
@@ -141,6 +144,12 @@ struct SystemPage: View {
                 do { try await Task.sleep(for: refresh) } catch { return }
             }
         }
+        .task {
+            while !Task.isCancelled {
+                await loadErrors()
+                do { try await Task.sleep(for: logRefresh) } catch { return }
+            }
+        }
     }
 
     private func overview(_ status: NasStatus) -> some View {
@@ -190,15 +199,23 @@ struct SystemPage: View {
         return "desktopcomputer"
     }
 
+    private func loadErrors() async {
+        do {
+            errors = try await nas.logs(level: "error", limit: 8)
+        } catch is CancellationError {
+            return
+        } catch {
+            problem = error.localizedDescription
+        }
+    }
+
     private func load() async {
         do {
             async let nextStatus = nas.status()
             async let nextDevices = nas.devices()
-            async let nextErrors = nas.logs(level: "error", limit: 8)
-            let (s, d, e) = try await (nextStatus, nextDevices, nextErrors)
+            let (s, d) = try await (nextStatus, nextDevices)
             status = s
             devices = d.sorted { ($0.online ? 0 : 1, $0.nodeName) < ($1.online ? 0 : 1, $1.nodeName) }
-            errors = e
             problem = nil
         } catch is CancellationError {
             return

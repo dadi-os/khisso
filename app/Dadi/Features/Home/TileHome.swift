@@ -436,7 +436,7 @@ private struct SystemTile: View {
             }
         }
         .task {
-            await poll(every: .seconds(5)) {
+            await poll(every: .seconds(2)) {
                 do {
                     status = try await nas.status()
                     problem = nil
