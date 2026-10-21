@@ -18,6 +18,7 @@ import (
 	"github.com/tailscale/wireguard-go/tun"
 	"tailscale.com/ipn"
 	"tailscale.com/ipn/ipnlocal"
+	"tailscale.com/ipn/ipnstate"
 	"tailscale.com/ipn/store"
 	"tailscale.com/net/dns"
 	"tailscale.com/net/netmon"
@@ -260,8 +261,16 @@ func (n *Node) Stop() {
 
 // Status reports the node's current state, self address and peers.
 func (n *Node) Status() Status {
-	st := n.lb.Status()
-	out := Status{BackendState: st.BackendState, Peers: []Peer{}}
+	n.mu.Lock()
+	lastError := n.lastError
+	n.mu.Unlock()
+	return StatusFrom(n.lb.Status(), lastError)
+}
+
+// StatusFrom converts Tailscale's status into the shape the app shows, with
+// lastError as the most recent control or engine failure.
+func StatusFrom(st *ipnstate.Status, lastError string) Status {
+	out := Status{BackendState: st.BackendState, Peers: []Peer{}, LastError: lastError}
 	if st.Self != nil {
 		out.Hostname = st.Self.HostName
 		if len(st.Self.TailscaleIPs) > 0 {
@@ -275,9 +284,6 @@ func (n *Node) Status() Status {
 		}
 		out.Peers = append(out.Peers, peer)
 	}
-	n.mu.Lock()
-	out.LastError = n.lastError
-	n.mu.Unlock()
 	return out
 }
 
