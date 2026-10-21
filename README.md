@@ -57,9 +57,8 @@ go test ./...
 
 | Workflow | When | What |
 | --- | --- | --- |
-| `ci.yml` → `ci` | PR + push to `main` | `go vet` for Linux and macOS; `go test` |
-| `ci.yml` → `apple` | after `ci` | build `Dadi.xcframework`; compile DadiTunnel for macOS and iOS; test the dadi app on macOS and build it for iOS, unsigned |
-| `ci.yml` → `release` | `main` after `apple` | GitHub Release `khisso-network-<sha>` with the xcframework and its checksum |
+| `ci.yml` → `ci` | PR + push to `main` | `go vet` and `go test`; build `Dadi.xcframework`; compile DadiTunnel for macOS and iOS; test the app on macOS and build it, with the watch app, for iOS, unsigned |
+| `ci.yml` → `publish` | `main` after `ci` | GitHub Release `khisso-network-<sha>` with the xcframework and its checksum |
 
 ## Logging / error codes
 
