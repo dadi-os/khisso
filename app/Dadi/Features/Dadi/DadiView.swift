@@ -72,7 +72,7 @@ struct DadiView: View {
             }
             .padding(.horizontal, 24)
             Spacer()
-            Composer(text: $draft, placeholder: "Message Dadi…", busy: stage != .idle, send: handOff)
+            Composer(text: $draft, placeholder: "Message Dadi…", busy: stage != .idle, lanes: stage == .idle ? [] : [.conversation], send: handOff)
                 .padding(.horizontal, 16)
                 .padding(.bottom, 10)
         }

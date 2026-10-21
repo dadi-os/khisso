@@ -26,13 +26,7 @@ struct TimelinePage: View {
     private let horizon = 14
 
     var body: some View {
-        VStack(spacing: 12) {
-            Picker("View", selection: $mode.animation(Motion.settle)) {
-                ForEach(Mode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-            }
-            .pickerStyle(.segmented)
-            .frame(maxWidth: 300)
-            .padding(.horizontal, 20)
+        Group {
             switch mode {
             case .day:
                 PlannerDay(yaad: yaad)
@@ -41,6 +35,16 @@ struct TimelinePage: View {
                 upcoming
                     .transition(.opacity)
             }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .safeAreaBar(edge: .top) {
+            Picker("View", selection: $mode.animation(Motion.settle)) {
+                ForEach(Mode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .frame(maxWidth: 300)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 8)
         }
         .navigationTitle("Timeline")
     }

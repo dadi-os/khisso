@@ -65,7 +65,7 @@ struct HathEventTests {
             ": ping",
         ])
         #expect(got.count == 3)
-        #expect(got[0] == .laneStarted(agentId: "finance-specialist"))
+        #expect(got[0] == .laneStarted(agentId: "finance-specialist", lane: .reasoning))
         guard case .message(let agentId, let message) = got[1] else {
             Issue.record("second event is \(got[1])")
             return
@@ -206,5 +206,36 @@ struct ForceLayoutTests {
         }
         #expect(layout.positions.allSatisfy { $0.x.isFinite && $0.y.isFinite })
         print("force layout of \(count) nodes settled in \(took)")
+    }
+}
+
+/// The box's /status as it answers today: the system disk is usage only,
+/// while each drive names itself and its mount.
+struct NasStatusTests {
+    @Test func decodesTheLiveStatus() throws {
+        let body = #"""
+        {"uptime_seconds":17520,"services":[{"name":"yaad","healthy":true},{"name":"nas","healthy":true}],
+         "disk":{"free_bytes":213617405952,"total_bytes":248154361856,"used_percent":13.9},
+         "disks":[{"name":"nvme0n1","model":"KINGSTON","transport":"nvme","mount":"/sysroot","free_bytes":213617401856,"total_bytes":248154361856,"used_percent":13.9}],
+         "cpu":{"name":"AMD Ryzen 7 3750H","used_percent":30.5},
+         "memory":{"name":"System memory","used_bytes":4566728704,"total_bytes":8110702592,"used_percent":56.3},
+         "errors":[]}
+        """#
+        let status = try ServiceJSON.decoder.decode(NasStatus.self, from: Data(body.utf8))
+        #expect(status.disk.usedPercent == 13.9)
+        #expect(status.disks.map(\.mount) == ["/sysroot"])
+        #expect(status.services.count == 2)
+    }
+}
+
+/// Thaali's thinking mark: each dot swells in at the left and fades off the right.
+struct ThinkingMarkTests {
+    @Test func dotsFlowLeftToRightAndFadeAtTheEnds() {
+        let start = ThinkingMark.pose(0, ms: 0)
+        let middle = ThinkingMark.pose(0, ms: 750)
+        #expect(start.opacity < 0.01)
+        #expect(abs(middle.opacity - 1) < 0.01)
+        #expect(middle.center.x > start.center.x)
+        #expect(ThinkingMark.pose(0, ms: 1400).center.y > middle.center.y)
     }
 }

@@ -87,21 +87,28 @@ struct MessageRequest: Encodable, Sendable {
     let content: String
 }
 
+/// An agent's two lanes: conversation is it thinking toward a reply to
+/// Ankur, reasoning is it working in the background.
+enum Lane: String, Decodable, Sendable, Hashable {
+    case conversation
+    case reasoning
+}
+
 /// One event from Hath's GET /events stream. Event types this app does not act
 /// on yet decode as `unhandled` so the stream keeps going.
 enum HathEvent: Decodable, Sendable, Equatable {
     /// A message entered a human thread.
     case message(agentId: String, message: DurableMessage)
-    case laneStarted(agentId: String)
-    case laneFinished(agentId: String)
-    case laneFailed(agentId: String, message: String)
+    case laneStarted(agentId: String, lane: Lane)
+    case laneFinished(agentId: String, lane: Lane)
+    case laneFailed(agentId: String, lane: Lane, message: String)
     case routerStarted
     case routerFinished
     case routerFailed(message: String)
     case unhandled(type: String)
 
     private enum Keys: String, CodingKey {
-        case type, agentId, fromAgentId, toAgentId, content, attachments, seq, kind, at, message
+        case type, agentId, fromAgentId, toAgentId, content, attachments, seq, kind, at, message, lane
     }
 
     init(from decoder: Decoder) throws {
@@ -121,12 +128,13 @@ enum HathEvent: Decodable, Sendable, Equatable {
                 createdAt: try c.decode(Date.self, forKey: .at)
             ))
         case "lane_started":
-            self = .laneStarted(agentId: try c.decode(String.self, forKey: .agentId))
+            self = .laneStarted(agentId: try c.decode(String.self, forKey: .agentId), lane: try c.decode(Lane.self, forKey: .lane))
         case "lane_finished":
-            self = .laneFinished(agentId: try c.decode(String.self, forKey: .agentId))
+            self = .laneFinished(agentId: try c.decode(String.self, forKey: .agentId), lane: try c.decode(Lane.self, forKey: .lane))
         case "lane_failed":
             self = .laneFailed(
                 agentId: try c.decode(String.self, forKey: .agentId),
+                lane: try c.decode(Lane.self, forKey: .lane),
                 message: try c.decode(String.self, forKey: .message)
             )
         case "router_started":
@@ -174,4 +182,9 @@ struct AgentRecord: Decodable, Sendable, Hashable, Identifiable {
     let updatedAt: Date
 
     var isRunning: Bool { running.reasoning || running.conversation }
+
+    /// The lanes running now.
+    var lanes: Set<Lane> {
+        Set([running.conversation ? Lane.conversation : nil, running.reasoning ? Lane.reasoning : nil].compactMap { $0 })
+    }
 }

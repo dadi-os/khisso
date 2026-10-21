@@ -76,7 +76,7 @@ struct ChaaviPage: View {
             .frame(maxWidth: .infinity)
             .animation(Motion.settle, value: shown)
         }
-        .safeAreaInset(edge: .top) {
+        .safeAreaBar(edge: .top) {
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.inkFaint)
                 TextField("Search Chaavi", text: $query)

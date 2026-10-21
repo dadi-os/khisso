@@ -18,6 +18,13 @@ struct NasStatus: Decodable, Sendable, Hashable {
         let usedPercent: Double
     }
 
+    /// How full the system disk is.
+    struct Usage: Decodable, Sendable, Hashable {
+        let freeBytes: Int64
+        let totalBytes: Int64
+        let usedPercent: Double
+    }
+
     /// A processor or memory meter.
     struct Meter: Decodable, Sendable, Hashable {
         let name: String
@@ -26,7 +33,7 @@ struct NasStatus: Decodable, Sendable, Hashable {
 
     let uptimeSeconds: Int
     let services: [Service]
-    let disk: Disk
+    let disk: Usage
     let disks: [Disk]
     let cpu: Meter
     let memory: Meter

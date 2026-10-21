@@ -1,16 +1,18 @@
 import SwiftUI
 
-/// One agent's thread: its history by day, live replies from Hath's events, a
-/// wave while the agent works, and the composer to reply as Ankur. Agent text
-/// sits on the field as rendered markdown; Ankur's words are sage bubbles.
+/// One agent's thread: its history by day, live replies from Hath's events,
+/// thaali's lane pill over the composer while the agent thinks or works, and
+/// the composer to reply as Ankur. Agent text runs the full width on the field
+/// as rendered markdown and scrolls up under the bars; Ankur's words are sage
+/// bubbles.
 struct ThreadView: View {
     let hath: HathClient
     let agentId: String
     let name: String
     /// The newest event from Home's stream; messages for this agent are added.
     let live: HathEvent?
-    /// Whether one of the agent's lanes is running.
-    let running: Bool
+    /// The agent's lanes running now.
+    let lanes: Set<Lane>
 
     @State private var messages: [DurableMessage] = []
     @State private var loaded = false
@@ -41,30 +43,25 @@ struct ThreadView: View {
                     row(message, opensGroup: previous.map { $0.fromUser != message.fromUser || $0.kind == .notice } ?? true)
                         .transition(.asymmetric(insertion: .move(edge: .bottom).combined(with: .opacity).combined(with: .scale(scale: 0.96, anchor: message.fromUser ? .bottomTrailing : .bottomLeading)), removal: .opacity))
                 }
-                if running {
-                    Working(name: name)
-                        .padding(.top, 14)
-                        .transition(.opacity.combined(with: .move(edge: .bottom)))
-                }
             }
-            .padding(.horizontal, 20)
+            .padding(.horizontal, 18)
             .padding(.vertical, 12)
             .frame(maxWidth: 760)
             .frame(maxWidth: .infinity)
             .animation(Motion.settle, value: messages)
-            .animation(Motion.settle, value: running)
         }
         .defaultScrollAnchor(.bottom)
         .scrollDismissesKeyboard(.interactively)
-        .safeAreaInset(edge: .bottom) {
+        .safeAreaBar(edge: .bottom) {
             VStack(spacing: 8) {
+                LaneChip(lanes: lanes)
                 if let sendError {
                     Label(sendError, systemImage: "exclamationmark.circle")
                         .font(.footnote)
                         .foregroundStyle(.danger)
                         .transition(.opacity)
                 }
-                Composer(text: $draft, placeholder: "Message \(name)…", busy: sending, send: send)
+                Composer(text: $draft, placeholder: "Message \(name)…", busy: sending, lanes: lanes, send: send)
             }
             .padding(.horizontal, 16)
             .padding(.top, 8)
@@ -143,7 +140,6 @@ struct ThreadView: View {
                 attachments(message.attachments)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.trailing, 24)
             .padding(.top, opensGroup ? 18 : 6)
         }
     }
@@ -230,34 +226,5 @@ private struct DayMark: View {
         if calendar.isDateInToday(date) { return "Today" }
         if calendar.isDateInYesterday(date) { return "Yesterday" }
         return date.formatted(.dateTime.weekday(.wide).month(.abbreviated).day())
-    }
-}
-
-/// Three sage dots rising in turn while the agent works.
-private struct Working: View {
-    let name: String
-    @State private var up = false
-
-    var body: some View {
-        HStack(spacing: 10) {
-            HStack(spacing: 5) {
-                ForEach(0..<3) { index in
-                    Circle()
-                        .fill(.sage)
-                        .frame(width: 7, height: 7)
-                        .offset(y: up ? -4 : 2)
-                        .opacity(up ? 1 : 0.45)
-                        .animation(.easeInOut(duration: 0.55).repeatForever().delay(Double(index) * 0.16), value: up)
-                }
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .background(.sage.opacity(0.1), in: .capsule)
-            Text("\(name) is working")
-                .font(.footnote)
-                .foregroundStyle(.inkMuted)
-        }
-        .onAppear { up = true }
-        .accessibilityElement(children: .combine)
     }
 }

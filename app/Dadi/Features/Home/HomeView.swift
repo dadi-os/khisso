@@ -44,11 +44,12 @@ struct HomeView: View {
     }
 }
 
-/// One agent thread in a list: the agent's initial, name, last line, when, and
-/// a breathing dot while one of its lanes runs.
+/// One agent thread in a list: the agent's initial, name, when, and its last
+/// line, which gives way to thaali's flowing dots while the agent thinks. A
+/// working agent's row runs the sheen, which the list puts on the row's shape.
 struct ThreadRow: View {
     let thread: ThreadSummary
-    let running: Bool
+    let lanes: Set<Lane>
     let selected: Bool
 
     var body: some View {
@@ -58,16 +59,6 @@ struct ThreadRow: View {
                 .foregroundStyle(selected ? Color.bone : hue)
                 .frame(width: 34, height: 34)
                 .background(selected ? AnyShapeStyle(hue) : AnyShapeStyle(hue.opacity(0.16)), in: .circle)
-                .overlay(alignment: .bottomTrailing) {
-                    if running {
-                        Circle()
-                            .fill(.sage)
-                            .frame(width: 10, height: 10)
-                            .overlay(Circle().strokeBorder(Color.bone, lineWidth: 2))
-                            .phaseAnimator([1.0, 0.45]) { dot, phase in dot.opacity(phase) } animation: { _ in Motion.breath }
-                            .offset(x: 2, y: 2)
-                    }
-                }
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline) {
                     Text(Agent.displayName(thread.agentName))
@@ -79,14 +70,20 @@ struct ThreadRow: View {
                         .font(.caption2)
                         .foregroundStyle(.inkFaint)
                 }
-                Text(running ? "Working…" : Agent.preview(thread.lastMessage))
-                    .font(.footnote)
-                    .foregroundStyle(running ? Color.sageText : .inkMuted)
-                    .lineLimit(1)
-                    .contentTransition(.opacity)
+                if lanes.contains(.conversation) {
+                    ThinkingMark()
+                        .frame(height: 18)
+                        .transition(.opacity)
+                } else {
+                    Text((thread.fromUser ? "You: " : "") + Agent.preview(thread.lastMessage))
+                        .font(.footnote)
+                        .foregroundStyle(.inkMuted)
+                        .lineLimit(1)
+                        .transition(.opacity)
+                }
             }
         }
-        .animation(Motion.settle, value: running)
+        .animation(Motion.settle, value: lanes)
         .contentShape(.rect)
     }
 
@@ -118,14 +115,16 @@ enum Agent {
     }
 }
 
-/// Threads, running lanes and live messages for Home, fed by GET /threads and
-/// Hath's event stream.
+/// Threads, running lanes and live messages for Home, fed by GET /threads,
+/// GET /agents for the lanes already running, and Hath's event stream.
 @MainActor
 @Observable
 final class HomeStore {
     private(set) var threads: [ThreadSummary] = []
-    /// Agents with a lane running right now.
-    private(set) var running: Set<String> = []
+    /// Each agent's lanes running right now.
+    private(set) var lanes: [String: Set<Lane>] = [:]
+    /// True while the router is choosing whom Ankur's words go to.
+    private(set) var routing = false
     /// The newest message from the event stream, for the open thread to pick up.
     private(set) var live: HathEvent?
     private(set) var error: String?
@@ -148,7 +147,9 @@ final class HomeStore {
         var delay: Duration = .seconds(1)
         while !Task.isCancelled {
             do {
-                for try await event in try await hath.events() {
+                let events = try await hath.events()
+                lanes = Dictionary(uniqueKeysWithValues: try await hath.agents().map { ($0.id, $0.lanes) }).filter { !$0.value.isEmpty }
+                for try await event in events {
                     delay = .seconds(1)
                     liveError = nil
                     await apply(event, hath)
@@ -167,6 +168,12 @@ final class HomeStore {
         }
     }
 
+    /// Agents with any lane running.
+    var running: Set<String> { Set(lanes.keys) }
+
+    /// The lanes `agentId` has running.
+    func lanes(of agentId: String) -> Set<Lane> { lanes[agentId] ?? [] }
+
     /// The display name of an agent's thread; the id until the thread is known.
     func name(of agentId: String) -> String {
         Agent.displayName(threads.first { $0.agentId == agentId }?.agentName ?? agentId)
@@ -177,11 +184,16 @@ final class HomeStore {
         case .message:
             live = event
             await load(hath)
-        case .laneStarted(let agentId):
-            running.insert(agentId)
-        case .laneFinished(let agentId), .laneFailed(let agentId, _):
-            running.remove(agentId)
-        case .routerStarted, .routerFinished, .routerFailed, .unhandled:
+        case .laneStarted(let agentId, let lane):
+            lanes[agentId, default: []].insert(lane)
+        case .laneFinished(let agentId, let lane), .laneFailed(let agentId, let lane, _):
+            lanes[agentId]?.remove(lane)
+            if lanes[agentId]?.isEmpty == true { lanes[agentId] = nil }
+        case .routerStarted:
+            routing = true
+        case .routerFinished, .routerFailed:
+            routing = false
+        case .unhandled:
             break
         }
     }

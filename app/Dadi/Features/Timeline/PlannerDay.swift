@@ -21,21 +21,8 @@ struct PlannerDay: View {
 
     var body: some View {
         let segments = PlannerLayout.segments(blocks, on: day)
-        VStack(spacing: 14) {
-            header
-            if Calendar.current.isDateInToday(day) {
-                NowNext(segments: segments)
-            }
-            if let error {
-                Label(error, systemImage: "exclamationmark.triangle")
-                    .font(.footnote)
-                    .foregroundStyle(.danger)
-            }
-            axis(segments)
-                .id(day)
-                .transition(.push(from: direction))
-        }
-        .padding(.horizontal, 20)
+        axis(segments)
+        .contentShape(.rect)
         .gesture(
             DragGesture(minimumDistance: 30)
                 .onEnded { drag in
@@ -105,6 +92,16 @@ struct PlannerDay: View {
         let now = Calendar.current.component(.hour, from: .now) * 60 + Calendar.current.component(.minute, from: .now)
         let start = Calendar.current.isDateInToday(day) ? UnitPoint(x: 0, y: max(0, min(1, CGFloat(now - 60 - origin) / CGFloat(max(1, hours.count * 60))))) : .top
         return ScrollView {
+            VStack(spacing: 14) {
+                header
+                if Calendar.current.isDateInToday(day) {
+                    NowNext(segments: segments)
+                }
+                if let error {
+                    Label(error, systemImage: "exclamationmark.triangle")
+                        .font(.footnote)
+                        .foregroundStyle(.danger)
+                }
                 GeometryReader { proxy in
                     let lane = proxy.size.width - 56
                     ZStack(alignment: .topLeading) {
@@ -141,9 +138,13 @@ struct PlannerDay: View {
                 .frame(height: height + 12)
                 .padding(.top, 8)
                 .padding(.bottom, 60)
+                .id(day)
+                .transition(.push(from: direction))
             }
-            .scrollIndicators(.hidden)
-            .defaultScrollAnchor(start)
+            .padding(.horizontal, 20)
+        }
+        .scrollIndicators(.hidden)
+        .defaultScrollAnchor(start)
     }
 
     private func hourLabel(_ hour: Int) -> String {

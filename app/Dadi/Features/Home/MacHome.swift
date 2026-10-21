@@ -33,8 +33,10 @@ struct MacHome: View {
                     .tag(HomeView.Page.system)
                 Section("Agents") {
                     ForEach(store.threads) { thread in
-                        ThreadRow(thread: thread, running: store.running.contains(thread.agentId), selected: false)
+                        ThreadRow(thread: thread, lanes: store.lanes(of: thread.agentId), selected: false)
                             .padding(.vertical, 3)
+                            .padding(.horizontal, 4)
+                            .laneSheen(store.lanes(of: thread.agentId).contains(.reasoning), in: .rect(cornerRadius: 10))
                             .tag(HomeView.Page.thread(thread.agentId))
                     }
                 }
@@ -72,7 +74,7 @@ struct MacHome: View {
                 case .dadi:
                     DadiView(hath: services.hath, wordmark: wordmark) { agentId in withAnimation(Motion.settle) { page = .thread(agentId) } }
                 case .thread(let agentId):
-                    ThreadView(hath: services.hath, agentId: agentId, name: store.name(of: agentId), live: store.live, running: store.running.contains(agentId))
+                    ThreadView(hath: services.hath, agentId: agentId, name: store.name(of: agentId), live: store.live, lanes: store.lanes(of: agentId))
                         .id(agentId)
                         .transition(.opacity)
                 case .timeline:

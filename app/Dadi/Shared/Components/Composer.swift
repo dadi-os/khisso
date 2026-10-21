@@ -2,13 +2,21 @@ import SwiftUI
 
 /// The message field: one glass capsule with the send button in a fixed slot
 /// at its end, so nothing moves as you type. The button waits faint until
-/// there is something to send, then fills sage.
+/// there is something to send, then fills sage. Its rim answers the agent's
+/// lanes as thaali's does: quieter while it thinks, sage while it works.
 struct Composer: View {
     @Binding var text: String
     let placeholder: String
     /// Disables the field while a send is in flight.
     let busy: Bool
+    var lanes: Set<Lane> = []
     let send: () -> Void
+
+    private var rim: Color {
+        if lanes.contains(.conversation) { return .sageLine.opacity(0.28) }
+        if lanes.contains(.reasoning) { return .sage.opacity(0.36) }
+        return .sageLine.opacity(0.42)
+    }
 
     private var ready: Bool { !busy && !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
@@ -45,6 +53,11 @@ struct Composer: View {
             .accessibilityLabel("Send")
         }
         .glassEffect(.regular, in: .rect(cornerRadius: 24, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .strokeBorder(rim, lineWidth: 1)
+                .animation(Motion.settle, value: lanes)
+        }
         .frame(maxWidth: 680)
     }
 }

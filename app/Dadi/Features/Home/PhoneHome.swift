@@ -5,7 +5,10 @@ import SwiftUI
 /// underneath. Swipe from the left edge or tap the menu button and the page
 /// slides right to uncover it, following the finger and springing open or
 /// closed by where and how fast it was let go. Opening it puts the keyboard
-/// away; a swipe left anywhere on the page, or a tap on it, closes it.
+/// away; a swipe left anywhere on the page, or a tap on it, closes it. Pages
+/// run the full height of the screen: their content scrolls up under the
+/// floating menu and compose buttons and the page's name in its glass bubble,
+/// on past the Dynamic Island.
 struct PhoneHome: View {
     let services: Services
     let wordmark: Namespace.ID
@@ -46,10 +49,8 @@ struct PhoneHome: View {
         .sensoryFeedback(.selection, trigger: opened)
     }
 
-    @ViewBuilder
     private var pageView: some View {
-        VStack(spacing: 0) {
-            topBar
+        Group {
             switch page {
             case .dadi:
                 DadiView(hath: services.hath, wordmark: wordmark) { agentId in
@@ -57,7 +58,7 @@ struct PhoneHome: View {
                 }
                 .transition(.opacity)
             case .thread(let agentId):
-                ThreadView(hath: services.hath, agentId: agentId, name: store.name(of: agentId), live: store.live, running: store.running.contains(agentId))
+                ThreadView(hath: services.hath, agentId: agentId, name: store.name(of: agentId), live: store.live, lanes: store.lanes(of: agentId))
                     .id(agentId)
                     .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .opacity))
             case .timeline:
@@ -74,6 +75,8 @@ struct PhoneHome: View {
                     .transition(.opacity)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .safeAreaBar(edge: .top) { topBar }
     }
 
     private var topBar: some View {
@@ -87,26 +90,11 @@ struct PhoneHome: View {
             .buttonBorderShape(.circle)
             .accessibilityLabel("Open sidebar")
             Spacer()
-            Group {
-                switch page {
-                case .dadi:
-                    Text(" ")
-                case .thread(let agentId):
-                    Text(store.name(of: agentId))
-                case .timeline:
-                    Text("Timeline")
-                case .ghar:
-                    Text("Ghar")
-                case .chaavi:
-                    Text("Chaavi")
-                case .system:
-                    Text("System")
-                }
+            if let title {
+                NameBubble(title: title, hue: hue)
+                    .id(title)
+                    .transition(.opacity.combined(with: .scale(scale: 0.92)))
             }
-            .font(.headline)
-            .foregroundStyle(.ink)
-            .lineLimit(1)
-            .contentTransition(.opacity)
             Spacer()
             Button { choose(.dadi) } label: {
                 Image(systemName: "square.and.pencil")
@@ -124,6 +112,24 @@ struct PhoneHome: View {
         .padding(.top, 4)
         .padding(.bottom, 6)
         .animation(Motion.snap, value: page)
+    }
+
+    /// The page's name for its bubble; Talk to Dadi has none.
+    private var title: String? {
+        switch page {
+        case .dadi: nil
+        case .thread(let agentId): store.name(of: agentId)
+        case .timeline: "Timeline"
+        case .ghar: "Ghar"
+        case .chaavi: "Chaavi"
+        case .system: "System"
+        }
+    }
+
+    /// The agent's color beside its name in a thread.
+    private var hue: Color? {
+        if case .thread(let agentId) = page { return Agent.hue(agentId) }
+        return nil
     }
 
     /// Shows `next` and closes the drawer.
@@ -182,36 +188,51 @@ private struct Drawer: View {
                 .padding(.bottom, 14)
             Button { choose(.dadi) } label: {
                 HStack(spacing: 12) {
-                    Text("દ")
-                        .font(.wordmark(21))
-                        .foregroundStyle(.sageText)
-                        .inkCentered(.letter, size: 21)
-                        .frame(width: 34, height: 34)
-                        .background(.sage.opacity(page == .dadi ? 0.26 : 0.14), in: .circle)
+                    ZStack {
+                        if store.routing {
+                            PulseOut()
+                        }
+                        Text("દ")
+                            .font(.wordmark(21))
+                            .foregroundStyle(store.routing ? Color.sageDeep : .sageText)
+                            .inkCentered(.letter, size: 21)
+                            .frame(width: 34, height: 34)
+                            .background(.sage.opacity(page == .dadi || store.routing ? 0.26 : 0.14), in: .circle)
+                    }
                     VStack(alignment: .leading, spacing: 1) {
                         Text("Talk to Dadi")
                             .font(.body.weight(.semibold))
                             .foregroundStyle(.ink)
-                        Text("Start something new")
-                            .font(.footnote)
-                            .foregroundStyle(.inkFaint)
+                        if store.routing {
+                            HStack(spacing: 6) {
+                                ThinkingMark()
+                                Text("routing").font(.footnote).foregroundStyle(.sageText)
+                            }
+                            .transition(.opacity)
+                        } else {
+                            Text("Start something new")
+                                .font(.footnote)
+                                .foregroundStyle(.inkFaint)
+                                .transition(.opacity)
+                        }
                     }
                     Spacer()
                 }
+                .animation(Motion.settle, value: store.routing)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .background(page == .dadi ? Color.sage.opacity(0.14) : .clear, in: .rect(cornerRadius: 16))
             }
             .buttonStyle(.plain)
             .padding(.horizontal, 8)
-            VStack(spacing: 2) {
-                pageRow("Timeline", systemImage: "calendar", page: .timeline)
-                pageRow("Ghar", systemImage: "house", page: .ghar)
-                pageRow("Chaavi", systemImage: "key", page: .chaavi)
-                pageRow("System", systemImage: "server.rack", page: .system)
+            VStack(spacing: 8) {
+                pageTile("Timeline", systemImage: "calendar", page: .timeline)
+                pageTile("Ghar", systemImage: "house.fill", page: .ghar)
+                pageTile("Chaavi", systemImage: "key.fill", page: .chaavi)
+                pageTile("System", systemImage: "server.rack", page: .system)
             }
-            .padding(.horizontal, 8)
-            .padding(.top, 6)
+            .padding(.horizontal, 12)
+            .padding(.top, 12)
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 2) {
                     Text("AGENTS")
@@ -229,11 +250,13 @@ private struct Drawer: View {
                     }
                     ForEach(store.threads) { thread in
                         let selected = page == .thread(thread.agentId)
+                        let lanes = store.lanes(of: thread.agentId)
                         Button { choose(.thread(thread.agentId)) } label: {
-                            ThreadRow(thread: thread, running: store.running.contains(thread.agentId), selected: selected)
+                            ThreadRow(thread: thread, lanes: lanes, selected: selected)
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 8)
                                 .background(selected ? Color.sage.opacity(0.14) : .clear, in: .rect(cornerRadius: 16))
+                                .laneSheen(lanes.contains(.reasoning), in: .rect(cornerRadius: 16))
                         }
                         .buttonStyle(.plain)
                     }
@@ -252,24 +275,72 @@ private struct Drawer: View {
         }
     }
 
-    /// A drawer row that opens one of dadi's pages.
-    private func pageRow(_ title: String, systemImage: String, page target: HomeView.Page) -> some View {
-        Button { choose(target) } label: {
-            HStack(spacing: 12) {
+    /// A full-width drawer tile that opens one of dadi's pages, lit sage while
+    /// its page is open.
+    private func pageTile(_ title: String, systemImage: String, page target: HomeView.Page) -> some View {
+        let current = page == target
+        return Button { choose(target) } label: {
+            HStack(spacing: 14) {
                 Image(systemName: systemImage)
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(.sageDeep)
-                    .frame(width: 34, height: 34)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(current ? Color.bone : .sageDeep)
+                    .frame(width: 36, height: 36)
+                    .background(current ? AnyShapeStyle(Color.sageDeep) : AnyShapeStyle(Color.sage.opacity(0.16)), in: .rect(cornerRadius: 11, style: .continuous))
                 Text(title)
-                    .font(.body.weight(.medium))
+                    .font(.body.weight(.semibold))
                     .foregroundStyle(.ink)
                 Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.inkFaint)
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 4)
-            .background(page == target ? Color.sage.opacity(0.14) : .clear, in: .rect(cornerRadius: 16))
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity)
+            .background(current ? Color.sage.opacity(0.16) : Color.bone.opacity(0.45), in: .rect(cornerRadius: 18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(current ? Color.sage.opacity(0.4) : .sageLine.opacity(0.3), lineWidth: 1))
+            .contentShape(.rect(cornerRadius: 18, style: .continuous))
         }
         .buttonStyle(.plain)
+        .animation(Motion.snap, value: current)
+    }
+}
+
+/// A page's name in a glass bubble, as thaali's pane header: the agent's color
+/// as a dot when it is a thread.
+private struct NameBubble: View {
+    let title: String
+    let hue: Color?
+
+    var body: some View {
+        HStack(spacing: 7) {
+            if let hue {
+                Circle().fill(hue).frame(width: 8, height: 8)
+            }
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.ink)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+        .glassEffect(.regular, in: .capsule)
+    }
+}
+
+/// Thaali's live ring: a sage disc swelling out and fading behind a busy mark.
+private struct PulseOut: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Circle()
+            .fill(.sage.opacity(0.45))
+            .frame(width: 34, height: 34)
+            .phaseAnimator([false, true]) { ring, out in
+                ring.scaleEffect(out ? 1.55 : 1).opacity(out ? 0 : 0.55)
+            } animation: { out in
+                out && !reduceMotion ? .easeOut(duration: 2.4) : nil
+            }
     }
 }
 #endif
