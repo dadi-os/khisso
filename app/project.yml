@@ -36,6 +36,8 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
         SUPPORTS_MACCATALYST: NO
         ENABLE_HARDENED_RUNTIME: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
     info:
       path: Dadi/Info.plist
       properties:
@@ -45,6 +47,7 @@ targets:
         UILaunchScreen: {}
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
+        NSCameraUsageDescription: dadi scans the setup code your box shows when you add this device.
         NSLocalNetworkUsageDescription: dadi connects straight to your box when you are on the same network.
         NSAppTransportSecurity:
           NSExceptionDomains:

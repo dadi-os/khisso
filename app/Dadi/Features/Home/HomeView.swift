@@ -84,7 +84,6 @@ struct HomeView: View {
                     .id(agentId)
             }
         }
-        .tint(Color(red: 0.36, green: 0.42, blue: 0.32))
         .task { await store.load(hath) }
         .task { await store.follow(hath) }
     }
