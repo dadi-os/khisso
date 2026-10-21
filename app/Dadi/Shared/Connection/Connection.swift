@@ -21,8 +21,8 @@ final class Connection {
     }
 
     private(set) var state: State = .connecting(detail: nil)
-    /// Hath over this device's node; set once the node is running.
-    private(set) var hath: HathClient?
+    /// dadi's services over this device's node; set once the node is running.
+    private(set) var services: Services?
     /// This device's name on dadi.
     private(set) var nodeName: String?
 
@@ -85,7 +85,7 @@ final class Connection {
             Task { @MainActor in self?.nodeChanged() }
         }
         node = started
-        hath = HathClient(session: started.session)
+        services = Services(session: started.session)
         log.info("node started as \(code.nodeName, privacy: .public)")
     }
 
@@ -105,7 +105,7 @@ final class Connection {
 
     /// Asks Hath for `/health`; one check runs at a time.
     private func checkHath() {
-        guard let hath, !checking else { return }
+        guard let hath = services?.hath, !checking else { return }
         checking = true
         Task {
             defer { checking = false }
@@ -121,7 +121,7 @@ final class Connection {
     private func stopNode() {
         node?.stop()
         node = nil
-        hath = nil
+        services = nil
     }
 
     private func fail(_ error: Error) {

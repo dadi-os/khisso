@@ -9,9 +9,10 @@ struct HomeView: View {
     enum Page: Hashable {
         case dadi
         case thread(String)
+        case timeline
     }
 
-    let hath: HathClient
+    let services: Services
     let nodeName: String?
     let wordmark: Namespace.ID
 
@@ -21,13 +22,13 @@ struct HomeView: View {
     var body: some View {
         Group {
             #if os(iOS)
-            PhoneHome(hath: hath, nodeName: nodeName, wordmark: wordmark, store: store, page: $page)
+            PhoneHome(services: services, nodeName: nodeName, wordmark: wordmark, store: store, page: $page)
             #else
-            MacHome(hath: hath, nodeName: nodeName, wordmark: wordmark, store: store, page: $page)
+            MacHome(services: services, nodeName: nodeName, wordmark: wordmark, store: store, page: $page)
             #endif
         }
-        .task { await store.load(hath) }
-        .task { await store.follow(hath) }
+        .task { await store.load(services.hath) }
+        .task { await store.follow(services.hath) }
     }
 }
 

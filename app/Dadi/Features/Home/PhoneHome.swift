@@ -6,7 +6,7 @@ import SwiftUI
 /// menu button to open it; the page follows the finger and springs to open or
 /// closed by where and how fast it was let go.
 struct PhoneHome: View {
-    let hath: HathClient
+    let services: Services
     let nodeName: String?
     let wordmark: Namespace.ID
     let store: HomeStore
@@ -56,14 +56,17 @@ struct PhoneHome: View {
             topBar
             switch page {
             case .dadi:
-                DadiView(hath: hath, wordmark: wordmark) { agentId in
+                DadiView(hath: services.hath, wordmark: wordmark) { agentId in
                     withAnimation(Motion.settle) { page = .thread(agentId) }
                 }
                 .transition(.opacity)
             case .thread(let agentId):
-                ThreadView(hath: hath, agentId: agentId, name: store.name(of: agentId), live: store.live, running: store.running.contains(agentId))
+                ThreadView(hath: services.hath, agentId: agentId, name: store.name(of: agentId), live: store.live, running: store.running.contains(agentId))
                     .id(agentId)
                     .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .opacity))
+            case .timeline:
+                TimelinePage(yaad: services.yaad)
+                    .transition(.opacity)
             }
         }
     }
@@ -85,6 +88,8 @@ struct PhoneHome: View {
                     Text(" ")
                 case .thread(let agentId):
                     Text(store.name(of: agentId))
+                case .timeline:
+                    Text("Timeline")
                 }
             }
             .font(.headline)
@@ -175,6 +180,11 @@ private struct Drawer: View {
             }
             .buttonStyle(.plain)
             .padding(.horizontal, 8)
+            VStack(spacing: 2) {
+                pageRow("Timeline", systemImage: "calendar", page: .timeline)
+            }
+            .padding(.horizontal, 8)
+            .padding(.top, 6)
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 2) {
                     Text("AGENTS")
@@ -214,6 +224,26 @@ private struct Drawer: View {
                 .glassEffect(.regular, in: .rect)
                 .ignoresSafeArea()
         }
+    }
+
+    /// A drawer row that opens one of dadi's pages.
+    private func pageRow(_ title: String, systemImage: String, page target: HomeView.Page) -> some View {
+        Button { choose(target) } label: {
+            HStack(spacing: 12) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(.sageDeep)
+                    .frame(width: 34, height: 34)
+                Text(title)
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(.ink)
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
+            .background(page == target ? Color.sage.opacity(0.14) : .clear, in: .rect(cornerRadius: 16))
+        }
+        .buttonStyle(.plain)
     }
 
     private var footer: some View {

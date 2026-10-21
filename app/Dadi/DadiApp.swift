@@ -19,8 +19,8 @@ struct DadiApp: App {
                     ConnectingView(connection: connection, wordmark: wordmark)
                         .transition(.opacity)
                 case .online:
-                    if let hath = connection.hath {
-                        HomeView(hath: hath, nodeName: connection.nodeName, wordmark: wordmark)
+                    if let services = connection.services {
+                        HomeView(services: services, nodeName: connection.nodeName, wordmark: wordmark)
                             .transition(.opacity.combined(with: .scale(scale: 1.02)))
                     }
                 }

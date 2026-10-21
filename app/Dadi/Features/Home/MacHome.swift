@@ -4,7 +4,7 @@ import SwiftUI
 /// The Mac's Home: the sidebar with Talk to Dadi and every agent thread beside
 /// the open page, on the field.
 struct MacHome: View {
-    let hath: HathClient
+    let services: Services
     let nodeName: String?
     let wordmark: Namespace.ID
     let store: HomeStore
@@ -16,6 +16,8 @@ struct MacHome: View {
                 Label("Talk to Dadi", systemImage: "sparkles")
                     .font(.body.weight(.semibold))
                     .tag(HomeView.Page.dadi)
+                Label("Timeline", systemImage: "calendar")
+                    .tag(HomeView.Page.timeline)
                 Section("Agents") {
                     ForEach(store.threads) { thread in
                         ThreadRow(thread: thread, running: store.running.contains(thread.agentId), selected: false)
@@ -46,10 +48,13 @@ struct MacHome: View {
                 FieldBloom()
                 switch page {
                 case .dadi:
-                    DadiView(hath: hath, wordmark: wordmark) { agentId in withAnimation(Motion.settle) { page = .thread(agentId) } }
+                    DadiView(hath: services.hath, wordmark: wordmark) { agentId in withAnimation(Motion.settle) { page = .thread(agentId) } }
                 case .thread(let agentId):
-                    ThreadView(hath: hath, agentId: agentId, name: store.name(of: agentId), live: store.live, running: store.running.contains(agentId))
+                    ThreadView(hath: services.hath, agentId: agentId, name: store.name(of: agentId), live: store.live, running: store.running.contains(agentId))
                         .id(agentId)
+                        .transition(.opacity)
+                case .timeline:
+                    TimelinePage(yaad: services.yaad)
                         .transition(.opacity)
                 }
             }
