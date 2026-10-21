@@ -18,6 +18,13 @@ struct ChaaviClient: Sendable {
         return response.items
     }
 
+    /// GET /v1/folders.
+    func folders() async throws -> [ChaaviFolder] {
+        struct Response: Decodable { let folders: [ChaaviFolder] }
+        let response: Response = try await client.get("/v1/folders")
+        return response.folders
+    }
+
     /// POST /v1/items/:id/reveal: one secret value.
     func reveal(_ field: String, of itemId: String) async throws -> String {
         struct Response: Decodable { let value: String }

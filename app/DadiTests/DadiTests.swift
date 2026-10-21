@@ -142,3 +142,31 @@ struct PlannerLayoutTests {
         #expect(PlannerLayout.span(120) == "2 h")
     }
 }
+
+/// Chaavi's flat folders nest by slash, as in thaali, and counts roll up.
+struct FolderTreeTests {
+    private let folders = [
+        ChaaviFolder(id: "1", name: "Development/fliks-gg"),
+        ChaaviFolder(id: "2", name: "Development/dadi"),
+        ChaaviFolder(id: "3", name: "School"),
+    ]
+
+    private func item(_ id: String, folder: String?) -> ChaaviItem {
+        ChaaviItem(id: id, name: id, favorite: false, folderId: folder, type: "login", login: nil)
+    }
+
+    @Test func parentsExistFromTheirChildrensNames() {
+        let items = [item("a", folder: "1"), item("b", folder: "2"), item("c", folder: "3"), item("d", folder: nil)]
+        let top = FolderTree.children(of: nil, folders: folders, items: items)
+        #expect(top.map(\.path) == ["Development", "School"])
+        #expect(top.map(\.count) == [2, 1])
+        #expect(FolderTree.children(of: "Development", folders: folders, items: items).map(\.name) == ["dadi", "fliks-gg"])
+    }
+
+    @Test func aFolderShowsItsWholeSubtree() {
+        let items = [item("a", folder: "1"), item("b", folder: "2"), item("c", folder: "3")]
+        #expect(FolderTree.items(in: "Development", folders: folders, items: items).map(\.id) == ["a", "b"])
+        #expect(FolderTree.items(in: nil, folders: folders, items: items).count == 3)
+        #expect(!FolderTree.isWithin("Developments", "Development"))
+    }
+}

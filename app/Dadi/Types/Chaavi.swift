@@ -19,6 +19,8 @@ struct ChaaviItem: Decodable, Sendable, Hashable, Identifiable {
     let id: String
     let name: String
     let favorite: Bool
+    /// The folder it is filed in; nil for none.
+    let folderId: String?
     /// login, note, card, identity, sshKey, bankAccount, driversLicense or passport.
     let type: String
     let login: Login?
@@ -29,6 +31,13 @@ struct ChaaviItem: Decodable, Sendable, Hashable, Identifiable {
         let withScheme = raw.contains("://") ? raw : "https://\(raw)"
         return URL(string: withScheme)?.host()
     }
+}
+
+/// A vault folder from GET /v1/folders. A slash in its name nests it, so
+/// "Development/fliks-gg" sits under "Development".
+struct ChaaviFolder: Decodable, Sendable, Hashable, Identifiable {
+    let id: String
+    let name: String
 }
 
 /// Body of POST /v1/items/:id/reveal.

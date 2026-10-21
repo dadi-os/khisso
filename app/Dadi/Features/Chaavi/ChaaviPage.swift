@@ -6,7 +6,8 @@ import UIKit
 import AppKit
 #endif
 
-/// Chaavi: the vault's logins and notes, searchable, favorites first. Nothing
+/// Chaavi: the vault's logins and notes, browsed by folder or searched across
+/// the whole vault, favorites first. Nothing
 /// secret is fetched until it is asked for: copying or revealing a password
 /// or code asks for Face ID or Touch ID, which then holds for five minutes.
 /// Copies stay on this device and clear after 90 seconds.
@@ -14,6 +15,9 @@ struct ChaaviPage: View {
     let chaavi: ChaaviClient
 
     @State private var items: [ChaaviItem] = []
+    @State private var folders: [ChaaviFolder] = []
+    /// The folder being browsed; nil at the top.
+    @State private var scope: String?
     @State private var query = ""
     @State private var loaded = false
     @State private var error: String?
@@ -34,6 +38,29 @@ struct ChaaviPage: View {
                     ContentUnavailableView(query.isEmpty ? "The vault is empty" : "No matches", systemImage: "key", description: Text(query.isEmpty ? "Logins saved in Chaavi show up here." : "Nothing in Chaavi matches \u{201C}\(query)\u{201D}."))
                         .foregroundStyle(.inkMuted)
                         .padding(.top, 40)
+                }
+                if query.isEmpty {
+                    if let scope {
+                        breadcrumb(scope)
+                    }
+                    ForEach(FolderTree.children(of: scope, folders: folders, items: items)) { folder in
+                        Button { withAnimation(Motion.settle) { self.scope = folder.path } } label: {
+                            HStack(spacing: 14) {
+                                Image(systemName: "folder.fill")
+                                    .font(.system(size: 17))
+                                    .foregroundStyle(.sageDeep)
+                                    .frame(width: 42, height: 42)
+                                    .background(.sage.opacity(0.14), in: .rect(cornerRadius: 12, style: .continuous))
+                                Text(folder.name).font(.body.weight(.semibold)).foregroundStyle(.ink)
+                                Spacer()
+                                Text("\(folder.count)").font(.footnote.monospacedDigit()).foregroundStyle(.inkFaint)
+                                Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.inkFaint)
+                            }
+                            .padding(12)
+                            .background(.boneRaised.opacity(0.7), in: .rect(cornerRadius: 18, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
                 ForEach(shown) { item in
                     Button { opened = item } label: {
@@ -93,10 +120,11 @@ struct ChaaviPage: View {
         .task { await load() }
     }
 
-    /// Items matching the search, favorites first, then by name.
+    /// Items matching the search across the vault, or the browsed folder's
+    /// items, favorites first, then by name.
     private var shown: [ChaaviItem] {
         let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
-        return items
+        return (needle.isEmpty ? FolderTree.items(in: scope, folders: folders, items: items) : items)
             .filter { item in
                 needle.isEmpty || item.name.lowercased().contains(needle)
                     || (item.login?.username?.lowercased().contains(needle) ?? false)
@@ -105,9 +133,31 @@ struct ChaaviPage: View {
             .sorted { ($0.favorite ? 0 : 1, $0.name.lowercased()) < ($1.favorite ? 0 : 1, $1.name.lowercased()) }
     }
 
+    /// The trail back from the browsed folder: the top, then each parent.
+    private func breadcrumb(_ scope: String) -> some View {
+        let parts = scope.split(separator: FolderTree.separator).map(String.init)
+        return ScrollView(.horizontal) {
+            HStack(spacing: 6) {
+                Button("Chaavi") { withAnimation(Motion.settle) { self.scope = nil } }
+                ForEach(parts.indices, id: \.self) { index in
+                    Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.inkFaint)
+                    let path = parts[0...index].joined(separator: String(FolderTree.separator))
+                    Button(parts[index]) { withAnimation(Motion.settle) { self.scope = path } }
+                        .disabled(index == parts.count - 1)
+                }
+            }
+            .font(.subheadline.weight(.semibold))
+            .tint(.sageDeep)
+            .padding(.vertical, 4)
+        }
+        .scrollIndicators(.hidden)
+    }
+
     private func load() async {
         do {
-            items = try await chaavi.items()
+            async let nextItems = chaavi.items()
+            async let nextFolders = chaavi.folders()
+            (items, folders) = try await (nextItems, nextFolders)
             error = nil
         } catch {
             self.error = error.localizedDescription
