@@ -66,7 +66,7 @@ struct MacHome: View {
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     Button { withAnimation(Motion.settle) { page = .dadi } } label: {
-                        Text("દાદી").font(.wordmark(20)).foregroundStyle(.sageDeep)
+                        Text("દાદી").font(.wordmark(20)).foregroundStyle(.sageDeep).inkCentered(.word, size: 20)
                     }
                     .buttonStyle(.plain)
                     .help("Talk to Dadi")

@@ -30,6 +30,7 @@ struct DadiView: View {
             VStack(spacing: 22) {
                 Text("દાદી")
                     .font(.wordmark(stage == .idle ? 84 : 56))
+                    .inkCentered(.word, size: stage == .idle ? 84 : 56)
                     .foregroundStyle(.sageDeep)
                     .shadow(color: .sage.opacity(stage == .idle ? 0 : (glow ? 0.5 : 0.1)), radius: glow ? 24 : 8)
                     .matchedGeometryEffect(id: "wordmark", in: wordmark)

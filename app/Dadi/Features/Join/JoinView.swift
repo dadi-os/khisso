@@ -122,6 +122,7 @@ struct JoinView: View {
         VStack(spacing: 0) {
             Text("દાદી")
                 .font(.wordmark(40))
+                .inkCentered(.word, size: 40)
                 .foregroundStyle(.white)
                 .matchedGeometryEffect(id: "wordmark", in: wordmark)
                 .padding(.top, 8)
@@ -177,6 +178,7 @@ struct JoinView: View {
         VStack(spacing: 22) {
             Text("દાદી")
                 .font(.wordmark(72))
+                .inkCentered(.word, size: 72)
                 .foregroundStyle(.sageDeep)
                 .matchedGeometryEffect(id: "wordmark", in: wordmark)
             VStack(spacing: 8) {
@@ -264,6 +266,7 @@ struct ResolvingWordmark: View {
                     .animation(reduceMotion ? .none : .smooth(duration: 0.9).delay(0.15 + Double(index) * 0.22), value: shown)
             }
         }
+        .inkCentered(.word, size: size)
         .accessibilityLabel("dadi")
         .onAppear { shown = true }
     }

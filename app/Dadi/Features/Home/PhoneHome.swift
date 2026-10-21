@@ -165,6 +165,7 @@ private struct Drawer: View {
         VStack(alignment: .leading, spacing: 0) {
             Text("દાદી")
                 .font(.wordmark(34))
+                .inkCentered(.word, size: 34)
                 .foregroundStyle(.sageDeep)
                 .padding(.horizontal, 20)
                 .padding(.top, 12)
@@ -174,7 +175,7 @@ private struct Drawer: View {
                     Text("દ")
                         .font(.wordmark(21))
                         .foregroundStyle(.sageText)
-                        .padding(.top, 5)
+                        .inkCentered(.letter, size: 21)
                         .frame(width: 34, height: 34)
                         .background(.sage.opacity(page == .dadi ? 0.26 : 0.14), in: .circle)
                     VStack(alignment: .leading, spacing: 1) {
