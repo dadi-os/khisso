@@ -1,1 +1,5 @@
 build/
+app/Signing.xcconfig
+app/Khisso.xcodeproj/
+app/Dadi/Info.plist
+app/build/

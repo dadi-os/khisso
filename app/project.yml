@@ -1,0 +1,67 @@
+name: Khisso
+options:
+  bundleIdPrefix: com.dadi
+  deploymentTarget:
+    iOS: "26.0"
+    macOS: "26.0"
+  createIntermediateGroups: true
+configFiles:
+  Debug: Signing.xcconfig
+  Release: Signing.xcconfig
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+targets:
+  Dadi:
+    type: application
+    scheme:
+      testTargets: [DadiTests]
+    platform: auto
+    supportedDestinations: [iOS, macOS]
+    sources: [Dadi]
+    dependencies:
+      - framework: ../build/Dadi.xcframework
+        embed: false
+      - sdk: libresolv.tbd
+    settings:
+      base:
+        PRODUCT_NAME: dadi
+        PRODUCT_MODULE_NAME: Khisso
+        PRODUCT_BUNDLE_IDENTIFIER: com.dadi.khisso
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        TARGETED_DEVICE_FAMILY: "1"
+        SUPPORTS_MACCATALYST: NO
+        ENABLE_HARDENED_RUNTIME: NO
+    info:
+      path: Dadi/Info.plist
+      properties:
+        CFBundleDisplayName: dadi
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        NSLocalNetworkUsageDescription: dadi connects straight to your box when you are on the same network.
+        NSAppTransportSecurity:
+          NSExceptionDomains:
+            dadi:
+              NSIncludesSubdomains: true
+              NSExceptionAllowsInsecureHTTPLoads: true
+  DadiTests:
+    type: bundle.unit-test
+    platform: auto
+    supportedDestinations: [iOS, macOS]
+    sources: [DadiTests]
+    dependencies:
+      - target: Dadi
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.dadi.khisso.tests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/dadi.app/dadi
+        TEST_HOST[sdk=macosx*]: $(BUILT_PRODUCTS_DIR)/dadi.app/Contents/MacOS/dadi
+        BUNDLE_LOADER: $(TEST_HOST)

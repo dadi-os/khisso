@@ -22,6 +22,11 @@ khisso/
   cmd/dadi/           C interface, built into Dadi.xcframework
   cmd/dadid/          Windows and Linux service
   apple/              DadiTunnel Swift package: the packet-tunnel provider
+  app/                the dadi app for iPhone and Mac (XcodeGen project.yml)
+    Dadi/Types/       Hath API contracts
+    Dadi/Shared/      API clients, Connection (setup code, in-app node), Composer
+    Dadi/Features/    Join, Home (sidebar and threads), Dadi (hand-off), Thread
+    DadiTests/        setup codes, service errors, Hath's event stream
   packaging/linux/    systemd unit
   scripts/            build-xcframework.sh
 ```
@@ -51,6 +56,15 @@ Served on a Unix socket (Linux) or named pipe (Windows).
 `node` is null while dadi is off or the node failed to start; `last_error` then carries the reason. `/provision` gives the device a fresh node identity.
 
 ## Local run + CI/CD
+
+The app (iPhone and Mac) joins dadi with the in-app node, so it needs no paid Apple account: a free Personal Team signs it, and the first join has to happen on the box's network.
+
+```sh
+./scripts/build-xcframework.sh                      # build/Dadi.xcframework, linked by the app
+cp app/Signing.xcconfig.example app/Signing.xcconfig # set DEVELOPMENT_TEAM (gitignored)
+(cd app && xcodegen generate && open Khisso.xcodeproj)
+xcodebuild -project app/Khisso.xcodeproj -scheme Dadi -destination 'platform=macOS,arch=arm64' test
+```
 
 ```sh
 go test ./...
