@@ -1,7 +1,5 @@
-// Package node runs dadi's Tailscale node. The same node runs inside an Apple
-// packet-tunnel extension, where the OS owns the tunnel, routes and DNS, and as
-// a system service on Windows and Linux, where it creates the tunnel and
-// configures routes and DNS itself.
+// Package node runs dadi's Tailscale node inside an Apple packet-tunnel
+// extension, where the OS owns the tunnel, routes and DNS.
 package node
 
 import (
@@ -20,10 +18,8 @@ import (
 	"tailscale.com/ipn/ipnlocal"
 	"tailscale.com/ipn/ipnstate"
 	"tailscale.com/ipn/store"
-	"tailscale.com/net/dns"
 	"tailscale.com/net/netmon"
 	"tailscale.com/net/tsdial"
-	"tailscale.com/net/tstun"
 	"tailscale.com/tsd"
 	"tailscale.com/types/logger"
 	"tailscale.com/types/logid"
@@ -84,13 +80,10 @@ type Status struct {
 	LastError    string `json:"last_error"`
 }
 
-// Network is the tunnel device and the OS integration the engine drives.
+// Network is the tunnel device and router the engine drives.
 type Network struct {
 	Tun    tun.Device
 	Router router.Router
-	// DNS configures the OS resolver; nil leaves it to the caller, as in an
-	// extension whose DNS settings the OS applies.
-	DNS dns.OSConfigurator
 }
 
 // NetworkFunc builds the Network once the node's network monitor and
@@ -102,29 +95,6 @@ type NetworkFunc func(logf logger.Logf, netMon *netmon.Monitor, sys *tsd.System)
 func ExtensionNetwork(dev tun.Device, onRoutes func(RouteSettings)) NetworkFunc {
 	return func(logger.Logf, *netmon.Monitor, *tsd.System) (Network, error) {
 		return Network{Tun: dev, Router: &extensionRouter{onSet: onRoutes}}, nil
-	}
-}
-
-// SystemNetwork creates the tunnel interface tunName and configures the OS's
-// routes and DNS for it. It needs administrator rights (Windows) or root (Linux).
-func SystemNetwork(tunName string) NetworkFunc {
-	return func(logf logger.Logf, netMon *netmon.Monitor, sys *tsd.System) (Network, error) {
-		dev, devName, err := tstun.New(logf, tunName)
-		if err != nil {
-			return Network{}, fmt.Errorf("create tunnel %q: %w", tunName, err)
-		}
-		r, err := router.New(logf, dev, netMon, sys.HealthTracker())
-		if err != nil {
-			dev.Close()
-			return Network{}, fmt.Errorf("router: %w", err)
-		}
-		d, err := dns.NewOSConfigurator(logf, sys.HealthTracker(), sys.ControlKnobs(), devName)
-		if err != nil {
-			r.Close()
-			dev.Close()
-			return Network{}, fmt.Errorf("dns configurator: %w", err)
-		}
-		return Network{Tun: dev, Router: r, DNS: d}, nil
 	}
 }
 
@@ -168,7 +138,6 @@ func Start(cfg Config, network NetworkFunc, logf logger.Logf, onChange func()) (
 	engine, err := wgengine.NewUserspaceEngine(logf, wgengine.Config{
 		Tun:           net.Tun,
 		Router:        net.Router,
-		DNS:           net.DNS,
 		NetMon:        netMon,
 		HealthTracker: sys.HealthTracker(),
 		Metrics:       sys.UserMetricsRegistry(),
