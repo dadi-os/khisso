@@ -58,6 +58,14 @@ struct ServiceClient: Sendable {
         return try await send(req)
     }
 
+    /// PATCH `body` as JSON to `path` and decode the response as `T`.
+    func patch<B: Encodable, T: Decodable>(_ path: String, body: B, timeout: TimeInterval = 30) async throws -> T {
+        var req = request("PATCH", path, timeout: timeout)
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try ServiceJSON.encoder.encode(body)
+        return try await send(req)
+    }
+
     /// POSTs `body` as JSON to `path` for a response with no body (204).
     func send<B: Encodable>(_ path: String, body: B, timeout: TimeInterval = 30) async throws {
         var req = request("POST", path, timeout: timeout)

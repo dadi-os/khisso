@@ -21,6 +21,18 @@ struct YaadClient: Sendable {
         return response.nodes.filter { $0.detail.status != .idea && $0.occurredAt != nil }
     }
 
+    /// POST /planner/query: the day plan's blocks overlapping [from, to), earliest first.
+    func planner(from: Date, to: Date) async throws -> [PlannerBlock] {
+        struct Response: Decodable { let blocks: [PlannerBlock] }
+        let response: Response = try await client.post("/planner/query", body: PlannerQuery(from: from, to: to))
+        return response.blocks
+    }
+
+    /// PATCH /planner/blocks/:id: marks a block done or open again.
+    func setDone(_ done: Bool, block id: String) async throws -> PlannerBlock {
+        try await client.patch("/planner/blocks/\(id)", body: PlannerDone(done: done))
+    }
+
     /// POST /ingest: Yaad reads `text` and remembers what it says.
     func ingest(_ text: String) async throws -> IngestResponse {
         try await client.post("/ingest", body: IngestRequest(text: text, occurredAt: .now), timeout: Self.ingestTimeout)

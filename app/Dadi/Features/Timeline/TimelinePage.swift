@@ -1,10 +1,19 @@
 import SwiftUI
 
-/// The timeline: what's next with a live countdown, a week strip to pick a day,
-/// and the next two weeks of plans from Yaad by day. The + adds to it in plain
-/// words, which Yaad reads into plans.
+/// The timeline opens on the day planner, the only view that shows a single
+/// day. Upcoming shows what's next with a live countdown, a week strip, and the
+/// next two weeks of Yaad's plans by day; its + adds to them in plain words,
+/// which Yaad reads into plans.
 struct TimelinePage: View {
     let yaad: YaadClient
+
+    /// The two ways to look at the timeline.
+    private enum Mode: String, CaseIterable {
+        case day = "Day"
+        case upcoming = "Upcoming"
+    }
+
+    @State private var mode: Mode = .day
 
     @State private var plans: [PlanNode] = []
     @State private var loaded = false
@@ -17,6 +26,26 @@ struct TimelinePage: View {
     private let horizon = 14
 
     var body: some View {
+        VStack(spacing: 12) {
+            Picker("View", selection: $mode.animation(Motion.settle)) {
+                ForEach(Mode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .frame(maxWidth: 300)
+            .padding(.horizontal, 20)
+            switch mode {
+            case .day:
+                PlannerDay(yaad: yaad)
+                    .transition(.opacity)
+            case .upcoming:
+                upcoming
+                    .transition(.opacity)
+            }
+        }
+        .navigationTitle("Timeline")
+    }
+
+    private var upcoming: some View {
         ScrollViewReader { reader in
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
@@ -68,7 +97,6 @@ struct TimelinePage: View {
                 .presentationDetents([.medium])
                 .presentationBackground(.thinMaterial)
         }
-        .navigationTitle("Timeline")
         .task { await load() }
     }
 

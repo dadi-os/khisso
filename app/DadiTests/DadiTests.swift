@@ -97,3 +97,48 @@ private struct LineSequence: AsyncSequence, Sendable {
 private extension Array where Element == String {
     var async: LineSequence { LineSequence(lines: self) }
 }
+
+/// The planner lays a day out as thaali does: lanes for overlaps, open time
+/// between blocks, and what is now and next.
+struct PlannerLayoutTests {
+    private let calendar: Calendar = {
+        var c = Calendar(identifier: .gregorian)
+        c.timeZone = TimeZone(identifier: "America/Detroit")!
+        return c
+    }()
+
+    private func block(_ id: String, _ start: String, _ end: String) -> PlannerBlock {
+        let day = "2026-10-21T"
+        func date(_ time: String) -> Date { try! Date("\(day)\(time):00-04:00", strategy: .iso8601) }
+        return PlannerBlock(id: id, startAt: date(start), endAt: date(end), title: id, note: nil, kind: "study", icon: "book", fixed: false, doneAt: nil)
+    }
+
+    private var day: Date { try! Date("2026-10-21T12:00:00-04:00", strategy: .iso8601) }
+
+    @Test func overlapsGetSideBySideLanes() {
+        let segments = PlannerLayout.segments([block("a", "09:00", "10:00"), block("b", "09:30", "10:30"), block("c", "11:00", "12:00")], on: day, calendar: calendar)
+        #expect(segments.map(\.id) == ["a", "b", "c"])
+        #expect(segments.map(\.lane) == [0, 1, 0])
+        #expect(segments.map(\.lanes) == [2, 2, 1])
+        #expect(segments[0].startMin == 540)
+    }
+
+    @Test func openTimeOfTenMinutesOrMoreIsAGap() {
+        let segments = PlannerLayout.segments([block("a", "09:00", "10:00"), block("b", "10:05", "10:30"), block("c", "11:00", "12:00")], on: day, calendar: calendar)
+        #expect(PlannerLayout.gaps(segments) == [PlannerLayout.Gap(startMin: 630, endMin: 660)])
+    }
+
+    @Test func findsNowAndNext() {
+        let segments = PlannerLayout.segments([block("a", "09:00", "10:00"), block("b", "11:00", "12:00")], on: day, calendar: calendar)
+        let during = PlannerLayout.nowAndNext(segments, at: 570)
+        #expect(during.current?.id == "a" && during.next?.id == "b")
+        let between = PlannerLayout.nowAndNext(segments, at: 630)
+        #expect(between.current == nil && between.next?.id == "b")
+    }
+
+    @Test func spansReadAsHoursAndMinutes() {
+        #expect(PlannerLayout.span(80) == "1 h 20 min")
+        #expect(PlannerLayout.span(45) == "45 min")
+        #expect(PlannerLayout.span(120) == "2 h")
+    }
+}
