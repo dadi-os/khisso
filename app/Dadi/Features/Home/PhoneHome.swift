@@ -66,6 +66,9 @@ struct PhoneHome: View {
             case .ghar:
                 GharPage(ghar: services.ghar)
                     .transition(.opacity)
+            case .chaavi:
+                ChaaviPage(chaavi: services.chaavi)
+                    .transition(.opacity)
             }
         }
     }
@@ -91,6 +94,8 @@ struct PhoneHome: View {
                     Text("Timeline")
                 case .ghar:
                     Text("Ghar")
+                case .chaavi:
+                    Text("Chaavi")
                 }
             }
             .font(.headline)
@@ -197,6 +202,7 @@ private struct Drawer: View {
             VStack(spacing: 2) {
                 pageRow("Timeline", systemImage: "calendar", page: .timeline)
                 pageRow("Ghar", systemImage: "house", page: .ghar)
+                pageRow("Chaavi", systemImage: "key", page: .chaavi)
             }
             .padding(.horizontal, 8)
             .padding(.top, 6)

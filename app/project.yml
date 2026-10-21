@@ -50,6 +50,7 @@ targets:
         UILaunchScreen: {}
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
+        NSFaceIDUsageDescription: dadi asks for Face ID before showing or copying a password from Chaavi.
         NSCameraUsageDescription: dadi scans the setup code your box shows when you add this device.
         NSLocalNetworkUsageDescription: dadi connects straight to your box when you are on the same network.
         NSAppTransportSecurity:

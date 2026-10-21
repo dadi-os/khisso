@@ -11,6 +11,7 @@ struct HomeView: View {
         case thread(String)
         case timeline
         case ghar
+        case chaavi
     }
 
     let services: Services
