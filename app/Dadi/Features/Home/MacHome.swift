@@ -18,6 +18,8 @@ struct MacHome: View {
                     .tag(HomeView.Page.dadi)
                 Label("Timeline", systemImage: "calendar")
                     .tag(HomeView.Page.timeline)
+                Label("Ghar", systemImage: "house")
+                    .tag(HomeView.Page.ghar)
                 Section("Agents") {
                     ForEach(store.threads) { thread in
                         ThreadRow(thread: thread, running: store.running.contains(thread.agentId), selected: false)
@@ -55,6 +57,9 @@ struct MacHome: View {
                         .transition(.opacity)
                 case .timeline:
                     TimelinePage(yaad: services.yaad)
+                        .transition(.opacity)
+                case .ghar:
+                    GharPage(ghar: services.ghar)
                         .transition(.opacity)
                 }
             }

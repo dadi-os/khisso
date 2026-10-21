@@ -58,6 +58,18 @@ struct ServiceClient: Sendable {
         return try await send(req)
     }
 
+    /// POSTs `body` as JSON to `path` for a response with no body (204).
+    func send<B: Encodable>(_ path: String, body: B, timeout: TimeInterval = 30) async throws {
+        var req = request("POST", path, timeout: timeout)
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try ServiceJSON.encoder.encode(body)
+        let (data, response) = try await session.data(for: req)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(status) else {
+            throw Self.error(status: status, body: data)
+        }
+    }
+
     /// Opens a Server-Sent Events stream at `path` and returns its lines. The
     /// request has no timeout; it ends when the server or the caller closes it.
     func lines(_ path: String) async throws -> AsyncLineSequence<URLSession.AsyncBytes> {

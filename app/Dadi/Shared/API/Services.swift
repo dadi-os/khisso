@@ -4,9 +4,11 @@ import Foundation
 struct Services: Sendable {
     let hath: HathClient
     let yaad: YaadClient
+    let ghar: GharClient
 
     init(session: URLSession) {
         hath = HathClient(session: session)
         yaad = YaadClient(session: session)
+        ghar = GharClient(session: session)
     }
 }

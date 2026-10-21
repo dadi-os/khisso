@@ -1,13 +1,13 @@
 #if os(iOS)
 import SwiftUI
 
-/// The iPhone's Home: one page at a time on the field, with a glass drawer
-/// underneath that the page slides off of. Swipe from the left edge or tap the
-/// menu button to open it; the page follows the finger and springs to open or
-/// closed by where and how fast it was let go.
+/// The iPhone's Home: one page at a time on the field, with the drawer lying
+/// underneath. Swipe from the left edge or tap the menu button and the page
+/// slides right to uncover it, following the finger and springing open or
+/// closed by where and how fast it was let go. Opening it puts the keyboard
+/// away; a swipe left anywhere on the page, or a tap on it, closes it.
 struct PhoneHome: View {
     let services: Services
-    let nodeName: String?
     let wordmark: Namespace.ID
     let store: HomeStore
     @Binding var page: HomeView.Page
@@ -15,7 +15,6 @@ struct PhoneHome: View {
     @State private var open = false
     @State private var drag: CGFloat = 0
     @State private var opened = 0
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// How far from the left edge a swipe has to start to open the drawer.
     private let edge: CGFloat = 32
@@ -27,22 +26,19 @@ struct PhoneHome: View {
             let progress = shift / width
             ZStack(alignment: .leading) {
                 FieldBloom()
-                Drawer(store: store, nodeName: nodeName, page: page, choose: choose)
+                Drawer(store: store, page: page, choose: choose)
                     .frame(width: width)
-                    .offset(x: (progress - 1) * 40)
-                    .opacity(progress)
+                    .opacity(progress > 0 ? 1 : 0)
                 pageView
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background { FieldBloom() }
-                    .clipShape(.rect(cornerRadius: progress * 44, style: .continuous))
-                    .shadow(color: .black.opacity(0.18 * progress), radius: 24, x: -6)
                     .overlay {
-                        Color.black.opacity(0.12 * progress)
-                            .clipShape(.rect(cornerRadius: progress * 44, style: .continuous))
+                        Color.black.opacity(0.18 * progress)
+                            .ignoresSafeArea()
                             .allowsHitTesting(open)
                             .onTapGesture { set(open: false) }
                     }
-                    .scaleEffect(reduceMotion ? 1 : 1 - progress * 0.06, anchor: .leading)
+                    .shadow(color: .black.opacity(0.14 * progress), radius: 18, x: -4)
                     .offset(x: shift)
             }
             .gesture(drawerDrag(width: width))
@@ -67,6 +63,9 @@ struct PhoneHome: View {
             case .timeline:
                 TimelinePage(yaad: services.yaad)
                     .transition(.opacity)
+            case .ghar:
+                GharPage(ghar: services.ghar)
+                    .transition(.opacity)
             }
         }
     }
@@ -90,6 +89,8 @@ struct PhoneHome: View {
                     Text(store.name(of: agentId))
                 case .timeline:
                     Text("Timeline")
+                case .ghar:
+                    Text("Ghar")
                 }
             }
             .font(.headline)
@@ -122,6 +123,7 @@ struct PhoneHome: View {
     }
 
     private func set(open next: Bool) {
+        if next { dismissKeyboard() }
         if next != open { opened += 1 }
         withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) {
             open = next
@@ -136,6 +138,7 @@ struct PhoneHome: View {
             .onChanged { value in
                 guard open || value.startLocation.x < edge else { return }
                 guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                if !open && drag == 0 { dismissKeyboard() }
                 drag = value.translation.width
             }
             .onEnded { value in
@@ -146,11 +149,15 @@ struct PhoneHome: View {
     }
 }
 
-/// The drawer: Talk to Dadi, then every agent thread, with this device's name
-/// and connection at the foot, on glass over the field.
+/// Puts the keyboard away, whichever field has it.
+private func dismissKeyboard() {
+    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+}
+
+/// The drawer: Talk to Dadi, dadi's pages, then every agent thread, on glass
+/// over the field.
 private struct Drawer: View {
     let store: HomeStore
-    let nodeName: String?
     let page: HomeView.Page
     let choose: (HomeView.Page) -> Void
 
@@ -164,14 +171,20 @@ private struct Drawer: View {
                 .padding(.bottom, 14)
             Button { choose(.dadi) } label: {
                 HStack(spacing: 12) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(page == .dadi ? Color.bone : .sageDeep)
+                    Text("દ")
+                        .font(.wordmark(21))
+                        .foregroundStyle(.sageText)
+                        .padding(.top, 5)
                         .frame(width: 34, height: 34)
-                        .background(page == .dadi ? AnyShapeStyle(Color.sageDeep) : AnyShapeStyle(Color.sage.opacity(0.16)), in: .circle)
-                    Text("Talk to Dadi")
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(.ink)
+                        .background(.sage.opacity(page == .dadi ? 0.26 : 0.14), in: .circle)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Talk to Dadi")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(.ink)
+                        Text("Start something new")
+                            .font(.footnote)
+                            .foregroundStyle(.inkFaint)
+                    }
                     Spacer()
                 }
                 .padding(.horizontal, 12)
@@ -182,6 +195,7 @@ private struct Drawer: View {
             .padding(.horizontal, 8)
             VStack(spacing: 2) {
                 pageRow("Timeline", systemImage: "calendar", page: .timeline)
+                pageRow("Ghar", systemImage: "house", page: .ghar)
             }
             .padding(.horizontal, 8)
             .padding(.top, 6)
@@ -215,7 +229,6 @@ private struct Drawer: View {
                 .padding(.bottom, 12)
             }
             .scrollIndicators(.hidden)
-            footer
         }
         .frame(maxHeight: .infinity, alignment: .top)
         .background {
@@ -244,26 +257,6 @@ private struct Drawer: View {
             .background(page == target ? Color.sage.opacity(0.14) : .clear, in: .rect(cornerRadius: 16))
         }
         .buttonStyle(.plain)
-    }
-
-    private var footer: some View {
-        HStack(spacing: 10) {
-            Circle()
-                .fill(store.liveError == nil ? Color.sage : .clay)
-                .frame(width: 8, height: 8)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(nodeName ?? "This iPhone")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.ink)
-                Text(store.liveError ?? "Online on dadi")
-                    .font(.caption)
-                    .foregroundStyle(.inkMuted)
-                    .lineLimit(2)
-            }
-            Spacer()
-        }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 14)
     }
 }
 #endif

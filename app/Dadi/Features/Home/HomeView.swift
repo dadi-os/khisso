@@ -10,6 +10,7 @@ struct HomeView: View {
         case dadi
         case thread(String)
         case timeline
+        case ghar
     }
 
     let services: Services
@@ -22,7 +23,7 @@ struct HomeView: View {
     var body: some View {
         Group {
             #if os(iOS)
-            PhoneHome(services: services, nodeName: nodeName, wordmark: wordmark, store: store, page: $page)
+            PhoneHome(services: services, wordmark: wordmark, store: store, page: $page)
             #else
             MacHome(services: services, nodeName: nodeName, wordmark: wordmark, store: store, page: $page)
             #endif
