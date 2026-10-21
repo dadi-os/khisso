@@ -12,6 +12,7 @@ struct HomeView: View {
 
     let hath: HathClient
     let nodeName: String?
+    let wordmark: Namespace.ID
 
     @State private var store = HomeStore()
     @State private var page: Page? = .dadi
@@ -78,7 +79,7 @@ struct HomeView: View {
         } detail: {
             switch page {
             case .dadi, .none:
-                DadiView(hath: hath) { agentId in page = .thread(agentId) }
+                DadiView(hath: hath, wordmark: wordmark) { agentId in page = .thread(agentId) }
             case .thread(let agentId):
                 ThreadView(hath: hath, agentId: agentId, name: store.name(of: agentId), live: store.live)
                     .id(agentId)

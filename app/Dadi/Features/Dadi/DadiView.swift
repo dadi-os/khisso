@@ -5,6 +5,7 @@ import SwiftUI
 /// done the first agent's thread opens and the words are gone from here.
 struct DadiView: View {
     let hath: HathClient
+    let wordmark: Namespace.ID
     /// Opens the thread of the agent the router handed off to.
     let open: (String) -> Void
 
@@ -16,8 +17,9 @@ struct DadiView: View {
         VStack(spacing: 20) {
             Spacer()
             Text("દાદી")
-                .font(.system(size: handingOff == nil ? 60 : 42, weight: .medium))
-                .foregroundStyle(.tint)
+                .font(.wordmark(handingOff == nil ? 72 : 48))
+                .foregroundStyle(.sageDeep)
+                .matchedGeometryEffect(id: "wordmark", in: wordmark)
                 .animation(.smooth, value: handingOff)
             if let words = handingOff {
                 Text(words)

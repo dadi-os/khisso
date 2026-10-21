@@ -1,49 +1,39 @@
 import SwiftUI
 
-/// dadi for iPhone and Mac. The root shows Join until this device has a setup
-/// code, then Home once Hath answers.
+/// dadi for iPhone and Mac. The root moves through Join, Connecting and Home
+/// as the connection changes, carrying the દાદી wordmark between them.
 @main
 struct DadiApp: App {
     @State private var connection = Connection()
     @Environment(\.scenePhase) private var scenePhase
+    @Namespace private var wordmark
 
     var body: some Scene {
         WindowGroup {
-            Group {
+            ZStack {
                 switch connection.state {
                 case .needsSetup:
-                    JoinView(connection: connection)
-                case .connecting(let detail):
-                    ContentUnavailableView {
-                        Label("Connecting to dadi", systemImage: "network")
-                    } description: {
-                        Text(detail ?? "Logging in to your box.")
-                    } actions: {
-                        Button("Forget this device", role: .destructive) { connection.forget() }
-                    }
-                case .failed(let message):
-                    ContentUnavailableView {
-                        Label("Can't reach dadi", systemImage: "exclamationmark.triangle")
-                    } description: {
-                        Text(message)
-                    } actions: {
-                        Button("Try again") { connection.retry() }
-                            .buttonStyle(.glassProminent)
-                        Button("Forget this device", role: .destructive) { connection.forget() }
-                    }
+                    JoinView(connection: connection, wordmark: wordmark)
+                        .transition(.opacity)
+                case .connecting, .failed:
+                    ConnectingView(connection: connection, wordmark: wordmark)
+                        .transition(.opacity)
                 case .online:
                     if let hath = connection.hath {
-                        HomeView(hath: hath, nodeName: connection.nodeName)
+                        HomeView(hath: hath, nodeName: connection.nodeName, wordmark: wordmark)
+                            .transition(.opacity.combined(with: .scale(scale: 1.02)))
                     }
                 }
             }
+            .animation(Motion.settle, value: connection.state)
             .task { connection.start() }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active { connection.refresh() }
             }
         }
         #if os(macOS)
-        .defaultSize(width: 1100, height: 720)
+        .defaultSize(width: 1180, height: 760)
+        .windowToolbarStyle(.unified)
         #endif
     }
 }
