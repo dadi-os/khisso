@@ -35,6 +35,13 @@ struct HathClient: Sendable {
         return response.messages
     }
 
+    /// GET /agents: every agent, active and retired, each with its parent.
+    func agents() async throws -> [AgentRecord] {
+        struct Response: Decodable { let agents: [AgentRecord] }
+        let response: Response = try await client.get("/agents")
+        return response.agents
+    }
+
     /// POST /router: hand words to the router, which sends them on as Ankur.
     func route(_ content: String) async throws -> PostRouterResponse {
         try await client.post("/router", body: RouterRequest(content: content), timeout: Self.routerTimeout)

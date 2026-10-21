@@ -202,27 +202,6 @@ private enum Tone {
     }
 }
 
-/// The SF Symbol for a planner glyph name.
-private func symbol(_ icon: String) -> String {
-    switch icon {
-    case "sun": "sun.max"
-    case "cup": "cup.and.saucer"
-    case "fork": "fork.knife"
-    case "book": "book"
-    case "pulse": "waveform.path.ecg"
-    case "drop": "drop"
-    case "brief": "briefcase"
-    case "leaf": "leaf"
-    case "moon": "moon"
-    case "flag": "flag"
-    case "pencil": "pencil"
-    case "walk": "figure.walk"
-    case "users": "person.2"
-    case "phone": "phone"
-    default: "circle"
-    }
-}
-
 /// One block on the axis: its glyph, title and time, toned by kind, faded
 /// once it is settled.
 private struct BlockView: View {
@@ -234,7 +213,7 @@ private struct BlockView: View {
         let tone = Tone(kind: block.kind)
         let settled = PlannerLayout.isSettled(block, now: .now)
         HStack(alignment: .top, spacing: 8) {
-            Image(systemName: block.doneAt != nil ? "checkmark.circle.fill" : symbol(block.icon))
+            Image(systemName: block.doneAt != nil ? "checkmark.circle.fill" : PlannerLayout.symbol(block.icon))
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(tone.ink)
                 .frame(width: 18)
@@ -332,7 +311,7 @@ private struct BlockCard: View {
         let shown = current ?? block
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 12) {
-                Image(systemName: symbol(shown.icon))
+                Image(systemName: PlannerLayout.symbol(shown.icon))
                     .font(.title3.weight(.semibold))
                     .foregroundStyle(Tone(kind: shown.kind).ink)
                     .frame(width: 44, height: 44)

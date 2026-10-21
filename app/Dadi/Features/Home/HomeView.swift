@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// Home: Talk to Dadi and every agent thread, live from Hath. The iPhone shows
-/// one page at a time with a drawer (PhoneHome); the Mac shows the sidebar
-/// beside the page (MacHome). Home owns the event stream that keeps threads,
+/// one page at a time with a drawer and opens on Talk to Dadi (PhoneHome); the
+/// Mac shows the sidebar beside the page and opens on its tiles (MacHome). Home owns the event stream that keeps threads,
 /// running lanes and the open thread current.
 struct HomeView: View {
     /// The page Home shows.
@@ -13,6 +13,11 @@ struct HomeView: View {
         case ghar
         case chaavi
         case system
+        #if os(macOS)
+        case home
+        case agents
+        case memory
+        #endif
     }
 
     let services: Services
@@ -20,7 +25,11 @@ struct HomeView: View {
     let wordmark: Namespace.ID
 
     @State private var store = HomeStore()
+    #if os(iOS)
     @State private var page: Page = .dadi
+    #else
+    @State private var page: Page = .home
+    #endif
 
     var body: some View {
         Group {

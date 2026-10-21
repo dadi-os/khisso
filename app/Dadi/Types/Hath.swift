@@ -140,3 +140,38 @@ enum HathEvent: Decodable, Sendable, Equatable {
         }
     }
 }
+
+/// One agent from GET /agents: the flat roster, each naming the agent that
+/// made it.
+struct AgentRecord: Decodable, Sendable, Hashable, Identifiable {
+    /// What an agent is doing: thinking through work, or in a conversation.
+    struct Running: Decodable, Sendable, Hashable {
+        let reasoning: Bool
+        let conversation: Bool
+    }
+
+    /// The browsers and terminals an agent holds open.
+    struct Sessions: Decodable, Sendable, Hashable {
+        struct Terminal: Decodable, Sendable, Hashable {
+            let id: String
+            let lastCommand: String?
+        }
+
+        let browsers: [Int]
+        let terminals: [Terminal]
+    }
+
+    let id: String
+    let name: String
+    let systemPrompt: String
+    /// Nil for a top-level agent.
+    let parentAgentId: String?
+    /// False once retired.
+    let active: Bool
+    let running: Running
+    let sessions: Sessions
+    let createdAt: Date
+    let updatedAt: Date
+
+    var isRunning: Bool { running.reasoning || running.conversation }
+}

@@ -209,25 +209,26 @@ struct SystemPage: View {
 }
 
 /// An animated ring for a percentage, sage until it runs hot.
-private struct Ring: View {
+struct Ring: View {
     let title: String
     let percent: Double
+    var diameter: CGFloat = 74
 
     var body: some View {
         VStack(spacing: 8) {
             ZStack {
-                Circle().stroke(.sage.opacity(0.16), lineWidth: 9)
+                Circle().stroke(.sage.opacity(0.16), lineWidth: diameter / 8.2)
                 Circle()
                     .trim(from: 0, to: percent / 100)
-                    .stroke(percent > 85 ? Color.danger : percent > 65 ? .clay : .sageDeep, style: StrokeStyle(lineWidth: 9, lineCap: .round))
+                    .stroke(percent > 85 ? Color.danger : percent > 65 ? .clay : .sageDeep, style: StrokeStyle(lineWidth: diameter / 8.2, lineCap: .round))
                     .rotationEffect(.degrees(-90))
                     .animation(Motion.settle, value: percent)
                 Text("\(Int(percent.rounded()))%")
-                    .font(.subheadline.weight(.bold).monospacedDigit())
+                    .font(.system(size: diameter / 5, weight: .bold).monospacedDigit())
                     .foregroundStyle(.ink)
                     .contentTransition(.numericText())
             }
-            .frame(width: 74, height: 74)
+            .frame(width: diameter, height: diameter)
             Text(title).font(.caption.weight(.semibold)).foregroundStyle(.inkMuted)
         }
         .frame(maxWidth: .infinity)

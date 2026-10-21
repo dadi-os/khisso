@@ -1,6 +1,7 @@
 import Foundation
 
-/// Yaad, dadi's memory: plans for the timeline and ingest for new memories.
+/// Yaad, dadi's memory: plans for the timeline, the memory network, and ingest
+/// for new memories.
 struct YaadClient: Sendable {
     /// Yaad's address on dadi, served by Caddy on the box.
     static let baseURL = URL(string: "http://yaad.dadi")!
@@ -31,6 +32,11 @@ struct YaadClient: Sendable {
     /// PATCH /planner/blocks/:id: marks a block done or open again.
     func setDone(_ done: Bool, block id: String) async throws -> PlannerBlock {
         try await client.patch("/planner/blocks/\(id)", body: PlannerDone(done: done))
+    }
+
+    /// POST /graph: the whole memory network.
+    func graph() async throws -> MemoryGraph {
+        try await client.post("/graph", body: EmptyBody())
     }
 
     /// POST /ingest: Yaad reads `text` and remembers what it says.

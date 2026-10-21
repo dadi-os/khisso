@@ -1,8 +1,9 @@
 #if os(macOS)
 import SwiftUI
 
-/// The Mac's Home: the sidebar with Talk to Dadi and every agent thread beside
-/// the open page, on the field.
+/// The Mac's Home: the sidebar with the tiles, Talk to Dadi, every page and
+/// every agent thread beside the open page, on the field. The Go menu reaches
+/// each page from the keyboard.
 struct MacHome: View {
     let services: Services
     let nodeName: String?
@@ -13,9 +14,15 @@ struct MacHome: View {
     var body: some View {
         NavigationSplitView {
             List(selection: Binding<HomeView.Page?>(get: { page }, set: { next in if let next { withAnimation(Motion.settle) { page = next } } })) {
+                Label("Home", systemImage: "square.grid.2x2")
+                    .tag(HomeView.Page.home)
                 Label("Talk to Dadi", systemImage: "sparkles")
                     .font(.body.weight(.semibold))
                     .tag(HomeView.Page.dadi)
+                Label("Agents", systemImage: "point.3.connected.trianglepath.dotted")
+                    .tag(HomeView.Page.agents)
+                Label("Memory", systemImage: "brain")
+                    .tag(HomeView.Page.memory)
                 Label("Timeline", systemImage: "calendar")
                     .tag(HomeView.Page.timeline)
                 Label("Ghar", systemImage: "house")
@@ -53,6 +60,15 @@ struct MacHome: View {
             ZStack {
                 FieldBloom()
                 switch page {
+                case .home:
+                    TileHome(services: services, running: store.running) { next in withAnimation(Motion.settle) { page = next } }
+                        .transition(.opacity)
+                case .agents:
+                    AgentsPage(hath: services.hath, running: store.running) { agentId in withAnimation(Motion.settle) { page = .thread(agentId) } }
+                        .transition(.opacity)
+                case .memory:
+                    MemoryPage(yaad: services.yaad)
+                        .transition(.opacity)
                 case .dadi:
                     DadiView(hath: services.hath, wordmark: wordmark) { agentId in withAnimation(Motion.settle) { page = .thread(agentId) } }
                 case .thread(let agentId):
@@ -83,6 +99,39 @@ struct MacHome: View {
                 }
             }
         }
+        .focusedSceneValue(\.page, $page)
+    }
+}
+
+extension FocusedValues {
+    /// The page the focused window shows, for the Go menu.
+    @Entry var page: Binding<HomeView.Page>?
+}
+
+/// The Go menu: every page from the keyboard, and New Conversation for Talk to Dadi.
+struct GoCommands: Commands {
+    @FocusedValue(\.page) private var page
+
+    var body: some Commands {
+        CommandGroup(replacing: .newItem) {
+            go("New Conversation", .dadi, key: "n")
+        }
+        CommandMenu("Go") {
+            go("Home", .home, key: "0")
+            Divider()
+            go("Agents", .agents, key: "1")
+            go("Memory", .memory, key: "2")
+            go("Timeline", .timeline, key: "3")
+            go("Ghar", .ghar, key: "4")
+            go("Chaavi", .chaavi, key: "5")
+            go("System", .system, key: "6")
+        }
+    }
+
+    private func go(_ title: String, _ target: HomeView.Page, key: KeyEquivalent) -> some View {
+        Button(title) { withAnimation(Motion.settle) { page?.wrappedValue = target } }
+            .keyboardShortcut(key)
+            .disabled(page == nil)
     }
 }
 

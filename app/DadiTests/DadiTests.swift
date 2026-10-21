@@ -170,3 +170,41 @@ struct FolderTreeTests {
         #expect(!FolderTree.isWithin("Developments", "Development"))
     }
 }
+
+/// The force layout settles, keeps linked nodes near, and starts known nodes where they were.
+struct ForceLayoutTests {
+    private func distance(_ a: CGPoint, _ b: CGPoint) -> Double { hypot(a.x - b.x, a.y - b.y) }
+
+    @Test func linksRestNearTheirLengthAndNodesStayApart() {
+        var layout = ForceLayout(count: 4, links: [ForceLayout.Link(a: 0, b: 1), ForceLayout.Link(a: 2, b: 3)])
+        var steps = 0
+        while !layout.settled && steps < 2000 {
+            layout.step()
+            steps += 1
+        }
+        #expect(layout.settled)
+        let linked = distance(layout.positions[0], layout.positions[1])
+        #expect(abs(linked - layout.linkLength) < layout.linkLength / 2)
+        for a in 0..<4 {
+            for b in (a + 1)..<4 { #expect(distance(layout.positions[a], layout.positions[b]) > 10) }
+        }
+    }
+
+    @Test func seededNodesStartWhereTheyWere() {
+        let layout = ForceLayout(count: 2, links: [], seed: [1: CGPoint(x: 300, y: -40)], alpha: 0.25)
+        #expect(layout.positions[1] == CGPoint(x: 300, y: -40))
+        #expect(layout.alpha == 0.25)
+    }
+
+    @Test func aMemorySizedNetworkSettlesQuickly() {
+        let count = 1050
+        let links = (1..<count).map { ForceLayout.Link(a: $0, b: ($0 * 7) % $0) }
+        var layout = ForceLayout(count: count, links: links)
+        let clock = ContinuousClock()
+        let took = clock.measure {
+            while !layout.settled { layout.step() }
+        }
+        #expect(layout.positions.allSatisfy { $0.x.isFinite && $0.y.isFinite })
+        print("force layout of \(count) nodes settled in \(took)")
+    }
+}

@@ -96,4 +96,25 @@ enum PlannerLayout {
         let parts = [minutes / 60 > 0 ? "\(minutes / 60) h" : nil, minutes % 60 > 0 ? "\(minutes % 60) min" : nil].compactMap { $0 }
         return parts.isEmpty ? "0 min" : parts.joined(separator: " ")
     }
+
+    /// The SF Symbol for a planner glyph name.
+    static func symbol(_ icon: String) -> String {
+        switch icon {
+        case "sun": "sun.max"
+        case "cup": "cup.and.saucer"
+        case "fork": "fork.knife"
+        case "book": "book"
+        case "pulse": "waveform.path.ecg"
+        case "drop": "drop"
+        case "brief": "briefcase"
+        case "leaf": "leaf"
+        case "moon": "moon"
+        case "flag": "flag"
+        case "pencil": "pencil"
+        case "walk": "figure.walk"
+        case "users": "person.2"
+        case "phone": "phone"
+        default: "circle"
+        }
+    }
 }

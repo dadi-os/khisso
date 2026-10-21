@@ -32,8 +32,9 @@ struct DadiApp: App {
             }
         }
         #if os(macOS)
-        .defaultSize(width: 1180, height: 760)
+        .defaultSize(width: 1280, height: 820)
         .windowToolbarStyle(.unified)
+        .commands { GoCommands() }
         #endif
     }
 }
