@@ -113,6 +113,7 @@ struct ThreadView: View {
                     Text(InlineMarkdown.attributed(message.content))
                         .font(.body)
                         .foregroundStyle(.bone)
+                        .tint(.bone)
                         .textSelection(.enabled)
                         .padding(.horizontal, 15)
                         .padding(.vertical, 10)
