@@ -30,18 +30,29 @@ final class Connection {
 
     private var node: InAppNode?
     private var checking = false
+    /// The node changed while a check was running, so another follows it.
+    private var recheck = false
     /// Health checks missed in a row while online.
     private var misses = 0
+    /// When Hath last stopped answering; nil while it answers.
+    private var unansweredSince: ContinuousClock.Instant?
 
-    /// How often an online connection checks Hath.
+    /// How often an online connection checks Hath, and how long one check waits.
     private static let onlineEvery: Duration = .seconds(10)
-    /// The first and longest waits between checks while not online.
-    private static let firstRetry: Duration = .seconds(2)
-    private static let longestRetry: Duration = .seconds(15)
+    private static let onlineTimeout: TimeInterval = 6
+    /// How often a connection that is not online yet checks Hath, and how long
+    /// one check waits: short, so the moment the node can reach the box the
+    /// app is online, not one backoff later.
+    private static let connectingEvery: Duration = .seconds(1)
+    private static let connectingTimeout: TimeInterval = 3
+    /// How often a node that failed to start is started again.
+    private static let failedEvery: Duration = .seconds(5)
     /// Checks missed in a row before an online connection says it is reconnecting.
     private static let allowedMisses = 2
-    /// Checks missed in a row before the node is restarted.
-    private static let restartAfter = 6
+    /// How long Hath may be quiet while connecting before the screen says so.
+    private static let quietBeforeSaying: Duration = .seconds(5)
+    /// How long Hath may be quiet before the node is restarted.
+    private static let restartAfter: Duration = .seconds(60)
     private let log = Logger(subsystem: "com.dadi.khisso", category: "connection")
 
     /// Loads the saved setup code and starts the node, or asks for a code.
@@ -86,27 +97,27 @@ final class Connection {
         start()
     }
 
-    /// Checks Hath until cancelled: every ten seconds while online, and with a
-    /// delay growing from two to fifteen seconds while not, restarting a node
-    /// that failed to start or that six checks in a row could not get through.
+    /// Checks Hath until cancelled: every ten seconds while online and every
+    /// second while not, restarting a node that failed to start, or one Hath
+    /// has not answered through for a minute.
     func watch() async {
-        var wait = Self.firstRetry
         while !Task.isCancelled {
+            let wait: Duration
             switch state {
             case .needsSetup:
-                wait = Self.firstRetry
+                wait = Self.connectingEvery
             case .failed:
                 retry()
-                wait = min(wait * 2, Self.longestRetry)
+                wait = Self.failedEvery
             case .connecting, .online:
-                let wasOnline = state == .online
-                if misses >= Self.restartAfter {
-                    log.info("restarting the node after \(self.misses) missed checks")
+                if let since = unansweredSince, ContinuousClock.now - since >= Self.restartAfter {
+                    log.info("restarting the node after a minute without an answer from Hath")
+                    unansweredSince = nil
                     misses = 0
                     retry()
                 }
                 await check()
-                wait = state == .online ? Self.onlineEvery : (wasOnline ? Self.firstRetry : min(wait * 2, Self.longestRetry))
+                wait = state == .online ? Self.onlineEvery : Self.connectingEvery
             }
             do { try await Task.sleep(for: wait) } catch { return }
         }
@@ -120,6 +131,8 @@ final class Connection {
 
     private func run(_ code: SetupCode) throws {
         state = .connecting(detail: nil)
+        unansweredSince = nil
+        misses = 0
         nodeName = code.nodeName
         let started = try InAppNode.start(code: code, stateDirectory: try Self.stateDirectory()) { [weak self] in
             Task { @MainActor in self?.nodeChanged() }
@@ -148,24 +161,43 @@ final class Connection {
         Task { await check() }
     }
 
-    /// Asks Hath for `/health`. A miss while connecting says why; while online
-    /// it is forgiven until `allowedMisses` in a row, since one dropped request
-    /// is not a lost box.
+    /// Asks Hath for `/health`. A check asked for while one runs is not
+    /// dropped: it runs as soon as that one ends, so the node coming up mid-check
+    /// is noticed at once. While connecting, a miss is only spoken after a few
+    /// quiet seconds; while online it is forgiven until `allowedMisses` in a
+    /// row, since one dropped request is not a lost box.
     private func check() async {
-        guard let hath = services?.hath, !checking else { return }
+        guard let hath = services?.hath else { return }
+        guard !checking else {
+            recheck = true
+            return
+        }
         checking = true
         defer { checking = false }
-        do {
-            _ = try await hath.health(timeout: 6)
-            misses = 0
-            state = .online
-        } catch {
-            misses += 1
-            log.error("hath health: \(error.localizedDescription, privacy: .public)")
-            if state != .online || misses >= Self.allowedMisses {
-                state = .connecting(detail: "dadi isn't answering yet: \(error.localizedDescription)")
+        repeat {
+            recheck = false
+            let online = state == .online
+            do {
+                _ = try await hath.health(timeout: online ? Self.onlineTimeout : Self.connectingTimeout)
+                misses = 0
+                unansweredSince = nil
+                state = .online
+            } catch is CancellationError {
+                return
+            } catch {
+                misses += 1
+                let since = unansweredSince ?? .now
+                unansweredSince = since
+                log.error("hath health: \(error.localizedDescription, privacy: .public)")
+                if online {
+                    if misses >= Self.allowedMisses {
+                        state = .connecting(detail: "dadi isn't answering: \(error.localizedDescription)")
+                    }
+                } else if ContinuousClock.now - since >= Self.quietBeforeSaying {
+                    state = .connecting(detail: "dadi isn't answering yet: \(error.localizedDescription)")
+                }
             }
-        }
+        } while recheck && state != .online
     }
 
     private func stopNode() {
