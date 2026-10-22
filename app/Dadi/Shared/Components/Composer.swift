@@ -1,4 +1,6 @@
+import Combine
 import SwiftUI
+import UIKit
 
 /// The message field and its send button, two shapes of one liquid glass:
 /// once there is something to send, the button flows out of the field's end
@@ -85,5 +87,36 @@ struct Composer: View {
         guard ready else { return }
         focused = false
         send()
+    }
+}
+
+/// Where a page's composer sits above the bottom of the screen: low, just
+/// over the home indicator as iMessage's field sits, and a little higher over
+/// the keyboard so the glass never meets it.
+private struct ComposerInset: ViewModifier {
+    @State private var keyboard = false
+
+    /// Above the home indicator.
+    private let resting: CGFloat = 5
+    /// Above the keyboard.
+    private let raised: CGFloat = 10
+
+    func body(content: Content) -> some View {
+        content
+            .padding(.bottom, keyboard ? raised : resting)
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+                withAnimation(Motion.snap) { keyboard = true }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+                withAnimation(Motion.snap) { keyboard = false }
+            }
+    }
+}
+
+extension View {
+    /// Sits a composer at the bottom of its page: just above the home
+    /// indicator, or above the keyboard while it is up.
+    func composerInset() -> some View {
+        modifier(ComposerInset())
     }
 }

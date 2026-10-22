@@ -84,7 +84,7 @@ struct DadiView: View {
             Spacer()
             Composer(text: $draft, placeholder: "Message Dadi…", busy: stage != .idle, lanes: stage == .idle ? [] : [.conversation], send: handOff)
                 .padding(.horizontal, 16)
-                .padding(.bottom, 10)
+                .composerInset()
                 .opacity(arrived ? 1 : 0)
                 .offset(y: arrived ? 0 : 16)
         }

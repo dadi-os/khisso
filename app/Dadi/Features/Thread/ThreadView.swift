@@ -66,7 +66,7 @@ struct ThreadView: View {
             }
             .padding(.horizontal, 16)
             .padding(.top, 8)
-            .padding(.bottom, 10)
+            .composerInset()
         }
         .navigationTitle(name)
         .sensoryFeedback(.impact(weight: .light), trigger: sent)
