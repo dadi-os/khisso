@@ -1,12 +1,10 @@
-import SwiftUI
-#if os(iOS)
 import AVFoundation
-#endif
+import SwiftUI
 
 /// First run: join dadi with the setup code from dadiOS Preferences → Devices.
 /// The iPhone opens with the દાદી wordmark resolving on the field, which rises
 /// as the camera fades in to scan the box's QR code; pasting the code is the
-/// alternative. The Mac pastes on a glass card. One wordmark stays through
+/// alternative, on a glass card. One wordmark stays through
 /// every stage: it is laid out once at its largest size and glides and scales
 /// into each stage's place, white over the camera and sage on the field, so it
 /// never re-lays out mid-move.
@@ -37,11 +35,9 @@ struct JoinView: View {
     var body: some View {
         ZStack {
             FieldBloom()
-            #if os(iOS)
             if onCamera {
                 scanner.transition(.opacity)
             }
-            #endif
             content
             ResolvingWordmark(size: Self.wordmarkSize, color: onCamera ? .white : .sageDeep)
                 .fixedSize()
@@ -53,16 +49,10 @@ struct JoinView: View {
         }
         .animation(.smooth(duration: 0.7), value: stage)
         .sensoryFeedback(.success, trigger: accepted)
-        #if os(iOS)
         .sensoryFeedback(.selection, trigger: torch)
         .onChange(of: onCamera) { _, camera in if !camera { setTorch(false) } }
         .onDisappear { setTorch(false) }
-        #endif
-        #if os(iOS)
         .task { await openCamera() }
-        #else
-        .onAppear { stage = .pasting }
-        #endif
     }
 
     private var onCamera: Bool { stage == .scanning || stage == .accepted }
@@ -98,13 +88,11 @@ struct JoinView: View {
             }
             .transition(.opacity)
         case .scanning, .accepted:
-            #if os(iOS)
             scannerChrome
                 .transition(.asymmetric(
                     insertion: .opacity.animation(.smooth(duration: 0.5).delay(0.25)),
                     removal: .opacity.animation(.smooth(duration: 0.25))
                 ))
-            #endif
         case .pasting:
             pasteCard
         }
@@ -135,7 +123,6 @@ struct JoinView: View {
         }
     }
 
-    #if os(iOS)
     /// Lets the wordmark resolve, asks for the camera if it has never been
     /// asked, then opens the scanner or, without a camera, the paste card.
     private func openCamera() async {
@@ -246,7 +233,6 @@ struct JoinView: View {
         }
         .padding(.horizontal, 24)
     }
-    #endif
 
     private var pasteCard: some View {
         VStack(spacing: 22) {
@@ -270,9 +256,7 @@ struct JoinView: View {
                 .background(.boneRaised.opacity(0.7), in: .rect(cornerRadius: 16))
                 .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(.sageLine.opacity(0.8), style: StrokeStyle(lineWidth: 1.5, dash: [6, 5])))
                 .autocorrectionDisabled()
-                #if os(iOS)
                 .textInputAutocapitalization(.never)
-                #endif
             if let problem {
                 Label(problem, systemImage: "exclamationmark.circle")
                     .font(.callout)
@@ -288,7 +272,6 @@ struct JoinView: View {
             .controlSize(.large)
             .keyboardShortcut(.defaultAction)
             .disabled(code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            #if os(iOS)
             if let reason = QRScanner.unavailableReason {
                 Text(reason)
                     .font(.footnote)
@@ -305,7 +288,6 @@ struct JoinView: View {
                 }
                 .buttonStyle(.glass)
             }
-            #endif
         }
         .padding(32)
         .frame(maxWidth: 520)
@@ -346,7 +328,6 @@ struct ResolvingWordmark: View {
     }
 }
 
-#if os(iOS)
 /// The scanner's frame: dashes in dadi's sage march slowly around a breathing
 /// square; an accepted code turns it solid and fills it with a check.
 private struct Reticle: View {
@@ -381,4 +362,3 @@ private struct Reticle: View {
         .accessibilityHidden(true)
     }
 }
-#endif

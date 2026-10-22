@@ -1,4 +1,3 @@
-#if os(iOS)
 import SwiftUI
 
 /// The iPhone's Home: one page at a time on the field, with the drawer lying
@@ -360,4 +359,3 @@ private struct PulseOut: View {
             }
     }
 }
-#endif

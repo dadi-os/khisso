@@ -226,10 +226,10 @@ struct SystemPage: View {
 }
 
 /// An animated ring for a percentage, sage until it runs hot.
-struct Ring: View {
+private struct Ring: View {
     let title: String
     let percent: Double
-    var diameter: CGFloat = 74
+    private let diameter: CGFloat = 74
 
     var body: some View {
         VStack(spacing: 8) {

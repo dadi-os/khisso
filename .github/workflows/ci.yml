@@ -29,19 +29,18 @@ jobs:
       - name: Build Dadi.xcframework
         run: ./scripts/build-xcframework.sh
 
-      - name: Build DadiTunnel (macOS, iOS)
+      - name: Build DadiTunnel
         working-directory: apple
-        run: |
-          swift build
-          xcodebuild -scheme DadiTunnel -destination 'generic/platform=iOS' build
+        run: xcodebuild -scheme DadiTunnel -destination 'generic/platform=iOS' build
 
-      - name: Test the app on macOS; build it for iOS with the watch app
+      - name: Test the app in the iOS Simulator; build it with the watch app
         working-directory: app
         run: |
           brew install xcodegen
           printf 'DEVELOPMENT_TEAM =\n' > Signing.xcconfig
           xcodegen generate
-          xcodebuild -project Khisso.xcodeproj -scheme Dadi -destination 'platform=macOS,arch=arm64' CODE_SIGNING_ALLOWED=NO test
+          sim=$(xcrun simctl list devices available -j | python3 -c "import json,sys; d=json.load(sys.stdin)['devices']; print(next(x['udid'] for r,v in d.items() if 'iOS' in r for x in v if x['name'].startswith('iPhone')))")
+          xcodebuild -project Khisso.xcodeproj -scheme Dadi -destination "id=$sim" CODE_SIGNING_ALLOWED=NO test
           xcodebuild -project Khisso.xcodeproj -scheme Dadi -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
 
       - name: Package xcframework

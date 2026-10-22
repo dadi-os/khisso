@@ -1,10 +1,6 @@
 import LocalAuthentication
 import SwiftUI
-#if os(iOS)
 import UIKit
-#else
-import AppKit
-#endif
 
 /// Chaavi: the vault's logins and notes, browsed by folder or searched across
 /// the whole vault, favorites first. Nothing
@@ -82,9 +78,7 @@ struct ChaaviPage: View {
                 TextField("Search Chaavi", text: $query)
                     .textFieldStyle(.plain)
                     .autocorrectionDisabled()
-                    #if os(iOS)
                     .textInputAutocapitalization(.never)
-                    #endif
                 if !query.isEmpty {
                     Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.inkFaint) }
                         .buttonStyle(.plain)
@@ -178,13 +172,7 @@ struct ChaaviPage: View {
 
     /// Puts `value` on this device's clipboard for 90 seconds and says so.
     private func copy(_ value: String, _ note: String) {
-        #if os(iOS)
         UIPasteboard.general.setItems([[UIPasteboard.typeAutomatic: value]], options: [.localOnly: true, .expirationDate: Date.now.addingTimeInterval(90)])
-        #else
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(value, forType: .string)
-        NSPasteboard.general.setString("", forType: NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType"))
-        #endif
         copies += 1
         copied = note
         Task {

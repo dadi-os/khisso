@@ -1,4 +1,3 @@
-#if os(iOS)
 import AVFoundation
 import SwiftUI
 import VisionKit
@@ -97,4 +96,3 @@ enum Torch {
         }
     }
 }
-#endif

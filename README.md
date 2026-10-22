@@ -1,8 +1,8 @@
 # Khisso
 
-Khisso is dadi's Apple app for iPhone, Mac and Apple Watch (shown as dadi; khisso is the internal name), and the network layer that joins those devices to dadi. See the Khisso and dadi Tunnel specs.
+Khisso is dadi's app for iPhone and Apple Watch (shown as dadi; khisso is the internal name), and the network layer that joins the phone to dadi. It is the phone's own product: the device that is always on you, and what the watch and later wearables tether to. The Mac, Windows and Linux use thaali. See the Khisso and dadi Tunnel specs.
 
-The network layer runs dadi's Tailscale node against the box's Headscale, so the app never touches networking itself. On macOS and iOS it is the engine inside the dadi packet-tunnel extension (the OS lists it as a VPN named dadi) or, for builds signed without the Network Extension entitlement, an in-app node that only the app's own traffic uses. The watch has no node: the iPhone app relays for it. Windows and Linux are thaali's, which runs the stock `tailscaled` itself.
+The network layer runs dadi's Tailscale node against the box's Headscale, so the app never touches networking itself. On iOS it is the engine inside the dadi packet-tunnel extension (the OS lists it as a VPN named dadi) or, for builds signed without the Network Extension entitlement, an in-app node that only the app's own traffic uses. The watch has no node: the iPhone app relays for it. Desktops are thaali's, which runs the stock `tailscaled` itself.
 
 ## Dependencies
 
@@ -16,16 +16,15 @@ The network layer runs dadi's Tailscale node against the box's Headscale, so the
 khisso/
   internal/node/      the node on a packet-tunnel extension's utun: Start, Status
   internal/inapp/     the in-app node: tsnet, a loopback CONNECT proxy to *.dadi, MagicDNS lookups
-  internal/utun/      finds the extension's utun descriptor (macOS, iOS)
+  internal/utun/      finds the extension's utun descriptor
   cmd/dadi/           C interface, built into Dadi.xcframework
   apple/              DadiTunnel Swift package: the packet-tunnel provider
-  app/                the dadi app (XcodeGen project.yml)
+  app/                the dadi app for iPhone and its watch app (XcodeGen project.yml)
     Dadi/Types/       Hath, Yaad, planner, Ghar, Chaavi and Nas contracts
     Dadi/Shared/      API clients, Connection (setup code, in-app node), design, components, the watch link
-    Dadi/Features/    Join, Home (iPhone drawer, Mac sidebar and tiles), Dadi, Thread, Timeline, Ghar,
-                      Chaavi, System, Agents and Memory (Mac), Watch (the iPhone's relay)
+    Dadi/Features/    Join, Home (the drawer), Dadi, Thread, Timeline, Ghar, Chaavi, System, Watch (the relay)
     DadiWatch/        the watch app: Talk to Dadi, Today, Agents, Box
-    DadiTests/        setup codes, errors, events, planner, folders, force layout, Nas status
+    DadiTests/        setup codes, errors, events, planner, folders, Nas status
   scripts/            build-xcframework.sh
 ```
 
@@ -40,24 +39,24 @@ The auth key is used only for the first login. A saved node restarts with its ow
 
 ## Local run + CI/CD
 
-The app (iPhone, Mac and the watch it carries) joins dadi with the in-app node, so it needs no paid Apple account: a free Personal Team signs it. Setup codes carry the control URL `https://<relay hostname>`, so a device joins from any network.
+The app (iPhone and the watch it carries) joins dadi with the in-app node, so it needs no paid Apple account: a free Personal Team signs it. Setup codes carry the control URL `https://<relay hostname>`, so a device joins from any network.
 
 ```sh
 ./scripts/build-xcframework.sh                      # build/Dadi.xcframework, linked by the app
 cp app/Signing.xcconfig.example app/Signing.xcconfig # set DEVELOPMENT_TEAM (gitignored)
 (cd app && xcodegen generate && open Khisso.xcodeproj)
-xcodebuild -project app/Khisso.xcodeproj -scheme Dadi -destination 'platform=macOS,arch=arm64' test
+xcodebuild -project app/Khisso.xcodeproj -scheme Dadi -destination 'platform=iOS Simulator,name=iPhone 18 Pro' test
 ```
 
 ```sh
 go test ./...
 ./scripts/build-xcframework.sh          # build/Dadi.xcframework
-(cd apple && swift build)               # DadiTunnel against the local xcframework
+(cd apple && xcodebuild -scheme DadiTunnel -destination 'generic/platform=iOS' build)   # DadiTunnel against the local xcframework
 ```
 
 | Workflow | When | What |
 | --- | --- | --- |
-| `ci.yml` → `ci` | PR + push to `main` | `go vet` and `go test`; build `Dadi.xcframework`; compile DadiTunnel for macOS and iOS; test the app on macOS and build it, with the watch app, for iOS, unsigned |
+| `ci.yml` → `ci` | PR + push to `main` | `go vet` and `go test`; build `Dadi.xcframework`; compile DadiTunnel; test the app in the iOS Simulator and build it, with the watch app, for iOS, unsigned |
 | `ci.yml` → `publish` | `main` after `ci` | GitHub Release `khisso-network-<sha>` with the xcframework and its checksum |
 
 ## Logging / error codes

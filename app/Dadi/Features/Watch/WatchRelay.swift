@@ -1,4 +1,3 @@
-#if os(iOS)
 import UIKit
 import WatchConnectivity
 import os
@@ -205,4 +204,3 @@ extension WatchRelay: WCSessionDelegate {
         Task { @MainActor in await self.handle(request, reply: reply) }
     }
 }
-#endif

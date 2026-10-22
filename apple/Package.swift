@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "DadiTunnel",
-    platforms: [.macOS(.v14), .iOS("26.0")],
+    platforms: [.iOS("26.0")],
     products: [
         .library(name: "DadiTunnel", targets: ["DadiTunnel"]),
     ],

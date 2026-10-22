@@ -3,7 +3,6 @@ options:
   bundleIdPrefix: com.dadi
   deploymentTarget:
     iOS: "26.0"
-    macOS: "26.0"
     watchOS: "26.0"
   createIntermediateGroups: true
 configFiles:
@@ -20,15 +19,13 @@ targets:
     type: application
     scheme:
       testTargets: [DadiTests]
-    platform: auto
-    supportedDestinations: [iOS, macOS]
+    platform: iOS
     sources: [Dadi]
     dependencies:
       - framework: ../build/Dadi.xcframework
         embed: false
       - sdk: libresolv.tbd
       - target: DadiWatch
-        destinationFilters: [iOS]
     settings:
       base:
         PRODUCT_NAME: dadi
@@ -38,7 +35,7 @@ targets:
         CURRENT_PROJECT_VERSION: "1"
         TARGETED_DEVICE_FAMILY: "1"
         SUPPORTS_MACCATALYST: NO
-        ENABLE_HARDENED_RUNTIME: NO
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: YES
@@ -47,7 +44,6 @@ targets:
       properties:
         CFBundleDisplayName: dadi
         UIAppFonts: [NotoSansGujarati.ttf]
-        ATSApplicationFontsPath: .
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}
@@ -97,8 +93,7 @@ targets:
         UIAppFonts: [NotoSansGujarati.ttf]
   DadiTests:
     type: bundle.unit-test
-    platform: auto
-    supportedDestinations: [iOS, macOS]
+    platform: iOS
     sources: [DadiTests]
     dependencies:
       - target: Dadi
@@ -107,5 +102,4 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.dadi.khisso.tests
         GENERATE_INFOPLIST_FILE: YES
         TEST_HOST: $(BUILT_PRODUCTS_DIR)/dadi.app/dadi
-        TEST_HOST[sdk=macosx*]: $(BUILT_PRODUCTS_DIR)/dadi.app/Contents/MacOS/dadi
         BUNDLE_LOADER: $(TEST_HOST)
