@@ -6,11 +6,16 @@ import AVFoundation
 /// First run: join dadi with the setup code from dadiOS Preferences → Devices.
 /// The iPhone opens with the દાદી wordmark resolving on the field, which rises
 /// as the camera fades in to scan the box's QR code; pasting the code is the
-/// alternative. The Mac pastes on a glass card. The first join has to happen on
-/// the box's network, where Headscale answers.
+/// alternative. The Mac pastes on a glass card. One wordmark stays through
+/// every stage: it is laid out once at its largest size and glides and scales
+/// into each stage's place, white over the camera and sage on the field, so it
+/// never re-lays out mid-move.
 struct JoinView: View {
     let connection: Connection
     let wordmark: Namespace.ID
+
+    /// The size the wordmark is laid out at; each stage scales it down.
+    private static let wordmarkSize: CGFloat = 96
 
     /// Where the Join screen is in its sequence.
     private enum Stage: Equatable {
@@ -26,23 +31,60 @@ struct JoinView: View {
     @State private var code = ""
     @State private var problem: String?
     @State private var accepted = 0
+    @State private var torch = false
+    @Namespace private var slots
 
     var body: some View {
         ZStack {
             FieldBloom()
             #if os(iOS)
-            if stage == .scanning || stage == .accepted {
-                scanner.transition(.opacity.animation(.easeOut(duration: 0.9)))
+            if onCamera {
+                scanner.transition(.opacity)
             }
             #endif
             content
+            ResolvingWordmark(size: Self.wordmarkSize, color: onCamera ? .white : .sageDeep)
+                .fixedSize()
+                .scaleEffect(wordmarkScale)
+                .shadow(color: .black.opacity(onCamera ? 0.3 : 0), radius: 10)
+                .matchedGeometryEffect(id: "slot", in: slots, properties: .position, isSource: false)
+                .matchedGeometryEffect(id: "wordmark", in: wordmark)
+                .allowsHitTesting(false)
         }
+        .animation(.smooth(duration: 0.7), value: stage)
         .sensoryFeedback(.success, trigger: accepted)
+        #if os(iOS)
+        .sensoryFeedback(.selection, trigger: torch)
+        .onChange(of: onCamera) { _, camera in if !camera { setTorch(false) } }
+        .onDisappear { setTorch(false) }
+        #endif
         #if os(iOS)
         .task { await openCamera() }
         #else
         .onAppear { stage = .pasting }
         #endif
+    }
+
+    private var onCamera: Bool { stage == .scanning || stage == .accepted }
+
+    /// How big the wordmark is drawn in each stage, against its laid-out size.
+    private var wordmarkScale: CGFloat {
+        switch stage {
+        case .intro: 1
+        case .scanning, .accepted: 40 / Self.wordmarkSize
+        case .pasting: 72 / Self.wordmarkSize
+        }
+    }
+
+    /// Where the wordmark sits in a stage: an invisible wordmark of the size it
+    /// is drawn at there.
+    private func slot(_ size: CGFloat) -> some View {
+        Text("દાદી")
+            .font(.wordmark(size))
+            .inkCentered(.word, size: size)
+            .fixedSize()
+            .hidden()
+            .matchedGeometryEffect(id: "slot", in: slots, properties: .position)
     }
 
     @ViewBuilder
@@ -51,13 +93,17 @@ struct JoinView: View {
         case .intro:
             VStack {
                 Spacer()
-                ResolvingWordmark(size: 96)
-                    .matchedGeometryEffect(id: "wordmark", in: wordmark)
+                slot(Self.wordmarkSize)
                 Spacer()
             }
+            .transition(.opacity)
         case .scanning, .accepted:
             #if os(iOS)
             scannerChrome
+                .transition(.asymmetric(
+                    insertion: .opacity.animation(.smooth(duration: 0.5).delay(0.25)),
+                    removal: .opacity.animation(.smooth(duration: 0.25))
+                ))
             #endif
         case .pasting:
             pasteCard
@@ -118,13 +164,41 @@ struct JoinView: View {
             }
     }
 
+    /// The flashlight, for a code on a dim screen: a small glass button that
+    /// lights the camera's torch.
+    @ViewBuilder
+    private var torchButton: some View {
+        if Torch.available {
+            Button { setTorch(!torch) } label: {
+                Image(systemName: torch ? "flashlight.on.fill" : "flashlight.off.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(torch ? Color.daylight : .white)
+                    .contentTransition(.symbolEffect(.replace))
+                    .frame(width: 22, height: 22)
+            }
+            .buttonStyle(.glass)
+            .buttonBorderShape(.circle)
+            .disabled(stage == .accepted)
+            .accessibilityLabel(torch ? "Turn off flashlight" : "Turn on flashlight")
+        }
+    }
+
+    private func setTorch(_ on: Bool) {
+        guard torch != on else { return }
+        do {
+            try Torch.set(on)
+            torch = on
+        } catch {
+            torch = false
+            withAnimation(Motion.snap) { problem = error.localizedDescription }
+        }
+    }
+
     private var scannerChrome: some View {
         VStack(spacing: 0) {
-            Text("દાદી")
-                .font(.wordmark(40))
-                .inkCentered(.word, size: 40)
-                .foregroundStyle(.white)
-                .matchedGeometryEffect(id: "wordmark", in: wordmark)
+            slot(40)
+                .frame(maxWidth: .infinity)
+                .overlay(alignment: .trailing) { torchButton }
                 .padding(.top, 8)
             Text(stage == .accepted ? "Got it" : "Scan the code on your box")
                 .font(.headline)
@@ -146,7 +220,7 @@ struct JoinView: View {
                         .frame(maxWidth: 340)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 } else {
-                    Text("In Preferences → Devices, add this iPhone. Stay on the box's network for this first join.")
+                    Text("In Preferences → Devices on your box, add this iPhone and point the camera at its code.")
                         .font(.footnote)
                         .foregroundStyle(.white.opacity(0.8))
                         .multilineTextAlignment(.center)
@@ -176,16 +250,12 @@ struct JoinView: View {
 
     private var pasteCard: some View {
         VStack(spacing: 22) {
-            Text("દાદી")
-                .font(.wordmark(72))
-                .inkCentered(.word, size: 72)
-                .foregroundStyle(.sageDeep)
-                .matchedGeometryEffect(id: "wordmark", in: wordmark)
+            slot(72)
             VStack(spacing: 8) {
                 Text("Join dadi")
                     .font(.title2.weight(.semibold))
                     .foregroundStyle(.ink)
-                Text("On your box, open Preferences → Devices, add this device, and paste its setup code here. Stay on the box's network for this first join.")
+                Text("On your box, open Preferences → Devices, add this device, and paste its setup code here.")
                     .font(.callout)
                     .foregroundStyle(.inkMuted)
                     .multilineTextAlignment(.center)
@@ -241,13 +311,17 @@ struct JoinView: View {
         .frame(maxWidth: 520)
         .glassEffect(.regular, in: .rect(cornerRadius: 32))
         .padding(24)
-        .transition(.opacity.combined(with: .scale(scale: 0.97)))
+        .transition(.asymmetric(
+            insertion: .opacity.combined(with: .scale(scale: 0.94)).animation(.smooth(duration: 0.55).delay(0.15)),
+            removal: .opacity.combined(with: .scale(scale: 0.94)).combined(with: .offset(y: 24)).animation(.smooth(duration: 0.4))
+        ))
     }
 }
 
 /// દાદી resolving one cluster at a time out of a soft blur.
 struct ResolvingWordmark: View {
     let size: CGFloat
+    var color: Color = .sageDeep
     @State private var shown = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -258,7 +332,7 @@ struct ResolvingWordmark: View {
             ForEach(Array(clusters.enumerated()), id: \.offset) { index, cluster in
                 Text(cluster)
                     .font(.wordmark(size))
-                    .foregroundStyle(.sageDeep)
+                    .foregroundStyle(color)
                     .opacity(shown ? 1 : 0)
                     .blur(radius: shown ? 0 : 14)
                     .scaleEffect(shown ? 1 : 0.86, anchor: .bottom)

@@ -1,4 +1,5 @@
 #if os(iOS)
+import AVFoundation
 import SwiftUI
 import VisionKit
 
@@ -68,6 +69,31 @@ struct QRScanner: UIViewControllerRepresentable {
 
         func dataScanner(_ dataScanner: DataScannerViewController, becameUnavailableWithError error: DataScannerViewController.ScanningUnavailable) {
             onFail("The camera stopped: \(error.localizedDescription)")
+        }
+    }
+}
+
+/// The camera's flashlight, which the scanner does not offer itself. It
+/// drives the same back camera the scanner reads with.
+enum Torch {
+    /// Why the torch would not change.
+    struct Refused: LocalizedError {
+        let message: String
+        var errorDescription: String? { message }
+    }
+
+    static var available: Bool { AVCaptureDevice.default(for: .video)?.hasTorch == true }
+
+    static func set(_ on: Bool) throws {
+        guard let camera = AVCaptureDevice.default(for: .video), camera.hasTorch else {
+            throw Refused(message: "This iPhone has no flashlight.")
+        }
+        try camera.lockForConfiguration()
+        defer { camera.unlockForConfiguration() }
+        if on {
+            try camera.setTorchModeOn(level: AVCaptureDevice.maxAvailableTorchLevel)
+        } else {
+            camera.torchMode = .off
         }
     }
 }
