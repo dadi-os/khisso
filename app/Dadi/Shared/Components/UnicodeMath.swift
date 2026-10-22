@@ -2,29 +2,18 @@ import Foundation
 
 /// LaTeX math in a message as plain Unicode, for the places that show a
 /// message as text rather than rendering it: the drawer's previews and the
-/// watch. Math is found by the same delimiters the thread renders (`$…$`,
-/// `\(…\)`, `$$…$$` and `\[…\]`); a `$` followed by a space or closed before a
-/// digit, as in "$412 left and $30 spent", stays money.
+/// watch. Math is found by the rule the thread renders by (``MathDelimiters``),
+/// so "$412 left, $5 and $10" stays money.
 enum UnicodeMath {
     /// `source` with each math span replaced by its Unicode reading.
     static func text(_ source: String) -> String {
-        var out = ""
-        var rest = source[...]
-        while let start = rest.firstIndex(where: { $0 == "$" || $0 == "\\" }) {
-            out += rest[..<start]
-            let tail = rest[start...]
-            if tail.hasPrefix("\\$") {
-                out += "\\$"
-                rest = tail.dropFirst(2)
-            } else if let span = span(at: tail) {
-                out += expression(String(span.math))
-                rest = tail[span.end...]
-            } else {
-                out += tail.prefix(1)
-                rest = tail.dropFirst()
+        MathDelimiters.pieces(source).map { piece in
+            switch piece {
+            case .text(let text): text
+            case .math(let tex, _): expression(tex)
+            case .dollar: "$"
             }
-        }
-        return out + rest
+        }.joined()
     }
 
     /// The TeX `latex` (without delimiters) as Unicode: known commands become
@@ -39,24 +28,6 @@ enum UnicodeMath {
             out += reader.sequence()
         }
         return out
-    }
-
-    /// The math opening at the start of `tail`: its inner TeX and where the
-    /// span ends.
-    private static func span(at tail: Substring) -> (math: Substring, end: Substring.Index)? {
-        for (open, close) in [("$$", "$$"), ("\\[", "\\]"), ("\\(", "\\)")] where tail.hasPrefix(open) {
-            let inner = tail.dropFirst(open.count)
-            guard let closing = inner.range(of: close), closing.lowerBound > inner.startIndex else { return nil }
-            return (inner[..<closing.lowerBound], closing.upperBound)
-        }
-        guard tail.hasPrefix("$") else { return nil }
-        let inner = tail.dropFirst()
-        guard let first = inner.first, !first.isWhitespace,
-              let closing = inner.firstIndex(where: { $0 == "$" || $0.isNewline }), inner[closing] == "$",
-              closing > inner.startIndex, !inner[inner.index(before: closing)].isWhitespace else { return nil }
-        let end = inner.index(after: closing)
-        if end < inner.endIndex, inner[end].isNumber { return nil }
-        return (inner[..<closing], end)
     }
 
     /// Reads TeX left to right, one group at a time.

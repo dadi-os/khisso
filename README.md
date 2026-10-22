@@ -8,7 +8,7 @@ The network layer runs dadi's Tailscale node against the box's Headscale, so the
 
 - Headscale on the box (the control server in each setup code).
 - Tailscale `v1.82.0` (`tailscale.com`), used as a library: `ipn/ipnlocal`, `wgengine`, `ipn/store`, `wgengine/router`, and `tsnet` for the in-app node.
-- MarkdownView `3.0.0` (`github.com/LiYanan2004/MarkdownView`, MIT, on swift-markdown with Highlightr and SwiftMath) renders agent messages and Markdown attachments on the iPhone: CommonMark and GitHub tables, task lists, strikethrough and autolinks, LaTeX math (`$…$`, `\(…\)`, `$$…$$`, `\[…\]`), highlighted code, links, images and SVG, matching thaali's Streamdown. The watch does not link it (it cannot typeset math there); its previews, and the drawer's, read math as Unicode.
+- MarkdownView `3.0.0` (`github.com/LiYanan2004/MarkdownView`, MIT, on swift-markdown with Highlightr and SwiftMath) renders agent messages and Markdown attachments on the iPhone: CommonMark and GitHub tables, task lists, strikethrough and autolinks, LaTeX math (`\(…\)`, `$$…$$`, `\[…\]`, and `$…$` only when it reads as LaTeX, by thaali's rule, so prices stay prices), highlighted code, links, images and SVG, matching thaali's Streamdown. The watch does not link it (it cannot typeset math there); its previews, and the drawer's, read math as Unicode.
 - Apple: NetworkExtension, with an app signed for the Network Extension entitlement that embeds the extension. The in-app node needs no entitlement. WatchConnectivity between the iPhone and the watch.
 
 ## Layout

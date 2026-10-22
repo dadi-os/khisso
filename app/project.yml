@@ -72,6 +72,7 @@ targets:
       - Dadi/Shared/Components/Lanes.swift
       - Dadi/Shared/Components/Agent.swift
       - Dadi/Shared/Components/UnicodeMath.swift
+      - Dadi/Shared/Components/MathDelimiters.swift
       - Dadi/Types/Hath.swift
       - Dadi/Fonts/NotoSansGujarati.ttf
       - path: Dadi/Assets.xcassets

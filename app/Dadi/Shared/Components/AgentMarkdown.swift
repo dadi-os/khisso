@@ -5,12 +5,13 @@ import SwiftUI
 /// CommonMark with GitHub's tables, task lists, strikethrough and autolinks,
 /// LaTeX math inline (`$…$`, `\(…\)`) and on its own line (`$$…$$`, `\[…\]`),
 /// highlighted code, links, images, quotes and headings, in dadi's ink with
-/// sage links and accents. Text stays selectable.
+/// sage links and accents. Single-dollar math follows thaali's rule
+/// (``MathDelimiters``), so prices are never typeset. Text stays selectable.
 struct AgentMarkdown: View {
     let source: String
 
     var body: some View {
-        MarkdownView(source)
+        MarkdownView(MathDelimiters.normalize(source))
             .markdownMathRenderingEnabled()
             .markdownFontGroup(AgentMarkdownFonts())
             .markdownLinksUnderlined()

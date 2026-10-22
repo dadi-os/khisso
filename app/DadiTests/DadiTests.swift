@@ -242,14 +242,14 @@ struct ReadStateTests {
     }
 }
 
-/// Math in previews and on the watch reads as Unicode, by the same delimiters
-/// the thread renders, while money stays money.
+/// Math in previews and on the watch reads as Unicode, by the same rule the
+/// thread renders by, while money stays money.
 struct UnicodeMathTests {
     @Test func readsInlineMathAsSymbols() {
         #expect(UnicodeMath.text(#"Rent $\rightarrow$ savings"#) == "Rent → savings")
         #expect(UnicodeMath.text(#"\(a \le b \ne c\) and \(x \to \infty\)"#) == "a ≤ b ≠ c and x → ∞")
         #expect(UnicodeMath.text(#"$\alpha + \beta \approx \pi$"#) == "α + β ≈ π")
-        #expect(UnicodeMath.text(#"$3 \times 4 \cdot 2 \pm 1$"#) == "3 × 4 · 2 ± 1")
+        #expect(UnicodeMath.text(#"\(3 \times 4 \cdot 2 \pm 1\)"#) == "3 × 4 · 2 ± 1")
         #expect(UnicodeMath.text(#"$A \Rightarrow B \leftarrow C \geq D$"#) == "A ⇒ B ← C ≥ D")
     }
 
@@ -284,5 +284,42 @@ struct UnicodeMathTests {
     @Test func previewsTheFirstLineWithMathRead() {
         #expect(Agent.preview("**Done**: $a \\to b$\nmore") == "Done: a → b")
         #expect(Agent.preview("$$\n\\pi r^2\n$$") == "π r²")
+    }
+}
+
+/// Single-dollar math by thaali's rule: only a span that reads as LaTeX is
+/// math, so prices stay prices, and code is never touched.
+struct MathDelimiterTests {
+    @Test func moneyStaysMoney() {
+        let prices = "That's $412 left, $5 and $10"
+        #expect(UnicodeMath.text(prices) == prices)
+        #expect(MathDelimiters.pieces(prices).allSatisfy { if case .math = $0 { false } else { true } })
+        #expect(MathDelimiters.normalize(prices) == #"That's \$412 left, \$5 and \$10"#)
+        #expect(MathDelimiters.normalize("$x$ costs $5") == #"\$x\$ costs \$5"#)
+    }
+
+    @Test func latexIsMath() {
+        #expect(MathDelimiters.pieces(#"$\rightarrow$"#) == [.math(#"\rightarrow"#, .dollar)])
+        #expect(MathDelimiters.pieces("$x^2$") == [.math("x^2", .dollar)])
+        #expect(MathDelimiters.normalize(#"go $\rightarrow$ and $x^2$"#) == #"go \(\rightarrow\) and \(x^2\)"#)
+        #expect(UnicodeMath.text(#"$\rightarrow$ and $x^2$"#) == "→ and x²")
+    }
+
+    @Test func dollarsTouchingWordsOrSpacesAreNotMath() {
+        #expect(MathDelimiters.normalize("a$x_1$b") == #"a\$x_1\$b"#)
+        #expect(MathDelimiters.normalize("$ x_1$") == #"\$ x_1\$"#)
+        #expect(MathDelimiters.normalize("$x_1 $") == #"\$x_1 \$"#)
+        #expect(MathDelimiters.normalize("$2^x$") == #"\$2^x\$"#)
+    }
+
+    @Test func otherDelimitersStayMath() {
+        #expect(MathDelimiters.normalize(#"$$E = mc^2$$ and \(a\) and \[b\]"#) == #"$$E = mc^2$$ and \(a\) and \[b\]"#)
+        #expect(MathDelimiters.pieces(#"\(5\)"#) == [.math("5", .parenthesis)])
+    }
+
+    @Test func codeIsLeftAsWritten() {
+        #expect(MathDelimiters.normalize("run `echo $HOME_x^2$` now") == "run `echo $HOME_x^2$` now")
+        let fenced = "```sh\nprice=$5\necho $x^2$\n```\nafter $5"
+        #expect(MathDelimiters.normalize(fenced) == "```sh\nprice=$5\necho $x^2$\n```\nafter \\$5")
     }
 }
