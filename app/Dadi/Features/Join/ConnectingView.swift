@@ -27,8 +27,8 @@ struct ConnectingView: View {
         VStack(spacing: 28) {
             Spacer()
             Text("દાદી")
-                .font(.wordmark(96))
-                .inkCentered(.word, size: 96)
+                .font(.wordmark(DadiView.wordmarkSize))
+                .inkCentered(.word, size: DadiView.wordmarkSize)
                 .foregroundStyle(.sageDeep)
                 .shadow(color: .sage.opacity(glow ? 0.55 : 0.05), radius: glow ? 28 : 6)
                 .scaleEffect(glow ? 1.02 : 0.98)

@@ -3,8 +3,13 @@ import SwiftUI
 /// Talk to Dadi: your words go to the router, which sends them on as you to the
 /// agent that owns them. While it works this is a waiting room: the words lift
 /// out of the composer above it, the wordmark breathes, and once the router has
-/// sent them it says to whom before that thread opens.
+/// sent them it says to whom before that thread opens. Arriving from
+/// Connecting, the wordmark stays where it was and the rest fades in around it.
 struct DadiView: View {
+    /// The idle wordmark's size, which Connecting shares so the mark does not
+    /// change size as Home arrives.
+    static let wordmarkSize: CGFloat = 84
+
     let hath: HathClient
     let wordmark: Namespace.ID
     /// Opens the thread of the agent the router handed off to.
@@ -22,6 +27,7 @@ struct DadiView: View {
     @State private var problem: String?
     @State private var glow = false
     @State private var handedOff = 0
+    @State private var arrived = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -29,8 +35,8 @@ struct DadiView: View {
             Spacer()
             VStack(spacing: 22) {
                 Text("દાદી")
-                    .font(.wordmark(stage == .idle ? 84 : 56))
-                    .inkCentered(.word, size: stage == .idle ? 84 : 56)
+                    .font(.wordmark(stage == .idle ? Self.wordmarkSize : 56))
+                    .inkCentered(.word, size: stage == .idle ? Self.wordmarkSize : 56)
                     .foregroundStyle(.sageDeep)
                     .shadow(color: .sage.opacity(stage == .idle ? 0 : (glow ? 0.5 : 0.1)), radius: glow ? 24 : 8)
                     .matchedGeometryEffect(id: "wordmark", in: wordmark)
@@ -46,6 +52,8 @@ struct DadiView: View {
                             .multilineTextAlignment(.center)
                             .frame(maxWidth: 320)
                     }
+                    .opacity(arrived ? 1 : 0)
+                    .offset(y: arrived ? 0 : 10)
                     .transition(.opacity.combined(with: .offset(y: 8)))
                 case .routing(let text), .sent(let text, _):
                     Text(text)
@@ -75,7 +83,10 @@ struct DadiView: View {
             Composer(text: $draft, placeholder: "Message Dadi…", busy: stage != .idle, lanes: stage == .idle ? [] : [.conversation], send: handOff)
                 .padding(.horizontal, 16)
                 .padding(.bottom, 10)
+                .opacity(arrived ? 1 : 0)
+                .offset(y: arrived ? 0 : 16)
         }
+        .onAppear { withAnimation(Motion.settle.delay(0.3)) { arrived = true } }
         .animation(.spring(response: 0.6, dampingFraction: 0.8), value: stage)
         .sensoryFeedback(.success, trigger: handedOff)
         .navigationTitle("Dadi")

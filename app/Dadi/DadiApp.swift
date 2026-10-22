@@ -35,12 +35,15 @@ struct DadiApp: App {
                 case .online:
                     if let services = connection.services {
                         HomeView(services: services, nodeName: connection.nodeName, wordmark: wordmark)
-                            .transition(.opacity.combined(with: .scale(scale: 1.02)))
+                            .transition(.opacity)
                     }
                 }
             }
             .animation(Motion.settle, value: connection.state)
-            .task { connection.start() }
+            .task {
+                connection.start()
+                await connection.watch()
+            }
             .onChange(of: scenePhase) { _, phase in
                 guard phase == .active else { return }
                 connection.refresh()

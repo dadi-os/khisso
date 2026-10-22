@@ -3,7 +3,9 @@ import Observation
 import os
 
 /// This device's connection to dadi: its setup code, the in-app node, and
-/// whether Hath answers through it.
+/// whether Hath answers through it. While the app is in front, `watch` keeps
+/// asking, so a box that restarts or a node that wakes from suspension comes
+/// back online without a tap.
 @MainActor
 @Observable
 final class Connection {
@@ -16,7 +18,7 @@ final class Connection {
         case connecting(detail: String?)
         /// Hath answered `/health` through the node.
         case online
-        /// The node could not start or Hath failed; `message` says why.
+        /// The node could not start; `message` says why. It is retried.
         case failed(message: String)
     }
 
@@ -28,6 +30,18 @@ final class Connection {
 
     private var node: InAppNode?
     private var checking = false
+    /// Health checks missed in a row while online.
+    private var misses = 0
+
+    /// How often an online connection checks Hath.
+    private static let onlineEvery: Duration = .seconds(10)
+    /// The first and longest waits between checks while not online.
+    private static let firstRetry: Duration = .seconds(2)
+    private static let longestRetry: Duration = .seconds(15)
+    /// Checks missed in a row before an online connection says it is reconnecting.
+    private static let allowedMisses = 2
+    /// Checks missed in a row before the node is restarted.
+    private static let restartAfter = 6
     private let log = Logger(subsystem: "com.dadi.khisso", category: "connection")
 
     /// Loads the saved setup code and starts the node, or asks for a code.
@@ -72,6 +86,32 @@ final class Connection {
         start()
     }
 
+    /// Checks Hath until cancelled: every ten seconds while online, and with a
+    /// delay growing from two to fifteen seconds while not, restarting a node
+    /// that failed to start or that six checks in a row could not get through.
+    func watch() async {
+        var wait = Self.firstRetry
+        while !Task.isCancelled {
+            switch state {
+            case .needsSetup:
+                wait = Self.firstRetry
+            case .failed:
+                retry()
+                wait = min(wait * 2, Self.longestRetry)
+            case .connecting, .online:
+                let wasOnline = state == .online
+                if misses >= Self.restartAfter {
+                    log.info("restarting the node after \(self.misses) missed checks")
+                    misses = 0
+                    retry()
+                }
+                await check()
+                wait = state == .online ? Self.onlineEvery : (wasOnline ? Self.firstRetry : min(wait * 2, Self.longestRetry))
+            }
+            do { try await Task.sleep(for: wait) } catch { return }
+        }
+    }
+
     /// Checks Hath again when the app returns to the foreground.
     func refresh() {
         guard node != nil else { return }
@@ -103,17 +143,27 @@ final class Connection {
         }
     }
 
-    /// Asks Hath for `/health`; one check runs at a time.
+    /// Asks Hath for `/health` in the background; one check runs at a time.
     private func checkHath() {
+        Task { await check() }
+    }
+
+    /// Asks Hath for `/health`. A miss while connecting says why; while online
+    /// it is forgiven until `allowedMisses` in a row, since one dropped request
+    /// is not a lost box.
+    private func check() async {
         guard let hath = services?.hath, !checking else { return }
         checking = true
-        Task {
-            defer { checking = false }
-            do {
-                _ = try await hath.health()
-                state = .online
-            } catch {
-                fail(error)
+        defer { checking = false }
+        do {
+            _ = try await hath.health(timeout: 6)
+            misses = 0
+            state = .online
+        } catch {
+            misses += 1
+            log.error("hath health: \(error.localizedDescription, privacy: .public)")
+            if state != .online || misses >= Self.allowedMisses {
+                state = .connecting(detail: "dadi isn't answering yet: \(error.localizedDescription)")
             }
         }
     }

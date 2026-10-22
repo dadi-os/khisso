@@ -18,9 +18,14 @@ struct PhoneHome: View {
     @State private var open = false
     @State private var drag: CGFloat = 0
     @State private var opened = 0
+    /// False until Home has settled in from Connecting, so the bar fades in
+    /// around the wordmark instead of arriving with it.
+    @State private var arrived = false
 
-    /// How far from the left edge a swipe has to start to open the drawer.
-    private let edge: CGFloat = 32
+    /// The strip along the left edge that opens the drawer. It sits over the
+    /// page, so a swipe that starts in it always pulls the drawer instead of
+    /// moving the page, as the Timeline's day swipe would.
+    private let edge: CGFloat = 28
 
     var body: some View {
         GeometryReader { proxy in
@@ -41,12 +46,22 @@ struct PhoneHome: View {
                             .allowsHitTesting(open)
                             .onTapGesture { set(open: false) }
                     }
+                    .overlay(alignment: .leading) {
+                        if !open {
+                            Color.clear
+                                .frame(width: edge)
+                                .contentShape(.rect)
+                                .ignoresSafeArea()
+                                .gesture(drawerDrag(width: width))
+                        }
+                    }
                     .shadow(color: .black.opacity(0.14 * progress), radius: 18, x: -4)
                     .offset(x: shift)
             }
-            .gesture(drawerDrag(width: width))
+            .gesture(open ? drawerDrag(width: width) : nil)
         }
         .sensoryFeedback(.selection, trigger: opened)
+        .onAppear { withAnimation(Motion.settle.delay(0.35)) { arrived = true } }
     }
 
     private var pageView: some View {
@@ -110,7 +125,8 @@ struct PhoneHome: View {
         .controlSize(.large)
         .padding(.horizontal, 16)
         .padding(.top, 4)
-        .padding(.bottom, 6)
+        .padding(.bottom, 14)
+        .opacity(arrived ? 1 : 0)
         .animation(Motion.snap, value: page)
     }
 
@@ -150,15 +166,13 @@ struct PhoneHome: View {
     /// Follows the finger from the left edge (or anywhere while open) and
     /// settles by the predicted end, so a flick opens or closes it.
     private func drawerDrag(width: CGFloat) -> some Gesture {
-        DragGesture(minimumDistance: 12)
+        DragGesture(minimumDistance: 8, coordinateSpace: .global)
             .onChanged { value in
-                guard open || value.startLocation.x < edge else { return }
                 guard abs(value.translation.width) > abs(value.translation.height) else { return }
                 if !open && drag == 0 { dismissKeyboard() }
                 drag = value.translation.width
             }
             .onEnded { value in
-                guard open || value.startLocation.x < edge else { return }
                 let end = (open ? width : 0) + value.predictedEndTranslation.width
                 set(open: end > width / 2)
             }
@@ -179,6 +193,7 @@ private struct Drawer: View {
     let choose: (HomeView.Page) -> Void
 
     var body: some View {
+        ScrollView {
         VStack(alignment: .leading, spacing: 0) {
             Text("દાદી")
                 .font(.wordmark(34))
@@ -222,7 +237,9 @@ private struct Drawer: View {
                 .animation(Motion.settle, value: store.routing)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
+                .frame(maxWidth: .infinity)
                 .background(page == .dadi ? Color.sage.opacity(0.14) : .clear, in: .rect(cornerRadius: 16))
+                .contentShape(.rect(cornerRadius: 16))
             }
             .buttonStyle(.plain)
             .padding(.horizontal, 8)
@@ -234,7 +251,6 @@ private struct Drawer: View {
             }
             .padding(.horizontal, 12)
             .padding(.top, 12)
-            ScrollView {
                 LazyVStack(alignment: .leading, spacing: 2) {
                     Text("AGENTS")
                         .font(.caption2.weight(.semibold))
@@ -264,9 +280,9 @@ private struct Drawer: View {
                 }
                 .padding(.horizontal, 8)
                 .padding(.bottom, 12)
-            }
-            .scrollIndicators(.hidden)
         }
+        }
+        .scrollIndicators(.hidden)
         .frame(maxHeight: .infinity, alignment: .top)
         .background {
             Rectangle()

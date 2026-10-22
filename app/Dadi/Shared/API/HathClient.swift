@@ -16,9 +16,9 @@ struct HathClient: Sendable {
         client = ServiceClient(session: session, baseURL: Self.baseURL)
     }
 
-    /// GET /health.
-    func health() async throws -> HathHealth {
-        try await client.get("/health", timeout: 10)
+    /// GET /health, given up after `timeout` seconds.
+    func health(timeout: TimeInterval) async throws -> HathHealth {
+        try await client.get("/health", timeout: timeout)
     }
 
     /// GET /threads: every human↔agent conversation.
