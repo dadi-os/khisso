@@ -8,6 +8,7 @@ The network layer runs dadi's Tailscale node against the box's Headscale, so the
 
 - Headscale on the box (the control server in each setup code).
 - Tailscale `v1.82.0` (`tailscale.com`), used as a library: `ipn/ipnlocal`, `wgengine`, `ipn/store`, `wgengine/router`, and `tsnet` for the in-app node.
+- MarkdownView `3.0.0` (`github.com/LiYanan2004/MarkdownView`, MIT, on swift-markdown with Highlightr and SwiftMath) renders agent messages and Markdown attachments on the iPhone: CommonMark and GitHub tables, task lists, strikethrough and autolinks, LaTeX math (`$…$`, `\(…\)`, `$$…$$`, `\[…\]`), highlighted code, links, images and SVG, matching thaali's Streamdown. The watch does not link it (it cannot typeset math there); its previews, and the drawer's, read math as Unicode.
 - Apple: NetworkExtension, with an app signed for the Network Extension entitlement that embeds the extension. The in-app node needs no entitlement. WatchConnectivity between the iPhone and the watch.
 
 ## Layout
@@ -24,7 +25,7 @@ khisso/
     Dadi/Shared/      API clients, Connection (setup code, in-app node), design, components, the watch link
     Dadi/Features/    Join, Home (the drawer), Dadi, Thread, Timeline, Ghar, Chaavi, System, Watch (the relay)
     DadiWatch/        the watch app: Talk to Dadi, Today, Agents, Box
-    DadiTests/        setup codes, errors, events, planner, folders, Nas status
+    DadiTests/        setup codes, errors, events, planner, folders, Nas status, math as Unicode
   scripts/            build-xcframework.sh
 ```
 

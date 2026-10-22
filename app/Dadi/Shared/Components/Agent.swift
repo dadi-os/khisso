@@ -10,11 +10,18 @@ enum Agent {
         return palette[sum % palette.count]
     }
 
-    /// A message's first line without markdown, for previews.
+    /// A message's first line without markdown, its math read as Unicode,
+    /// for previews.
     static func preview(_ content: String) -> String {
-        let line = content.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
+        let line = UnicodeMath.text(content)
+            .split(whereSeparator: \.isNewline)
+            .first { !$0.allSatisfy(\.isWhitespace) }
+            .map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
         let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace, failurePolicy: .returnPartiallyParsedIfPossible)
-        guard let parsed = try? AttributedString(markdown: line, options: options) else { return line }
-        return String(parsed.characters)
+        do {
+            return String(try AttributedString(markdown: line, options: options).characters)
+        } catch {
+            return line
+        }
     }
 }

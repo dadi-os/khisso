@@ -71,10 +71,10 @@ private enum Thumbnails {
 }
 
 /// One attachment in a thread. An image shows inline as a thumbnail and opens
-/// full screen to zoom and share; any other file is a row that opens in
-/// QuickLook. Bytes come from Hath over the app's own session; while they
-/// load the row shows progress, and a failure shows its reason and retries on
-/// the next tap.
+/// full screen to zoom and share; a Markdown file opens rendered as agent
+/// messages are, in a sheet; any other file is a row that opens in QuickLook.
+/// Bytes come from Hath over the app's own session; while they load the row
+/// shows progress, and a failure shows its reason and retries on the next tap.
 struct AttachmentView: View {
     let file: AttachmentSummary
     let hath: HathClient
@@ -84,11 +84,16 @@ struct AttachmentView: View {
     @State private var problem: String?
     @State private var viewing: ViewedImage?
     @State private var preview: URL?
+    @State private var reading: MarkdownFile?
 
     /// The longest side of a thumbnail, in points.
     private let thumbnailSide: CGFloat = 240
 
     private var isImage: Bool { file.mediaType.hasPrefix("image/") }
+
+    private var isMarkdown: Bool {
+        ["md", "markdown"].contains(URL(filePath: file.filename).pathExtension.lowercased()) || file.mediaType == "text/markdown"
+    }
 
     var body: some View {
         Button(action: open) {
@@ -114,12 +119,15 @@ struct AttachmentView: View {
         .animation(Motion.settle, value: thumbnail)
         .animation(Motion.snap, value: problem)
         .accessibilityLabel(file.description.map { "\(file.filename), \($0)" } ?? file.filename)
-        .accessibilityHint(isImage ? "Opens the image" : "Opens the file")
+        .accessibilityHint(isImage ? "Opens the image" : (isMarkdown ? "Opens the document" : "Opens the file"))
         .task(id: file.id) {
             guard isImage else { return }
             await loadThumbnail()
         }
         .quickLookPreview($preview)
+        .sheet(item: $reading) { markdown in
+            MarkdownSheet(file: markdown)
+        }
         .fullScreenCover(item: $viewing) { viewed in
             ImageViewer(image: viewed.image, file: viewed.url, title: file.filename)
         }
@@ -146,7 +154,7 @@ struct AttachmentView: View {
                 if loading {
                     ProgressView().controlSize(.small).tint(.sageDeep)
                 } else {
-                    Image(systemName: problem != nil ? "exclamationmark.circle" : (isImage ? "photo" : "doc"))
+                    Image(systemName: problem != nil ? "exclamationmark.circle" : (isImage ? "photo" : (isMarkdown ? "doc.richtext" : "doc")))
                         .foregroundStyle(problem != nil ? .danger : .sageDeep)
                 }
             }
@@ -188,6 +196,8 @@ struct AttachmentView: View {
                 let url = try await AttachmentFile.local(file, from: hath)
                 if isImage {
                     viewing = ViewedImage(id: file.id, image: try await AttachmentFile.image(at: url, maxPixels: nil), url: url)
+                } else if isMarkdown {
+                    reading = MarkdownFile(id: file.id, title: file.filename, source: try String(contentsOf: url, encoding: .utf8), url: url)
                 } else {
                     preview = url
                 }
@@ -195,6 +205,46 @@ struct AttachmentView: View {
                 return
             } catch {
                 problem = error.localizedDescription
+            }
+        }
+    }
+}
+
+/// A Markdown attachment opened to read, with the file it came from for sharing.
+private struct MarkdownFile: Identifiable {
+    let id: String
+    let title: String
+    let source: String
+    let url: URL
+}
+
+/// A Markdown attachment rendered as agent messages are, scrolling in a sheet,
+/// with the original file to share.
+private struct MarkdownSheet: View {
+    let file: MarkdownFile
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                AgentMarkdown(source: file.source)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 16)
+                    .frame(maxWidth: 760, alignment: .leading)
+                    .frame(maxWidth: .infinity)
+            }
+            .background(.bone)
+            .navigationTitle(file.title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { dismiss() } label: { Image(systemName: "xmark") }
+                        .accessibilityLabel("Close")
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    ShareLink(item: file.url)
+                }
             }
         }
     }

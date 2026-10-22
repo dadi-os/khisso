@@ -97,12 +97,15 @@ private struct ThreadPage: View {
         .navigationTitle(thread.name)
     }
 
+    /// The latest message with its inline markdown, and its math read as
+    /// Unicode since the watch cannot typeset it.
     private var message: AttributedString {
+        let text = UnicodeMath.text(thread.lastMessage)
         let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace, failurePolicy: .returnPartiallyParsedIfPossible)
         do {
-            return try AttributedString(markdown: (thread.fromUser ? "You: " : "") + thread.lastMessage, options: options)
+            return try AttributedString(markdown: (thread.fromUser ? "You: " : "") + text, options: options)
         } catch {
-            return AttributedString(thread.lastMessage)
+            return AttributedString(text)
         }
     }
 }

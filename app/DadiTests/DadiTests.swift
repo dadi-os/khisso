@@ -241,3 +241,48 @@ struct ReadStateTests {
         #expect(got == [.threadRead(agentId: "finance-specialist", readSeq: 42, unread: 0)])
     }
 }
+
+/// Math in previews and on the watch reads as Unicode, by the same delimiters
+/// the thread renders, while money stays money.
+struct UnicodeMathTests {
+    @Test func readsInlineMathAsSymbols() {
+        #expect(UnicodeMath.text(#"Rent $\rightarrow$ savings"#) == "Rent → savings")
+        #expect(UnicodeMath.text(#"\(a \le b \ne c\) and \(x \to \infty\)"#) == "a ≤ b ≠ c and x → ∞")
+        #expect(UnicodeMath.text(#"$\alpha + \beta \approx \pi$"#) == "α + β ≈ π")
+        #expect(UnicodeMath.text(#"$3 \times 4 \cdot 2 \pm 1$"#) == "3 × 4 · 2 ± 1")
+        #expect(UnicodeMath.text(#"$A \Rightarrow B \leftarrow C \geq D$"#) == "A ⇒ B ← C ≥ D")
+    }
+
+    @Test func readsDisplayMath() {
+        #expect(UnicodeMath.text("$$E = mc^2$$") == "E = mc²")
+        #expect(UnicodeMath.text(#"\[\sum_{i=1}^{n} x_i\]"#) == "∑ᵢ₌₁ⁿ xᵢ")
+    }
+
+    @Test func writesScriptsWhereUnicodeHasThem() {
+        #expect(UnicodeMath.expression("x^{10} + y_1") == "x¹⁰ + y₁")
+        #expect(UnicodeMath.expression("90^\\circ") == "90°")
+        #expect(UnicodeMath.expression("e^{i\\pi}") == "e^(iπ)")
+        #expect(UnicodeMath.expression("x_{max}") == "xₘₐₓ")
+        #expect(UnicodeMath.expression("x_{q}") == "x_q")
+    }
+
+    @Test func readsFractionsRootsAndText() {
+        #expect(UnicodeMath.expression(#"\frac{a+b}{2}"#) == "(a+b)/2")
+        #expect(UnicodeMath.expression(#"\sqrt{2}"#) == "√2")
+        #expect(UnicodeMath.expression(#"\text{rate} = \mathbb{R}"#) == "rate = ℝ")
+        #expect(UnicodeMath.expression(#"\left( x \right)"#) == "( x )")
+    }
+
+    @Test func leavesMoneyAndUnknownCommandsAlone() {
+        #expect(UnicodeMath.text("$412 left and $30 spent") == "$412 left and $30 spent")
+        #expect(UnicodeMath.text("costs $ 5 or $10") == "costs $ 5 or $10")
+        #expect(UnicodeMath.text(#"\$5 \$6"#) == #"\$5 \$6"#)
+        #expect(UnicodeMath.expression(#"\weird x"#) == #"\weird x"#)
+        #expect(UnicodeMath.text(#"C:\Users"#) == #"C:\Users"#)
+    }
+
+    @Test func previewsTheFirstLineWithMathRead() {
+        #expect(Agent.preview("**Done**: $a \\to b$\nmore") == "Done: a → b")
+        #expect(Agent.preview("$$\n\\pi r^2\n$$") == "π r²")
+    }
+}

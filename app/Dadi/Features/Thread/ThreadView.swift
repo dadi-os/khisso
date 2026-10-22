@@ -110,7 +110,7 @@ struct ThreadView: View {
         } else if message.fromUser {
             VStack(alignment: .trailing, spacing: 6) {
                 if !message.content.isEmpty {
-                    Text(MarkdownText.inline(message.content))
+                    Text(InlineMarkdown.attributed(message.content))
                         .font(.body)
                         .foregroundStyle(.bone)
                         .textSelection(.enabled)
@@ -129,7 +129,7 @@ struct ThreadView: View {
                 if opensGroup {
                     AgentName(name: name, hue: Agent.hue(agentId), font: .footnote.weight(.semibold), ink: .inkMuted)
                 }
-                MarkdownText(source: message.content)
+                AgentMarkdown(source: message.content)
                 attachments(message.attachments)
                 time(message)
             }
