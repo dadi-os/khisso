@@ -157,22 +157,7 @@ struct ThreadView: View {
         if !files.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
                 ForEach(files) { file in
-                    Label {
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(file.filename).font(.footnote.weight(.medium)).foregroundStyle(.ink).lineLimit(1)
-                            Text(file.description ?? ByteCountFormatter.string(fromByteCount: Int64(file.sizeBytes), countStyle: .file))
-                                .font(.caption2)
-                                .foregroundStyle(.inkMuted)
-                                .lineLimit(2)
-                        }
-                    } icon: {
-                        Image(systemName: file.mediaType.hasPrefix("image/") ? "photo" : "doc")
-                            .foregroundStyle(.sageDeep)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(.boneRaised, in: .rect(cornerRadius: 14))
-                    .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(.rule))
+                    AttachmentView(file: file, hath: hath)
                 }
             }
         }

@@ -10,6 +10,9 @@ struct HathClient: Sendable {
     /// The router runs every agent it hands work to before answering.
     static let routerTimeout: TimeInterval = 300
 
+    /// A large attachment can take a while to come over the mesh.
+    static let attachmentTimeout: TimeInterval = 120
+
     let client: ServiceClient
 
     init(session: URLSession) {
@@ -33,6 +36,11 @@ struct HathClient: Sendable {
         struct Response: Decodable { let messages: [DurableMessage] }
         let response: Response = try await client.get("/agents/\(agentId)/messages")
         return response.messages
+    }
+
+    /// GET /attachments/:id: an attachment's bytes.
+    func attachment(_ id: String) async throws -> Data {
+        try await client.data("/attachments/\(id)", timeout: Self.attachmentTimeout)
     }
 
     /// GET /agents: every agent, active and retired, each with its parent.

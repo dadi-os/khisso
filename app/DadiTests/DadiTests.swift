@@ -201,3 +201,25 @@ struct ThinkingMarkTests {
         #expect(ThinkingMark.pose(0, ms: 1400).center.y > middle.center.y)
     }
 }
+
+/// An attachment is kept under its own folder with its original name, made
+/// safe as one path component.
+struct AttachmentFileTests {
+    private func file(id: String, filename: String) -> AttachmentSummary {
+        AttachmentSummary(id: id, filename: filename, mediaType: "application/pdf", sizeBytes: 10, description: nil)
+    }
+
+    @Test func keepsTheOriginalNameInAFolderPerAttachment() {
+        let root = URL(filePath: "/tmp/attachments", directoryHint: .isDirectory)
+        let url = AttachmentFile.url(for: file(id: "att_1", filename: "Syllabus Fall 2026.pdf"), in: root)
+        #expect(url.path(percentEncoded: false) == "/tmp/attachments/att_1/Syllabus Fall 2026.pdf")
+    }
+
+    @Test func makesANameOnePathComponent() {
+        #expect(AttachmentFile.name("../etc/passwd") == "..-etc-passwd")
+        #expect(AttachmentFile.name("a:b.txt") == "a-b.txt")
+        #expect(AttachmentFile.name("  notes.md \n") == "notes.md")
+        #expect(AttachmentFile.name("") == "attachment")
+        #expect(AttachmentFile.name("..") == "attachment")
+    }
+}

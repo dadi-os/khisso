@@ -50,6 +50,16 @@ struct ServiceClient: Sendable {
         try await send(request("GET", path, query: query, timeout: timeout))
     }
 
+    /// GET `path` and return the response body's bytes as they are.
+    func data(_ path: String, timeout: TimeInterval = 30) async throws -> Data {
+        let (data, response) = try await session.data(for: request("GET", path, timeout: timeout))
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(status) else {
+            throw Self.error(status: status, body: data)
+        }
+        return data
+    }
+
     /// POST `body` as JSON to `path` and decode the response as `T`.
     func post<B: Encodable, T: Decodable>(_ path: String, body: B, timeout: TimeInterval = 30) async throws -> T {
         var req = request("POST", path, timeout: timeout)
