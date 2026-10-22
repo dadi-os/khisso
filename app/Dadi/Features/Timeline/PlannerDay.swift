@@ -5,11 +5,12 @@ import SwiftUI
 /// with open time left as space and labeled with its length. Fixed
 /// commitments are solid, the gym warm, the rest quiet. Tap a block for its
 /// note and to mark it done; marking shows at once and goes back, with the
-/// reason, if Yaad does not save it. Yaad has no push, so the plan is fetched
-/// every two seconds while it is on screen.
+/// reason, if Yaad does not save it. The plan is read again whenever Yaad
+/// announces a change.
 struct PlannerDay: View {
     let yaad: YaadClient
 
+    @Environment(LiveData.self) private var live
     @State private var day = Calendar.current.startOfDay(for: .now)
     @State private var blocks: [PlannerBlock] = []
     @State private var error: String?
@@ -22,7 +23,6 @@ struct PlannerDay: View {
 
     /// Points per minute on the axis.
     private let scale: CGFloat = 1.3
-    private let refresh: Duration = .seconds(2)
 
     var body: some View {
         let segments = PlannerLayout.segments(shown, on: day)
@@ -42,12 +42,7 @@ struct PlannerDay: View {
             .fittedSheet()
             .presentationBackground(.thinMaterial)
         }
-        .task(id: day) {
-            while !Task.isCancelled {
-                await load()
-                do { try await Task.sleep(for: refresh) } catch { return }
-            }
-        }
+        .task(id: Reload(day: day, change: live.yaad)) { await load() }
     }
 
     /// Yaad's blocks with Ankur's unsaved marks over them.
@@ -486,4 +481,10 @@ private extension PlannerBlock {
     func marked(_ mark: Mark) -> PlannerBlock {
         PlannerBlock(id: id, startAt: startAt, endAt: endAt, title: title, note: note, kind: kind, icon: icon, fixed: fixed, doneAt: mark.done ? (doneAt ?? mark.at) : nil)
     }
+}
+
+/// What makes the planner read again: another day, or a change in Yaad.
+private struct Reload: Hashable {
+    let day: Date
+    let change: Int
 }

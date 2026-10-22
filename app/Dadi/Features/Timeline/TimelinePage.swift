@@ -7,6 +7,8 @@ import SwiftUI
 struct TimelinePage: View {
     let yaad: YaadClient
 
+    @Environment(LiveData.self) private var live
+
     /// The two ways to look at the timeline.
     private enum Mode: String, CaseIterable {
         case day = "Day"
@@ -101,7 +103,7 @@ struct TimelinePage: View {
                 .fittedSheet()
                 .presentationBackground(.thinMaterial)
         }
-        .task { await load() }
+        .task(id: live.yaad) { await load() }
     }
 
     private var days: [Date] {

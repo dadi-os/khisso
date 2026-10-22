@@ -10,6 +10,7 @@ import UIKit
 struct ChaaviPage: View {
     let chaavi: ChaaviClient
 
+    @Environment(LiveData.self) private var live
     @State private var items: [ChaaviItem] = []
     @State private var folders: [ChaaviFolder] = []
     /// The folder being browsed; nil at the top.
@@ -111,7 +112,7 @@ struct ChaaviPage: View {
                 .presentationBackground(.thinMaterial)
         }
         .navigationTitle("Chaavi")
-        .task { await load() }
+        .task(id: live.chaavi) { await load() }
     }
 
     /// Items matching the search across the vault, or the browsed folder's

@@ -34,6 +34,11 @@ struct YaadClient: Sendable {
         try await client.patch("/planner/blocks/\(id)", body: PlannerDone(done: done))
     }
 
+    /// GET /events: one element per write to Yaad's plans, memories or planner.
+    func changes() async throws -> AsyncThrowingStream<Void, Error> {
+        try await client.changes("/events")
+    }
+
     /// POST /ingest: Yaad reads `text` and remembers what it says.
     func ingest(_ text: String) async throws -> IngestResponse {
         try await client.post("/ingest", body: IngestRequest(text: text, occurredAt: .now), timeout: Self.ingestTimeout)

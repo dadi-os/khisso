@@ -11,6 +11,11 @@ struct ChaaviClient: Sendable {
         client = ServiceClient(session: session, baseURL: Self.baseURL)
     }
 
+    /// GET /v1/events: one element per change to the vault's items or folders.
+    func changes() async throws -> AsyncThrowingStream<Void, Error> {
+        try await client.changes("/v1/events")
+    }
+
     /// GET /v1/items.
     func items() async throws -> [ChaaviItem] {
         struct Response: Decodable { let items: [ChaaviItem] }

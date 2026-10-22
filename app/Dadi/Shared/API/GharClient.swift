@@ -14,6 +14,11 @@ struct GharClient: Sendable {
         client = ServiceClient(session: session, baseURL: Self.baseURL)
     }
 
+    /// GET /changes: one element per change to a device's state or the registry.
+    func changes() async throws -> AsyncThrowingStream<Void, Error> {
+        try await client.changes("/changes")
+    }
+
     /// GET /devices.
     func devices() async throws -> [GharDevice] {
         struct Response: Decodable { let devices: [GharDevice] }

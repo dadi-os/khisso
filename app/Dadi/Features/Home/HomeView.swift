@@ -18,6 +18,7 @@ struct HomeView: View {
     let wordmark: Namespace.ID
 
     @State private var store = HomeStore()
+    @State private var live = LiveData()
     @State private var page: Page = .dadi
     /// Bumped each time the app comes forward, which reopens the event stream
     /// at once instead of trusting a connection iOS may have dropped.
@@ -26,8 +27,10 @@ struct HomeView: View {
 
     var body: some View {
         PhoneHome(services: services, wordmark: wordmark, store: store, page: $page)
+        .environment(live)
         .task { await store.load(services.hath) }
         .task(id: stream) { await store.follow(services.hath) }
+        .task(id: stream) { await live.follow(services) }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { stream += 1 }
         }

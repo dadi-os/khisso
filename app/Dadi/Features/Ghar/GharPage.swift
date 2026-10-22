@@ -2,11 +2,12 @@ import SwiftUI
 
 /// Ghar: every device by room as glass tiles. A light that's on glows in its
 /// own color and brightness. Tap a tile to switch it; press and hold for its
-/// controls. Ghar is asked again every few seconds while the page is open, so
-/// changes made elsewhere show up.
+/// controls. The page reads Ghar again whenever Ghar announces a change, so
+/// changes made elsewhere show up at once.
 struct GharPage: View {
     let ghar: GharClient
 
+    @Environment(LiveData.self) private var live
     @State private var devices: [GharDevice] = []
     @State private var rooms: [GharRoom] = []
     @State private var room: String?
@@ -18,7 +19,6 @@ struct GharPage: View {
     @Namespace private var chip
 
     /// How often the page asks Ghar for fresh state.
-    private let refresh: Duration = .seconds(4)
 
     var body: some View {
         ScrollView {
@@ -57,12 +57,7 @@ struct GharPage: View {
                 .presentationBackground(.thinMaterial)
         }
         .navigationTitle("Ghar")
-        .task {
-            while !Task.isCancelled {
-                await load()
-                do { try await Task.sleep(for: refresh) } catch { return }
-            }
-        }
+        .task(id: live.ghar) { await load() }
     }
 
     /// Devices in the chosen room, or all of them, by room then name.

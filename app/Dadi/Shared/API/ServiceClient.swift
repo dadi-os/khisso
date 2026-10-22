@@ -88,6 +88,27 @@ struct ServiceClient: Sendable {
         }
     }
 
+    /// A service's change stream at `path`: one element per event it sends, each
+    /// meaning "something changed, read again". Services ping every 20 s, so
+    /// the stream fails after 45 quiet seconds rather than hang on a dead
+    /// connection.
+    func changes(_ path: String) async throws -> AsyncThrowingStream<Void, Error> {
+        let lines = try await lines(path, idle: 45)
+        return AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    for try await line in lines where line.hasPrefix("data:") {
+                        continuation.yield()
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
     /// Opens a Server-Sent Events stream at `path` and returns its lines. It
     /// fails once `idle` seconds pass with nothing from the server, so a
     /// connection that died while the app was suspended or the network changed
