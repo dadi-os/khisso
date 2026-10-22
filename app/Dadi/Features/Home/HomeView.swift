@@ -27,26 +27,23 @@ struct HomeView: View {
     }
 }
 
-/// One agent thread in a list: the agent's initial, name, when, and its last
-/// line, which gives way to thaali's flowing dots while the agent thinks. A
+/// One agent thread in a list, led by its name as in thaali: the agent's
+/// color as a small dot, its name, when, and its last line, which gives way to thaali's flowing dots while the agent thinks. A
 /// thread with replies not yet read shows their count, its name bolder, as in
 /// thaali. A working agent's row runs the sheen, which the list puts on the
 /// row's shape.
 struct ThreadRow: View {
     let thread: ThreadSummary
     let lanes: Set<Lane>
-    let selected: Bool
     let unread: Int
 
     var body: some View {
         HStack(spacing: 12) {
-            Text(String(thread.agentName.prefix(1)).uppercased())
-                .font(.system(size: 15, weight: .semibold, design: .rounded))
-                .foregroundStyle(selected ? Color.bone : hue)
-                .frame(width: 34, height: 34)
-                .background(selected ? AnyShapeStyle(hue) : AnyShapeStyle(hue.opacity(0.16)), in: .circle)
             VStack(alignment: .leading, spacing: 2) {
-                HStack(alignment: .firstTextBaseline) {
+                HStack(alignment: .firstTextBaseline, spacing: 7) {
+                    Circle()
+                        .fill(Agent.hue(thread.agentId))
+                        .frame(width: 8, height: 8)
                     Text(thread.agentName)
                         .font(.subheadline.weight(unread > 0 ? .bold : .semibold))
                         .foregroundStyle(.ink)
@@ -83,8 +80,6 @@ struct ThreadRow: View {
         .animation(Motion.pop, value: unread)
         .contentShape(.rect)
     }
-
-    private var hue: Color { Agent.hue(thread.agentId) }
 }
 
 /// Threads, running lanes and live messages for Home, fed by GET /threads,

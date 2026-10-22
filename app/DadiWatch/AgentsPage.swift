@@ -33,24 +33,20 @@ private struct Row: View {
     let thread: WatchSnapshot.Thread
 
     var body: some View {
-        HStack(spacing: 8) {
-            Text(String(thread.name.prefix(1)))
-                .font(.system(size: 13, weight: .bold, design: .rounded))
-                .foregroundStyle(Agent.hue(thread.agentId))
-                .frame(width: 26, height: 26)
-                .background(Agent.hue(thread.agentId).opacity(0.22), in: .circle)
-            VStack(alignment: .leading, spacing: 1) {
+        VStack(alignment: .leading, spacing: 1) {
+            HStack(spacing: 6) {
+                Circle().fill(Agent.hue(thread.agentId)).frame(width: 7, height: 7)
                 Text(thread.name).font(.footnote.weight(.semibold)).lineLimit(1)
-                if thread.thinking {
-                    ThinkingMark().frame(height: 14)
-                } else if thread.working {
-                    Text("working").font(.caption2).foregroundStyle(.sage)
-                } else {
-                    Text((thread.fromUser ? "You: " : "") + Agent.preview(thread.lastMessage))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
+            }
+            if thread.thinking {
+                ThinkingMark().frame(height: 14)
+            } else if thread.working {
+                Text("working").font(.caption2).foregroundStyle(.sage)
+            } else {
+                Text((thread.fromUser ? "You: " : "") + Agent.preview(thread.lastMessage))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
         }
     }

@@ -282,7 +282,7 @@ private struct Drawer: View {
                         let selected = page == .thread(thread.agentId)
                         let lanes = store.lanes(of: thread.agentId)
                         Button { choose(.thread(thread.agentId)) } label: {
-                            ThreadRow(thread: thread, lanes: lanes, selected: selected, unread: store.unread[thread.agentId] ?? 0)
+                            ThreadRow(thread: thread, lanes: lanes, unread: store.unread[thread.agentId] ?? 0)
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 8)
                                 .background(selected ? Color.sage.opacity(0.14) : .clear, in: .rect(cornerRadius: 16))
