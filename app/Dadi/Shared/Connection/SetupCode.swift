@@ -44,20 +44,32 @@ struct SetupCode: Codable, Sendable, Equatable {
     }
 }
 
-/// The saved setup code, kept in the Keychain for this device only.
+/// The saved setup code, kept in the Keychain for this device only. The
+/// iPhone uses the data protection Keychain; the Mac uses the login Keychain,
+/// whose items only this app's signature can read, because the data
+/// protection Keychain on macOS needs a provisioning profile that a free
+/// Personal Team build made from the command line does not carry.
 enum SetupStore {
     private static let service = "com.dadi.khisso"
     private static let account = "setup"
 
-    /// The saved setup code, or nil when this device has not joined dadi.
-    static func load() throws -> SetupCode? {
-        let query: [String: Any] = [
+    /// The attributes that name the item, for every call.
+    private static var base: [String: Any] {
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
-            kSecUseDataProtectionKeychain as String: true,
-            kSecReturnData as String: true,
         ]
+        #if os(iOS)
+        query[kSecUseDataProtectionKeychain as String] = true
+        #endif
+        return query
+    }
+
+    /// The saved setup code, or nil when this device has not joined dadi.
+    static func load() throws -> SetupCode? {
+        var query = base
+        query[kSecReturnData as String] = true
         var item: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &item)
         switch status {
@@ -74,27 +86,18 @@ enum SetupStore {
     /// Saves code, replacing any earlier one.
     static func save(_ code: SetupCode) throws {
         try delete()
-        let item: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecUseDataProtectionKeychain as String: true,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
-            kSecValueData as String: try JSONEncoder().encode(code),
-        ]
+        var item = base
+        item[kSecValueData as String] = try JSONEncoder().encode(code)
+        #if os(iOS)
+        item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        #endif
         let status = SecItemAdd(item as CFDictionary, nil)
         guard status == errSecSuccess else { throw KeychainError(status: status) }
     }
 
     /// Removes the saved setup code, if any.
     static func delete() throws {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecUseDataProtectionKeychain as String: true,
-        ]
-        let status = SecItemDelete(query as CFDictionary)
+        let status = SecItemDelete(base as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else { throw KeychainError(status: status) }
     }
 }
