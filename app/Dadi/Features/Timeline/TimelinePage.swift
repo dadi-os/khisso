@@ -274,11 +274,11 @@ private struct PlanRow: View {
                 if let agent = plan.agentId {
                     Text(agent)
                         .font(.caption2.weight(.semibold))
-                        .foregroundStyle(Agent.hue(agent))
+                        .foregroundStyle(.inkMuted)
                         .lineLimit(1)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
-                        .background(Agent.hue(agent).opacity(0.12), in: .capsule)
+                        .background(.inkMuted.opacity(0.1), in: .capsule)
                 }
             }
             Spacer(minLength: 0)

@@ -34,11 +34,11 @@ struct HomeView: View {
     }
 }
 
-/// One agent thread in a list, led by its name as in thaali: the agent's
-/// color as a small dot, its name, when, and its last line, which gives way to thaali's flowing dots while the agent thinks. A
-/// thread with replies not yet read shows their count, its name bolder, as in
-/// thaali. A working agent's row runs the sheen, which the list puts on the
-/// row's shape.
+/// One agent thread in a list, led by its name as in thaali: its name, when,
+/// and its last line, which gives way to thaali's flowing dots while the agent
+/// thinks. A thread with replies not yet read shows their count, its name
+/// bolder, as in thaali. A working agent's row runs the sheen, which the list
+/// puts on the row's shape. Agents carry no color of their own.
 struct ThreadRow: View {
     let thread: ThreadSummary
     let lanes: Set<Lane>
@@ -48,9 +48,6 @@ struct ThreadRow: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline, spacing: 7) {
-                    Circle()
-                        .fill(Agent.hue(thread.agentId))
-                        .frame(width: 8, height: 8)
                     Text(thread.agentName)
                         .font(.subheadline.weight(unread > 0 ? .bold : .semibold))
                         .foregroundStyle(.ink)

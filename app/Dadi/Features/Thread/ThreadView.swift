@@ -86,7 +86,7 @@ struct ThreadView: View {
 
     private var empty: some View {
         VStack(spacing: 10) {
-            AgentName(name: name, hue: Agent.hue(agentId), font: .headline, ink: .ink)
+            Text(name).font(.headline).foregroundStyle(.ink)
             Text("No messages yet. Say something to get it started.")
                 .font(.callout)
                 .foregroundStyle(.inkMuted)
@@ -127,7 +127,7 @@ struct ThreadView: View {
         } else {
             VStack(alignment: .leading, spacing: 8) {
                 if opensGroup {
-                    AgentName(name: name, hue: Agent.hue(agentId), font: .footnote.weight(.semibold), ink: .inkMuted)
+                    Text(name).font(.footnote.weight(.semibold)).foregroundStyle(.inkMuted)
                 }
                 AgentMarkdown(source: message.content)
                 attachments(message.attachments)
@@ -194,21 +194,6 @@ struct ThreadView: View {
             } catch {
                 withAnimation(Motion.snap) { sendError = error.localizedDescription }
             }
-        }
-    }
-}
-
-/// An agent's name led by its color as a small dot, as the top bar names it.
-private struct AgentName: View {
-    let name: String
-    let hue: Color
-    let font: Font
-    let ink: Color
-
-    var body: some View {
-        HStack(spacing: 7) {
-            Circle().fill(hue).frame(width: 8, height: 8)
-            Text(name).font(font).foregroundStyle(ink)
         }
     }
 }

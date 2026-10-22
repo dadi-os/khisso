@@ -35,7 +35,6 @@ private struct Row: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
             HStack(spacing: 6) {
-                Circle().fill(Agent.hue(thread.agentId)).frame(width: 7, height: 7)
                 Text(thread.name).font(.footnote.weight(thread.unread > 0 ? .bold : .semibold)).lineLimit(1)
                 if thread.unread > 0 {
                     Spacer(minLength: 2)

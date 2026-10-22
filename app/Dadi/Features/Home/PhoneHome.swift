@@ -113,7 +113,7 @@ struct PhoneHome: View {
             .accessibilityLabel("Open sidebar")
             Spacer()
             if let title {
-                NameBubble(title: title, hue: hue)
+                NameBubble(title: title)
                     .id(title)
                     .transition(.opacity.combined(with: .scale(scale: 0.92)))
             }
@@ -147,12 +147,6 @@ struct PhoneHome: View {
         case .chaavi: "Chaavi"
         case .system: "System"
         }
-    }
-
-    /// The agent's color beside its name in a thread.
-    private var hue: Color? {
-        if case .thread(let agentId) = page { return Agent.hue(agentId) }
-        return nil
     }
 
     /// Shows `next` and closes the drawer.
@@ -335,25 +329,18 @@ private struct Drawer: View {
     }
 }
 
-/// A page's name in a glass bubble, as thaali's pane header: the agent's color
-/// as a dot when it is a thread.
+/// A page's name in a glass bubble, as thaali's pane header.
 private struct NameBubble: View {
     let title: String
-    let hue: Color?
 
     var body: some View {
-        HStack(spacing: 7) {
-            if let hue {
-                Circle().fill(hue).frame(width: 8, height: 8)
-            }
-            Text(title)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.ink)
-                .lineLimit(1)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 9)
-        .glassEffect(.regular, in: .capsule)
+        Text(title)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.ink)
+            .lineLimit(1)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+            .glassEffect(.regular, in: .capsule)
     }
 }
 

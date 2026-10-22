@@ -221,9 +221,9 @@ private struct ItemRow: View {
         HStack(spacing: 14) {
             Text(String((item.host ?? item.name).prefix(1)).uppercased())
                 .font(.system(size: 17, weight: .bold, design: .rounded))
-                .foregroundStyle(Agent.hue(item.host ?? item.name))
+                .foregroundStyle(SiteHue.of(item.host ?? item.name))
                 .frame(width: 42, height: 42)
-                .background(Agent.hue(item.host ?? item.name).opacity(0.14), in: .rect(cornerRadius: 12, style: .continuous))
+                .background(SiteHue.of(item.host ?? item.name).opacity(0.14), in: .rect(cornerRadius: 12, style: .continuous))
                 .overlay(alignment: .topTrailing) {
                     if item.favorite {
                         Image(systemName: "star.fill").font(.system(size: 9)).foregroundStyle(.clay).offset(x: 4, y: -4)
@@ -281,9 +281,9 @@ private struct ItemDetail: View {
             HStack(spacing: 14) {
                 Text(String((item.host ?? item.name).prefix(1)).uppercased())
                     .font(.system(size: 24, weight: .bold, design: .rounded))
-                    .foregroundStyle(Agent.hue(item.host ?? item.name))
+                    .foregroundStyle(SiteHue.of(item.host ?? item.name))
                     .frame(width: 56, height: 56)
-                    .background(Agent.hue(item.host ?? item.name).opacity(0.14), in: .rect(cornerRadius: 16, style: .continuous))
+                    .background(SiteHue.of(item.host ?? item.name).opacity(0.14), in: .rect(cornerRadius: 16, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(item.name).font(.title3.weight(.semibold)).foregroundStyle(.ink)
                     if let host = item.host { Text(host).font(.footnote).foregroundStyle(.inkMuted) }
@@ -416,5 +416,14 @@ private extension String {
     /// "123456" as "123 456".
     var chunked: String {
         count == 6 ? "\(prefix(3)) \(suffix(3))" : self
+    }
+}
+
+/// A site's color for its letter tile, the same every time: sage, clay or tide.
+private enum SiteHue {
+    static func of(_ site: String) -> Color {
+        let palette: [Color] = [.sageDeep, .clay, .tide]
+        let sum = site.unicodeScalars.reduce(0) { $0 &+ Int($1.value) }
+        return palette[sum % palette.count]
     }
 }
