@@ -19,11 +19,18 @@ struct HomeView: View {
 
     @State private var store = HomeStore()
     @State private var page: Page = .dadi
+    /// Bumped each time the app comes forward, which reopens the event stream
+    /// at once instead of trusting a connection iOS may have dropped.
+    @State private var stream = 0
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         PhoneHome(services: services, wordmark: wordmark, store: store, page: $page)
         .task { await store.load(services.hath) }
-        .task { await store.follow(services.hath) }
+        .task(id: stream) { await store.follow(services.hath) }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { stream += 1 }
+        }
     }
 }
 
@@ -98,6 +105,9 @@ final class HomeStore {
     private(set) var routing = false
     /// The newest message from the event stream, for the open thread to pick up.
     private(set) var live: HathEvent?
+    /// Bumped each time the event stream connects. The stream does not replay
+    /// what happened while it was down, so the open thread reloads on it.
+    private(set) var connections = 0
     private(set) var error: String?
     /// Why live updates stopped; cleared when the stream delivers again.
     private(set) var liveError: String?
@@ -112,14 +122,18 @@ final class HomeStore {
         }
     }
 
-    /// Follows Hath's events until the view goes away. A dropped stream is
-    /// reported and reopened after a short, growing delay, up to 30 s.
+    /// Follows Hath's events until the view goes away. Each connect reloads the
+    /// threads and lanes and bumps `connections`, since the stream does not
+    /// replay; a dropped or silent stream is reported and reopened after a
+    /// short, growing delay, up to 30 s.
     func follow(_ hath: HathClient) async {
         var delay: Duration = .seconds(1)
         while !Task.isCancelled {
             do {
                 let events = try await hath.events()
                 lanes = Dictionary(uniqueKeysWithValues: try await hath.agents().map { ($0.id, $0.lanes) }).filter { !$0.value.isEmpty }
+                await load(hath)
+                connections += 1
                 for try await event in events {
                     delay = .seconds(1)
                     liveError = nil

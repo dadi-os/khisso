@@ -88,10 +88,12 @@ struct ServiceClient: Sendable {
         }
     }
 
-    /// Opens a Server-Sent Events stream at `path` and returns its lines. The
-    /// request has no timeout; it ends when the server or the caller closes it.
-    func lines(_ path: String) async throws -> AsyncLineSequence<URLSession.AsyncBytes> {
-        var req = request("GET", path, timeout: .infinity)
+    /// Opens a Server-Sent Events stream at `path` and returns its lines. It
+    /// fails once `idle` seconds pass with nothing from the server, so a
+    /// connection that died while the app was suspended or the network changed
+    /// is noticed instead of waited on forever.
+    func lines(_ path: String, idle: TimeInterval) async throws -> AsyncLineSequence<URLSession.AsyncBytes> {
+        var req = request("GET", path, timeout: idle)
         req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
         let (bytes, response) = try await session.bytes(for: req)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0

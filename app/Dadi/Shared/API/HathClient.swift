@@ -60,9 +60,13 @@ struct HathClient: Sendable {
         try await client.post("/messages", body: MessageRequest(toAgentId: agentId, content: content))
     }
 
-    /// GET /events: Hath's live events until the stream ends.
+    /// Hath pings its event stream every 20 s, so this long without a byte
+    /// means the connection is gone.
+    static let eventsIdle: TimeInterval = 45
+
+    /// GET /events: Hath's live events until the stream ends or goes quiet.
     func events() async throws -> AsyncThrowingStream<HathEvent, Error> {
-        Self.events(from: try await client.lines("/events"))
+        Self.events(from: try await client.lines("/events", idle: Self.eventsIdle))
     }
 
     /// Parses Server-Sent Events lines into events. Comments and blank lines are

@@ -13,6 +13,9 @@ struct ThreadView: View {
     let live: HathEvent?
     /// The agent's lanes running now.
     let lanes: Set<Lane>
+    /// Changes each time Home's event stream reconnects; the thread reloads to
+    /// catch what arrived while it was down.
+    let connections: Int
 
     @State private var messages: [DurableMessage] = []
     @State private var loaded = false
@@ -71,7 +74,7 @@ struct ThreadView: View {
         .navigationTitle(name)
         .sensoryFeedback(.impact(weight: .light), trigger: sent)
         .sensoryFeedback(.impact(flexibility: .soft), trigger: received)
-        .task { await load() }
+        .task(id: connections) { await load() }
         .onChange(of: live) { _, event in
             guard case .message(let id, let message)? = event, id == agentId else { return }
             if insert(message), !message.fromUser { received += 1 }
@@ -155,6 +158,8 @@ struct ThreadView: View {
         do {
             messages = try await hath.messages(agentId: agentId)
             loadError = nil
+        } catch is CancellationError {
+            return
         } catch {
             loadError = error.localizedDescription
         }
