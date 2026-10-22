@@ -29,11 +29,14 @@ struct HomeView: View {
 
 /// One agent thread in a list: the agent's initial, name, when, and its last
 /// line, which gives way to thaali's flowing dots while the agent thinks. A
-/// working agent's row runs the sheen, which the list puts on the row's shape.
+/// thread with replies not yet read shows their count, its name bolder, as in
+/// thaali. A working agent's row runs the sheen, which the list puts on the
+/// row's shape.
 struct ThreadRow: View {
     let thread: ThreadSummary
     let lanes: Set<Lane>
     let selected: Bool
+    let unread: Int
 
     var body: some View {
         HStack(spacing: 12) {
@@ -44,14 +47,14 @@ struct ThreadRow: View {
                 .background(selected ? AnyShapeStyle(hue) : AnyShapeStyle(hue.opacity(0.16)), in: .circle)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline) {
-                    Text(Agent.displayName(thread.agentName))
-                        .font(.subheadline.weight(.semibold))
+                    Text(thread.agentName)
+                        .font(.subheadline.weight(unread > 0 ? .bold : .semibold))
                         .foregroundStyle(.ink)
                         .lineLimit(1)
                     Spacer(minLength: 6)
                     Text(thread.lastAt, format: .relative(presentation: .named, unitsStyle: .narrow))
                         .font(.caption2)
-                        .foregroundStyle(.inkFaint)
+                        .foregroundStyle(unread > 0 ? Color.sageText : .inkFaint)
                 }
                 if lanes.contains(.conversation) {
                     ThinkingMark()
@@ -60,13 +63,24 @@ struct ThreadRow: View {
                 } else {
                     Text((thread.fromUser ? "You: " : "") + Agent.preview(thread.lastMessage))
                         .font(.footnote)
-                        .foregroundStyle(.inkMuted)
+                        .foregroundStyle(unread > 0 ? Color.ink : .inkMuted)
                         .lineLimit(1)
                         .transition(.opacity)
                 }
             }
+            if unread > 0 {
+                Text("\(unread)")
+                    .font(.caption2.weight(.bold).monospacedDigit())
+                    .foregroundStyle(.bone)
+                    .padding(.horizontal, 6)
+                    .frame(minWidth: 20, minHeight: 20)
+                    .background(.sageDeep, in: .capsule)
+                    .transition(.scale.combined(with: .opacity))
+                    .accessibilityLabel("\(unread) unread")
+            }
         }
         .animation(Motion.settle, value: lanes)
+        .animation(Motion.pop, value: unread)
         .contentShape(.rect)
     }
 
@@ -81,6 +95,10 @@ final class HomeStore {
     private(set) var threads: [ThreadSummary] = []
     /// Each agent's lanes running right now.
     private(set) var lanes: [String: Set<Lane>] = [:]
+    /// Each agent's replies that arrived while its thread was not open.
+    private(set) var unread: [String: Int] = [:]
+    /// The thread open now, whose replies arrive read.
+    private var reading: String?
     /// True while the router is choosing whom Ankur's words go to.
     private(set) var routing = false
     /// The newest message from the event stream, for the open thread to pick up.
@@ -126,6 +144,13 @@ final class HomeStore {
         }
     }
 
+    /// Marks `agentId`'s thread as the one open, clearing its unread count;
+    /// nil when no thread is open.
+    func read(_ agentId: String?) {
+        reading = agentId
+        if let agentId { unread[agentId] = nil }
+    }
+
     /// Agents with any lane running.
     var running: Set<String> { Set(lanes.keys) }
 
@@ -134,13 +159,16 @@ final class HomeStore {
 
     /// The display name of an agent's thread; the id until the thread is known.
     func name(of agentId: String) -> String {
-        Agent.displayName(threads.first { $0.agentId == agentId }?.agentName ?? agentId)
+        threads.first { $0.agentId == agentId }?.agentName ?? agentId
     }
 
     private func apply(_ event: HathEvent, _ hath: HathClient) async {
         switch event {
-        case .message:
+        case .message(let agentId, let message):
             live = event
+            if !message.fromUser, message.kind != .notice, agentId != reading {
+                unread[agentId, default: 0] += 1
+            }
             await load(hath)
         case .laneStarted(let agentId, let lane):
             lanes[agentId, default: []].insert(lane)

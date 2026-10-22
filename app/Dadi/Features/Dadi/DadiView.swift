@@ -11,6 +11,8 @@ struct DadiView: View {
     static let wordmarkSize: CGFloat = 84
 
     let hath: HathClient
+    /// An agent's name as Hath names it, for "Sent to".
+    let name: (String) -> String
     let wordmark: Namespace.ID
     /// Opens the thread of the agent the router handed off to.
     let open: (String) -> Void
@@ -96,7 +98,7 @@ struct DadiView: View {
         Group {
             switch stage {
             case .sent(_, let agent):
-                Label("Sent to \(Agent.displayName(agent))", systemImage: "checkmark.circle.fill")
+                Label("Sent to \(name(agent))", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.sageDeep)
                     .transition(.scale(scale: 0.9).combined(with: .opacity))
             default:

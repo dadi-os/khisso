@@ -1,14 +1,8 @@
 import SwiftUI
 
-/// How agents read in lists: their ids made into names, a stable color each,
-/// and a message as one plain line.
+/// How agents read in lists: a stable color each, and a message as one plain
+/// line. Agents are named as Hath names them, as in thaali.
 enum Agent {
-    /// "finance-specialist" as "Finance specialist".
-    static func displayName(_ id: String) -> String {
-        let words = id.split(separator: "-").joined(separator: " ")
-        return words.prefix(1).uppercased() + words.dropFirst()
-    }
-
     /// The agent's color, the same every time: sage, clay or tide.
     static func hue(_ id: String) -> Color {
         let palette: [Color] = [.sageDeep, .clay, .tide]

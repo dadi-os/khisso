@@ -34,7 +34,7 @@ struct PlannerDay: View {
             BlockCard(block: block, yaad: yaad) { updated in
                 if let index = blocks.firstIndex(where: { $0.id == updated.id }) { blocks[index] = updated }
             }
-            .presentationDetents([.fraction(0.4), .medium])
+            .fittedSheet()
             .presentationBackground(.thinMaterial)
         }
         .task(id: day) {

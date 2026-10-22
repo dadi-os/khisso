@@ -20,6 +20,9 @@ struct PhoneHome: View {
     /// False until Home has settled in from Connecting, so the bar fades in
     /// around the wordmark instead of arriving with it.
     @State private var arrived = false
+    /// True while a sideways drag is moving the drawer and just after, so the
+    /// row a swipe ends on is not taken as a tap.
+    @State private var swiping = false
 
     /// The strip along the left edge that opens the drawer. It sits over the
     /// page, so a swipe that starts in it always pulls the drawer instead of
@@ -33,7 +36,10 @@ struct PhoneHome: View {
             let progress = shift / width
             ZStack(alignment: .leading) {
                 FieldBloom()
-                Drawer(store: store, page: page, choose: choose)
+                Drawer(store: store, page: page) { next in
+                    guard !swiping else { return }
+                    choose(next)
+                }
                     .frame(width: width)
                     .opacity(progress > 0 ? 1 : 0)
                 pageView
@@ -60,6 +66,9 @@ struct PhoneHome: View {
             .gesture(open ? drawerDrag(width: width) : nil)
         }
         .sensoryFeedback(.selection, trigger: opened)
+        .onChange(of: page, initial: true) { _, shown in
+            if case .thread(let agentId) = shown { store.read(agentId) } else { store.read(nil) }
+        }
         .onAppear { withAnimation(Motion.settle.delay(0.35)) { arrived = true } }
     }
 
@@ -67,7 +76,7 @@ struct PhoneHome: View {
         Group {
             switch page {
             case .dadi:
-                DadiView(hath: services.hath, wordmark: wordmark) { agentId in
+                DadiView(hath: services.hath, name: store.name(of:), wordmark: wordmark) { agentId in
                     withAnimation(Motion.settle) { page = .thread(agentId) }
                 }
                 .transition(.opacity)
@@ -169,11 +178,16 @@ struct PhoneHome: View {
             .onChanged { value in
                 guard abs(value.translation.width) > abs(value.translation.height) else { return }
                 if !open && drag == 0 { dismissKeyboard() }
+                swiping = true
                 drag = value.translation.width
             }
             .onEnded { value in
                 let end = (open ? width : 0) + value.predictedEndTranslation.width
                 set(open: end > width / 2)
+                Task {
+                    do { try await Task.sleep(for: .milliseconds(350)) } catch { return }
+                    swiping = false
+                }
             }
     }
 }
@@ -184,8 +198,8 @@ private func dismissKeyboard() {
     UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
 }
 
-/// The drawer: Talk to Dadi, dadi's pages, then every agent thread, on glass
-/// over the field.
+/// The drawer: Talk to Dadi, dadi's pages, then every agent thread with its
+/// unread count, on a frosted sheet that runs to every edge of the screen.
 private struct Drawer: View {
     let store: HomeStore
     let page: HomeView.Page
@@ -268,7 +282,7 @@ private struct Drawer: View {
                         let selected = page == .thread(thread.agentId)
                         let lanes = store.lanes(of: thread.agentId)
                         Button { choose(.thread(thread.agentId)) } label: {
-                            ThreadRow(thread: thread, lanes: lanes, selected: selected)
+                            ThreadRow(thread: thread, lanes: lanes, selected: selected, unread: store.unread[thread.agentId] ?? 0)
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 8)
                                 .background(selected ? Color.sage.opacity(0.14) : .clear, in: .rect(cornerRadius: 16))
@@ -285,8 +299,8 @@ private struct Drawer: View {
         .frame(maxHeight: .infinity, alignment: .top)
         .background {
             Rectangle()
-                .fill(.clear)
-                .glassEffect(.regular, in: .rect)
+                .fill(.thinMaterial)
+                .overlay(Color.bone.opacity(0.35))
                 .ignoresSafeArea()
         }
     }

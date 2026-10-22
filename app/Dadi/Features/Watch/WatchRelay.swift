@@ -99,7 +99,7 @@ final class WatchRelay: NSObject {
                 let running = lanes[thread.agentId] ?? []
                 return WatchSnapshot.Thread(
                     agentId: thread.agentId,
-                    name: Agent.displayName(thread.agentName),
+                    name: thread.agentName,
                     lastMessage: String(thread.lastMessage.prefix(WatchLink.messageLimit)),
                     lastAt: thread.lastAt,
                     fromUser: thread.fromUser,
@@ -143,8 +143,9 @@ final class WatchRelay: NSObject {
             do {
                 let response = try await services.hath.route(text)
                 if let first = response.messages.first {
+                    let threads = try await services.hath.threads()
                     outcome[WatchLink.agentId] = first.toAgentId
-                    outcome[WatchLink.name] = Agent.displayName(first.toAgentId)
+                    outcome[WatchLink.name] = threads.first { $0.agentId == first.toAgentId }?.agentName ?? first.toAgentId
                 } else {
                     outcome[WatchLink.error] = "Dadi didn't send this anywhere."
                 }

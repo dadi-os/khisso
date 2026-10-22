@@ -52,7 +52,8 @@ struct ThreadView: View {
         }
         .defaultScrollAnchor(.bottom)
         .scrollDismissesKeyboard(.interactively)
-        .safeAreaBar(edge: .bottom) {
+        .scrollEdgeEffectHidden(true, for: .bottom)
+        .safeAreaInset(edge: .bottom) {
             VStack(spacing: 8) {
                 LaneChip(lanes: lanes)
                 if let sendError {
@@ -117,10 +118,11 @@ struct ThreadView: View {
                         .background(.sageDeep, in: .rect(cornerRadius: 20, style: .continuous))
                 }
                 attachments(message.attachments)
+                time(message)
             }
             .frame(maxWidth: .infinity, alignment: .trailing)
             .padding(.leading, 56)
-            .padding(.top, opensGroup ? 16 : 4)
+            .padding(.top, opensGroup ? 22 : 12)
         } else {
             VStack(alignment: .leading, spacing: 8) {
                 if opensGroup {
@@ -131,17 +133,23 @@ struct ThreadView: View {
                             .frame(width: 24, height: 24)
                             .background(Agent.hue(agentId).opacity(0.16), in: .circle)
                         Text(name).font(.footnote.weight(.semibold)).foregroundStyle(.inkMuted)
-                        Text(message.createdAt, format: .dateTime.hour().minute())
-                            .font(.caption2)
-                            .foregroundStyle(.inkFaint)
                     }
                 }
                 MarkdownText(source: message.content)
                 attachments(message.attachments)
+                time(message)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.top, opensGroup ? 18 : 6)
+            .padding(.top, opensGroup ? 24 : 16)
         }
+    }
+
+    /// A message's time under it, as thaali marks each message, so one message
+    /// is easy to tell from the next.
+    private func time(_ message: DurableMessage) -> some View {
+        Text(message.createdAt, format: .dateTime.hour().minute())
+            .font(.caption2)
+            .foregroundStyle(.inkFaint)
     }
 
     @ViewBuilder

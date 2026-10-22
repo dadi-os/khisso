@@ -3,17 +3,26 @@ import SwiftUI
 /// The message field and its send button, two shapes of one liquid glass:
 /// once there is something to send, the button flows out of the field's end
 /// on one spring and the field draws in to make room, and it flows back in
-/// when the field empties. The field's rim answers the agent's lanes as
-/// thaali's does: quieter while it thinks, sage while it works.
+/// when the field empties. The glass only melds while the shapes move: at rest
+/// the gap between them is wider than the container's merge distance, so no
+/// bridge of glass is left between them. Sending puts the keyboard away. The
+/// field's rim answers the agent's lanes as thaali's does: quieter while it
+/// thinks, sage while it works.
 struct Composer: View {
     @Binding var text: String
     let placeholder: String
-    /// Disables the field while a send is in flight.
+    /// A send is in flight: the button spins and another send waits.
     let busy: Bool
     var lanes: Set<Lane> = []
     let send: () -> Void
 
     @Namespace private var glass
+    @FocusState private var focused: Bool
+
+    /// The gap between field and button at rest, wider than `merge`.
+    private let gap: CGFloat = 10
+    /// How near the two shapes must be for their glass to meld.
+    private let merge: CGFloat = 6
 
     private var rim: Color {
         if lanes.contains(.conversation) { return .sageLine.opacity(0.28) }
@@ -27,16 +36,16 @@ struct Composer: View {
     private var showsSend: Bool { ready || busy }
 
     var body: some View {
-        GlassEffectContainer(spacing: 14) {
-            HStack(alignment: .bottom, spacing: 8) {
+        GlassEffectContainer(spacing: merge) {
+            HStack(alignment: .bottom, spacing: gap) {
                 TextField(placeholder, text: $text, axis: .vertical)
+                    .focused($focused)
                     .lineLimit(1...6)
                     .textFieldStyle(.plain)
                     .foregroundStyle(.ink)
                     .padding(.horizontal, 18)
                     .padding(.vertical, 12)
-                    .disabled(busy)
-                    .onSubmit { if ready { send() } }
+                    .onSubmit(submit)
                     .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 23, style: .continuous))
                     .glassEffectID("field", in: glass)
                     .overlay {
@@ -45,7 +54,7 @@ struct Composer: View {
                             .animation(Motion.settle, value: lanes)
                     }
                 if showsSend {
-                    Button(action: send) {
+                    Button(action: submit) {
                         ZStack {
                             if busy {
                                 ProgressView().controlSize(.small).tint(.bone)
@@ -67,7 +76,14 @@ struct Composer: View {
                 }
             }
         }
-        .animation(.spring(response: 0.42, dampingFraction: 0.74), value: showsSend)
+        .animation(.spring(response: 0.42, dampingFraction: 0.82), value: showsSend)
         .frame(maxWidth: 680)
+    }
+
+    /// Lets the keyboard down, then sends.
+    private func submit() {
+        guard ready else { return }
+        focused = false
+        send()
     }
 }

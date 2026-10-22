@@ -107,7 +107,7 @@ struct ChaaviPage: View {
         .refreshable { await load() }
         .sheet(item: $opened) { item in
             ItemDetail(item: item, chaavi: chaavi, vault: vault, copy: copy)
-                .presentationDetents([.medium, .large])
+                .fittedSheet()
                 .presentationBackground(.thinMaterial)
         }
         .navigationTitle("Chaavi")

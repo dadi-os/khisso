@@ -98,7 +98,7 @@ struct TimelinePage: View {
         }
         .sheet(isPresented: $adding) {
             QuickAdd(yaad: yaad) { Task { await load() } }
-                .presentationDetents([.medium])
+                .fittedSheet()
                 .presentationBackground(.thinMaterial)
         }
         .task { await load() }
@@ -272,7 +272,7 @@ private struct PlanRow: View {
                         .foregroundStyle(.inkMuted)
                 }
                 if let agent = plan.agentId {
-                    Text(Agent.displayName(agent))
+                    Text(agent)
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(Agent.hue(agent))
                         .lineLimit(1)

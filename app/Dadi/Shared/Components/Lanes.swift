@@ -16,6 +16,8 @@ extension Lane {
 /// at the left, drifting right, then dipping and fading off the end to come
 /// back at the start. Reduced motion holds them still mid-flow.
 struct ThinkingMark: View {
+    /// How much larger than thaali's 22 × 12 mark to draw it.
+    var scale: CGFloat = 1
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     static let size = CGSize(width: 22, height: 12)
@@ -36,6 +38,7 @@ struct ThinkingMark: View {
         TimelineView(.animation(paused: reduceMotion)) { context in
             let ms = reduceMotion ? Self.flow * 0.3 : context.date.timeIntervalSinceReferenceDate * 1000
             Canvas { canvas, _ in
+                canvas.scaleBy(x: scale, y: scale)
                 for index in 0..<3 {
                     let pose = Self.pose(index, ms: ms)
                     let r = Self.dot / 2 * pose.scale
@@ -46,7 +49,7 @@ struct ThinkingMark: View {
                 }
             }
         }
-        .frame(width: Self.size.width, height: Self.size.height)
+        .frame(width: Self.size.width * scale, height: Self.size.height * scale)
         .accessibilityHidden(true)
     }
 }
@@ -114,14 +117,14 @@ struct LaneChip: View {
         ZStack {
             if let label {
                 let thinking = lanes.contains(.conversation)
-                HStack(spacing: 8) {
+                HStack(spacing: 10) {
                     if thinking {
-                        ThinkingMark()
+                        ThinkingMark(scale: 1.35)
                             .transition(.opacity.combined(with: .scale(scale: 0.2, anchor: .leading)))
                     }
                     Text(label)
-                        .font(.system(size: 11, weight: .medium))
-                        .tracking(0.44)
+                        .font(.system(size: 14, weight: .semibold))
+                        .tracking(0.3)
                         .foregroundStyle(.sageText)
                         .id(label)
                         .transition(.asymmetric(
@@ -129,16 +132,16 @@ struct LaneChip: View {
                             removal: .opacity.combined(with: .offset(y: -3))
                         ))
                 }
-                .padding(.leading, thinking ? 8 : 12)
-                .padding(.trailing, 12)
-                .padding(.vertical, 4)
+                .padding(.leading, thinking ? 13 : 17)
+                .padding(.trailing, 17)
+                .padding(.vertical, 9)
                 .background {
                     Capsule().fill(.ultraThinMaterial)
                     Capsule().fill(Color.bone.opacity(0.72))
                 }
                 .overlay(Capsule().strokeBorder(Color.sageLine.opacity(0.48), lineWidth: 1))
                 .laneSheen(lanes.contains(.reasoning), in: Capsule())
-                .shadow(color: .sageDeep.opacity(0.06), radius: 1, y: 1)
+                .shadow(color: .black.opacity(0.08), radius: 10, y: 3)
                 .transition(.opacity.combined(with: .offset(y: 6)).combined(with: .scale(scale: 0.96)))
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(label)

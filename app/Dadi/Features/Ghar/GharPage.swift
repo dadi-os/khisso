@@ -53,7 +53,7 @@ struct GharPage: View {
         .sensoryFeedback(.impact(weight: .medium), trigger: switched)
         .sheet(item: $focused) { device in
             DeviceControls(ghar: ghar, deviceId: device.id, devices: $devices)
-                .presentationDetents([.medium, .large])
+                .fittedSheet()
                 .presentationBackground(.thinMaterial)
         }
         .navigationTitle("Ghar")
