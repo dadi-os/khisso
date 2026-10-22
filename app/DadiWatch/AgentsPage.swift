@@ -36,7 +36,15 @@ private struct Row: View {
         VStack(alignment: .leading, spacing: 1) {
             HStack(spacing: 6) {
                 Circle().fill(Agent.hue(thread.agentId)).frame(width: 7, height: 7)
-                Text(thread.name).font(.footnote.weight(.semibold)).lineLimit(1)
+                Text(thread.name).font(.footnote.weight(thread.unread > 0 ? .bold : .semibold)).lineLimit(1)
+                if thread.unread > 0 {
+                    Spacer(minLength: 2)
+                    Text("\(thread.unread)")
+                        .font(.caption2.weight(.bold).monospacedDigit())
+                        .foregroundStyle(.black)
+                        .padding(.horizontal, 5)
+                        .background(.sage, in: .capsule)
+                }
             }
             if thread.thinking {
                 ThinkingMark().frame(height: 14)

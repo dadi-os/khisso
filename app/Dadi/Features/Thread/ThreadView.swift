@@ -16,6 +16,8 @@ struct ThreadView: View {
     /// Changes each time Home's event stream reconnects; the thread reloads to
     /// catch what arrived while it was down.
     let connections: Int
+    /// Ankur has seen the thread through this message.
+    let read: (Int) -> Void
 
     @State private var messages: [DurableMessage] = []
     @State private var loaded = false
@@ -78,6 +80,7 @@ struct ThreadView: View {
         .onChange(of: live) { _, event in
             guard case .message(let id, let message)? = event, id == agentId else { return }
             if insert(message), !message.fromUser { received += 1 }
+            read(message.seq)
         }
     }
 
@@ -158,6 +161,7 @@ struct ThreadView: View {
         do {
             messages = try await hath.messages(agentId: agentId)
             loadError = nil
+            if let newest = messages.last { read(newest.seq) }
         } catch is CancellationError {
             return
         } catch {

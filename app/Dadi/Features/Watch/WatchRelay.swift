@@ -104,7 +104,8 @@ final class WatchRelay: NSObject {
                     lastAt: thread.lastAt,
                     fromUser: thread.fromUser,
                     thinking: running.contains(.conversation),
-                    working: running.contains(.reasoning)
+                    working: running.contains(.reasoning),
+                    unread: thread.unread
                 )
             },
             box: WatchSnapshot.Box(down: s.services.filter { !$0.healthy }.map(\.name))

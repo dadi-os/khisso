@@ -66,9 +66,6 @@ struct PhoneHome: View {
             .gesture(open ? drawerDrag(width: width) : nil)
         }
         .sensoryFeedback(.selection, trigger: opened)
-        .onChange(of: page, initial: true) { _, shown in
-            if case .thread(let agentId) = shown { store.read(agentId) } else { store.read(nil) }
-        }
         .onAppear { withAnimation(Motion.settle.delay(0.35)) { arrived = true } }
     }
 
@@ -81,7 +78,9 @@ struct PhoneHome: View {
                 }
                 .transition(.opacity)
             case .thread(let agentId):
-                ThreadView(hath: services.hath, agentId: agentId, name: store.name(of: agentId), live: store.live, lanes: store.lanes(of: agentId), connections: store.connections)
+                ThreadView(hath: services.hath, agentId: agentId, name: store.name(of: agentId), live: store.live, lanes: store.lanes(of: agentId), connections: store.connections) { seq in
+                    Task { await store.markRead(services.hath, agentId: agentId, through: seq) }
+                }
                     .id(agentId)
                     .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .opacity))
             case .timeline:
@@ -282,7 +281,7 @@ private struct Drawer: View {
                         let selected = page == .thread(thread.agentId)
                         let lanes = store.lanes(of: thread.agentId)
                         Button { choose(.thread(thread.agentId)) } label: {
-                            ThreadRow(thread: thread, lanes: lanes, unread: store.unread[thread.agentId] ?? 0)
+                            ThreadRow(thread: thread, lanes: lanes, unread: thread.unread)
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 8)
                                 .background(selected ? Color.sage.opacity(0.14) : .clear, in: .rect(cornerRadius: 16))

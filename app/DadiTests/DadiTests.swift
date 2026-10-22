@@ -223,3 +223,21 @@ struct AttachmentFileTests {
         #expect(AttachmentFile.name("..") == "attachment")
     }
 }
+
+/// Hath's read state: each thread's unread count and mark, and the event that
+/// tells every device a thread was read.
+struct ReadStateTests {
+    @Test func decodesThreadsWithTheirReadMark() throws {
+        let body = #"{"agent_id":"finance-specialist","agent_name":"finance-specialist","last_message":"$412 left","last_at":"2026-10-22T13:00:00.000Z","from_user":false,"unread":3,"read_seq":null}"#
+        let thread = try ServiceJSON.decoder.decode(ThreadSummary.self, from: Data(body.utf8))
+        #expect(thread.unread == 3)
+        #expect(thread.readSeq == nil)
+    }
+
+    @Test func decodesThreadReadEvents() async throws {
+        let lines = [#"data: {"type":"thread_read","agent_id":"finance-specialist","read_seq":42,"unread":0,"at":"2026-10-22T13:00:00.000Z"}"#]
+        var got: [HathEvent] = []
+        for try await event in HathClient.events(from: lines.async) { got.append(event) }
+        #expect(got == [.threadRead(agentId: "finance-specialist", readSeq: 42, unread: 0)])
+    }
+}

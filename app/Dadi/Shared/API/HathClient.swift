@@ -50,6 +50,11 @@ struct HathClient: Sendable {
         return response.agents
     }
 
+    /// POST /agents/:id/read: Ankur has read `agentId`'s thread through `seq`.
+    func markRead(_ agentId: String, through seq: Int) async throws -> ThreadRead {
+        try await client.post("/agents/\(agentId)/read", body: ThreadReadRequest(seq: seq))
+    }
+
     /// POST /router: hand words to the router, which sends them on as Ankur.
     func route(_ content: String) async throws -> PostRouterResponse {
         try await client.post("/router", body: RouterRequest(content: content), timeout: Self.routerTimeout)

@@ -25,8 +25,24 @@ struct ThreadSummary: Decodable, Sendable, Hashable, Identifiable {
     let lastAt: Date
     /// True when Ankur sent the last message.
     let fromUser: Bool
+    /// The agent's messages to Ankur he has not read, on any device.
+    var unread: Int
+    /// The last message he has read here; nil until he reads the thread.
+    var readSeq: Int?
 
     var id: String { agentId }
+}
+
+/// POST /agents/:id/read: where the thread's read mark now stands.
+struct ThreadRead: Decodable, Sendable {
+    let agentId: String
+    let readSeq: Int
+    let unread: Int
+}
+
+/// Body of POST /agents/:id/read.
+struct ThreadReadRequest: Encodable, Sendable {
+    let seq: Int
 }
 
 /// One durable message in a human thread, from GET /agents/:id/messages.
@@ -105,10 +121,12 @@ enum HathEvent: Decodable, Sendable, Equatable {
     case routerStarted
     case routerFinished
     case routerFailed(message: String)
+    /// Ankur read an agent's thread through `readSeq`, on this device or another.
+    case threadRead(agentId: String, readSeq: Int, unread: Int)
     case unhandled(type: String)
 
     private enum Keys: String, CodingKey {
-        case type, agentId, fromAgentId, toAgentId, content, attachments, seq, kind, at, message, lane
+        case type, agentId, fromAgentId, toAgentId, content, attachments, seq, kind, at, message, lane, readSeq, unread
     }
 
     init(from decoder: Decoder) throws {
@@ -143,6 +161,12 @@ enum HathEvent: Decodable, Sendable, Equatable {
             self = .routerFinished
         case "router_failed":
             self = .routerFailed(message: try c.decode(String.self, forKey: .message))
+        case "thread_read":
+            self = .threadRead(
+                agentId: try c.decode(String.self, forKey: .agentId),
+                readSeq: try c.decode(Int.self, forKey: .readSeq),
+                unread: try c.decode(Int.self, forKey: .unread)
+            )
         default:
             self = .unhandled(type: type)
         }

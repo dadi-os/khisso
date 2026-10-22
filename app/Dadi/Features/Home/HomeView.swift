@@ -97,10 +97,6 @@ final class HomeStore {
     private(set) var threads: [ThreadSummary] = []
     /// Each agent's lanes running right now.
     private(set) var lanes: [String: Set<Lane>] = [:]
-    /// Each agent's replies that arrived while its thread was not open.
-    private(set) var unread: [String: Int] = [:]
-    /// The thread open now, whose replies arrive read.
-    private var reading: String?
     /// True while the router is choosing whom Ankur's words go to.
     private(set) var routing = false
     /// The newest message from the event stream, for the open thread to pick up.
@@ -153,11 +149,24 @@ final class HomeStore {
         }
     }
 
-    /// Marks `agentId`'s thread as the one open, clearing its unread count;
-    /// nil when no thread is open.
-    func read(_ agentId: String?) {
-        reading = agentId
-        if let agentId { unread[agentId] = nil }
+    /// Tells Hath that Ankur has read `agentId`'s thread through `seq`, so every
+    /// device clears it, and clears it here at once.
+    func markRead(_ hath: HathClient, agentId: String, through seq: Int) async {
+        guard let thread = threads.first(where: { $0.agentId == agentId }), thread.readSeq.map({ $0 < seq }) ?? true else { return }
+        do {
+            let mark = try await hath.markRead(agentId, through: seq)
+            setRead(agentId, readSeq: mark.readSeq, unread: mark.unread)
+        } catch is CancellationError {
+            return
+        } catch {
+            self.error = "Couldn't mark \(agentId) read: \(error.localizedDescription)"
+        }
+    }
+
+    private func setRead(_ agentId: String, readSeq: Int, unread: Int) {
+        guard let index = threads.firstIndex(where: { $0.agentId == agentId }) else { return }
+        threads[index].readSeq = readSeq
+        threads[index].unread = unread
     }
 
     /// Agents with any lane running.
@@ -173,12 +182,11 @@ final class HomeStore {
 
     private func apply(_ event: HathEvent, _ hath: HathClient) async {
         switch event {
-        case .message(let agentId, let message):
+        case .message:
             live = event
-            if !message.fromUser, message.kind != .notice, agentId != reading {
-                unread[agentId, default: 0] += 1
-            }
             await load(hath)
+        case .threadRead(let agentId, let readSeq, let unread):
+            setRead(agentId, readSeq: readSeq, unread: unread)
         case .laneStarted(let agentId, let lane):
             lanes[agentId, default: []].insert(lane)
         case .laneFinished(let agentId, let lane), .laneFailed(let agentId, let lane, _):
