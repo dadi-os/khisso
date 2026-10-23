@@ -45,15 +45,24 @@ struct GharDevice: Decodable, Sendable, Hashable, Identifiable {
         let value: JSONValue
     }
 
+    /// A Ghar tag on the device; the app calls tags groups.
+    struct Tag: Decodable, Sendable, Hashable {
+        let id: String
+        let name: String
+    }
+
     let id: String
     let name: String
     /// What it is, from its Matter device type: light, plug, sensor kinds, …
     let kind: String
     let productName: String?
     let room: GharRoom
+    let tags: [Tag]
     let capabilities: [Capability]
     let online: Bool
-    let state: [String: Attribute]
+    /// Live state; the app changes it ahead of Ghar's answer and puts it back
+    /// if the command fails.
+    var state: [String: Attribute]
 
     func has(_ capability: String) -> Bool { capabilities.contains { $0.capability == capability } }
     func config(_ capability: String) -> [String: JSONValue]? { capabilities.first { $0.capability == capability }?.config }
@@ -61,6 +70,27 @@ struct GharDevice: Decodable, Sendable, Hashable, Identifiable {
 
     /// Whether it is on, for devices that switch.
     var isOn: Bool? { state["on"]?.value.bool }
+
+    /// The color modes its color capability supports: `hue_sat`, `color_temp`.
+    var colorModes: [String] { config("color")?["modes"]?.array?.compactMap(\.string) ?? [] }
+
+    /// The names of its groups.
+    var groups: [String] { tags.map(\.name) }
+
+    /// This device with `key` set to `value`.
+    func with(_ key: String, _ value: JSONValue) -> GharDevice {
+        var next = self
+        next.state[key] = Attribute(value: value)
+        return next
+    }
+}
+
+/// Body of PATCH /devices/:id: only the fields given change.
+struct GharDevicePatch: Encodable, Sendable {
+    var name: String?
+    var room: String?
+    /// The device's whole tag list, replacing what it had.
+    var tags: [String]?
 }
 
 /// Body of POST /devices/:id/command.
@@ -70,8 +100,10 @@ struct GharCommand: Encodable, Sendable {
     let params: [String: Int]?
 
     static let toggle = GharCommand(capability: "on_off", command: "toggle", params: nil)
+    static let on = GharCommand(capability: "on_off", command: "on", params: nil)
+    static let off = GharCommand(capability: "on_off", command: "off", params: nil)
 
-    /// Brightness 1–100.
+    /// Brightness 0–100; a light or plug also switches on.
     static func level(_ level: Int) -> GharCommand { GharCommand(capability: "level", command: "move_to", params: ["level": level]) }
 
     /// White temperature in mireds (153 cool to 500 warm).

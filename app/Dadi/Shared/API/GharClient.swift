@@ -33,6 +33,26 @@ struct GharClient: Sendable {
         return response.rooms
     }
 
+    /// PATCH /devices/:id: moves, renames or regroups a device and returns it.
+    func update(_ deviceId: String, _ patch: GharDevicePatch) async throws -> GharDevice {
+        try await client.patch("/devices/\(deviceId)", body: patch)
+    }
+
+    /// POST /rooms.
+    func createRoom(named name: String) async throws -> GharRoom {
+        try await client.post("/rooms", body: ["name": name])
+    }
+
+    /// PATCH /rooms/:id.
+    func renameRoom(_ roomId: String, to name: String) async throws -> GharRoom {
+        try await client.patch("/rooms/\(roomId)", body: ["name": name])
+    }
+
+    /// DELETE /rooms/:id. Ghar refuses a room that still has devices with 409.
+    func deleteRoom(_ roomId: String) async throws {
+        try await client.delete("/rooms/\(roomId)")
+    }
+
     /// POST /devices/:id/command.
     func send(_ command: GharCommand, to deviceId: String) async throws {
         try await client.send("/devices/\(deviceId)/command", body: command, timeout: Self.commandTimeout)

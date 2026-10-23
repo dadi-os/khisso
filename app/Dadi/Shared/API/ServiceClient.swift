@@ -88,6 +88,15 @@ struct ServiceClient: Sendable {
         }
     }
 
+    /// DELETE `path` for a response with no body (204).
+    func delete(_ path: String, timeout: TimeInterval = 30) async throws {
+        let (data, response) = try await session.data(for: request("DELETE", path, timeout: timeout))
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(status) else {
+            throw Self.error(status: status, body: data)
+        }
+    }
+
     /// A service's change stream at `path`: one element per event it sends, each
     /// meaning "something changed, read again". Services ping every 20 s, so
     /// the stream fails after 45 quiet seconds rather than hang on a dead

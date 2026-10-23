@@ -330,7 +330,7 @@ private struct Drawer: View {
 }
 
 /// A page's name in a glass bubble, as thaali's pane header.
-private struct NameBubble: View {
+struct NameBubble: View {
     let title: String
 
     var body: some View {
