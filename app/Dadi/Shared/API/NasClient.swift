@@ -29,4 +29,31 @@ struct NasClient: Sendable {
         let response: Response = try await client.get("/logs", query: [URLQueryItem(name: "level", value: level), URLQueryItem(name: "limit", value: String(limit))])
         return response.entries
     }
+
+    /// GET /browsers: the headed browsers running now.
+    func browsers() async throws -> [NasBrowser] {
+        try await client.get("/browsers")
+    }
+
+    /// GET /terminals: the host terminal panes running now.
+    func terminals() async throws -> [NasTerminal] {
+        try await client.get("/terminals")
+    }
+
+    /// How a view wants a browser's stream: Nas's watch-only defaults, cheap
+    /// enough to leave open.
+    static let watch = (fps: 5, width: 960, kbps: 600)
+
+    /// The stream may go this many seconds without a byte: the first frame
+    /// waits on the encoder starting, and a still page sends little after.
+    static let streamIdle: TimeInterval = 15
+
+    /// GET /browsers/:id/stream: the browser's display as raw H.264 (Annex B).
+    func browserStream(_ id: Int) async throws -> URLSession.AsyncBytes {
+        try await client.bytes("/browsers/\(id)/stream", query: [
+            URLQueryItem(name: "fps", value: String(Self.watch.fps)),
+            URLQueryItem(name: "width", value: String(Self.watch.width)),
+            URLQueryItem(name: "kbps", value: String(Self.watch.kbps)),
+        ], idle: Self.streamIdle)
+    }
 }

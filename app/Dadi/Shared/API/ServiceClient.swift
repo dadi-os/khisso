@@ -27,6 +27,14 @@ enum ServiceJSON {
         return d
     }()
 
+    /// Like `decoder` but keeping keys as sent, for payloads whose keys are
+    /// data rather than field names.
+    static let verbatim: JSONDecoder = {
+        let d = JSONDecoder()
+        d.dateDecodingStrategy = decoder.dateDecodingStrategy
+        return d
+    }()
+
     static let encoder: JSONEncoder = {
         let e = JSONEncoder()
         e.keyEncodingStrategy = .convertToSnakeCase
@@ -46,8 +54,21 @@ struct ServiceClient: Sendable {
     let baseURL: URL
 
     /// GET `path` and decode the response as `T`.
-    func get<T: Decodable>(_ path: String, query: [URLQueryItem] = [], timeout: TimeInterval = 30) async throws -> T {
-        try await send(request("GET", path, query: query, timeout: timeout))
+    func get<T: Decodable>(_ path: String, query: [URLQueryItem] = [], timeout: TimeInterval = 30, decoder: JSONDecoder = ServiceJSON.decoder) async throws -> T {
+        try await send(request("GET", path, query: query, timeout: timeout), decoder: decoder)
+    }
+
+    /// Opens `path` and returns its body as it arrives. It fails once `idle`
+    /// seconds pass without a byte.
+    func bytes(_ path: String, query: [URLQueryItem] = [], idle: TimeInterval) async throws -> URLSession.AsyncBytes {
+        let (bytes, response) = try await session.bytes(for: request("GET", path, query: query, timeout: idle))
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(status) else {
+            var body = Data()
+            for try await byte in bytes { body.append(byte) }
+            throw Self.error(status: status, body: body)
+        }
+        return bytes
     }
 
     /// GET `path` and return the response body's bytes as they are.
@@ -146,13 +167,13 @@ struct ServiceClient: Sendable {
         return req
     }
 
-    private func send<T: Decodable>(_ req: URLRequest) async throws -> T {
+    private func send<T: Decodable>(_ req: URLRequest, decoder: JSONDecoder = ServiceJSON.decoder) async throws -> T {
         let (data, response) = try await session.data(for: req)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
             throw Self.error(status: status, body: data)
         }
-        return try ServiceJSON.decoder.decode(T.self, from: data)
+        return try decoder.decode(T.self, from: data)
     }
 
     /// The service's error from a non-2xx response body.

@@ -1,8 +1,9 @@
 import SwiftUI
 
 /// One agent's thread: its history by day, live replies from Hath's events,
-/// thaali's lane pill over the composer while the agent thinks or works, and
-/// the composer to reply as Ankur. Agent text runs the full width on the field
+/// thaali's lane pill over the composer while the agent thinks or works, a
+/// caret beside it that returns to the newest message once the thread is
+/// scrolled up, and the composer to reply as Ankur. Agent text runs the full width on the field
 /// as rendered markdown and scrolls up under the bars; Ankur's words are sage
 /// bubbles.
 struct ThreadView: View {
@@ -24,9 +25,14 @@ struct ThreadView: View {
     @State private var loadError: String?
     @State private var sendError: String?
     @State private var draft = ""
+    @State private var photos: [DraftPhoto] = []
     @State private var sending = false
     @State private var sent = 0
     @State private var received = 0
+    @Namespace private var glass
+    @State private var position = ScrollPosition(edge: .bottom)
+    /// True while the end of the thread is off screen.
+    @State private var awayFromBottom = false
 
     var body: some View {
         ScrollView {
@@ -48,26 +54,52 @@ struct ThreadView: View {
                     row(message, opensGroup: previous.map { $0.fromUser != message.fromUser || $0.kind == .notice } ?? true)
                         .transition(.asymmetric(insertion: .move(edge: .bottom).combined(with: .opacity).combined(with: .scale(scale: 0.96, anchor: message.fromUser ? .bottomTrailing : .bottomLeading)), removal: .opacity))
                 }
+                Color.clear
+                    .frame(height: 24)
+                    .onScrollVisibilityChange(threshold: 0.01) { visible in
+                        awayFromBottom = !visible
+                    }
             }
             .padding(.horizontal, 18)
-            .padding(.vertical, 12)
+            .padding(.top, 12)
             .frame(maxWidth: 760)
             .frame(maxWidth: .infinity)
             .animation(Motion.settle, value: messages)
         }
         .defaultScrollAnchor(.bottom)
+        .scrollPosition($position)
         .scrollDismissesKeyboard(.interactively)
         .scrollEdgeEffectHidden(true, for: .bottom)
         .safeAreaInset(edge: .bottom) {
-            VStack(spacing: 8) {
-                LaneChip(lanes: lanes)
+            VStack(spacing: 12) {
+                GlassEffectContainer(spacing: 6) {
+                    HStack(spacing: 10) {
+                        if awayFromBottom {
+                            Button {
+                                withAnimation(Motion.settle) { position.scrollTo(edge: .bottom) }
+                            } label: {
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 15, weight: .bold))
+                                    .foregroundStyle(.sageText)
+                                    .frame(width: LaneChip.height, height: LaneChip.height)
+                                    .contentShape(.circle)
+                            }
+                            .buttonStyle(.plain)
+                            .glassEffect(.regular.tint(Color.bone.opacity(0.6)).interactive(), in: .circle)
+                            .glassEffectID("caret", in: glass)
+                            .accessibilityLabel("Scroll to newest message")
+                        }
+                        LaneChip(lanes: lanes, glass: glass)
+                    }
+                }
+                .animation(.spring(response: 0.42, dampingFraction: 0.82), value: awayFromBottom)
                 if let sendError {
                     Label(sendError, systemImage: "exclamationmark.circle")
                         .font(.footnote)
                         .foregroundStyle(.danger)
                         .transition(.opacity)
                 }
-                Composer(text: $draft, placeholder: "Message \(name)…", busy: sending, lanes: lanes, send: send)
+                Composer(text: $draft, photos: $photos, placeholder: "Message \(name)…", busy: sending, lanes: lanes, send: send)
             }
             .padding(.horizontal, 16)
             .padding(.top, 8)
@@ -182,14 +214,16 @@ struct ThreadView: View {
 
     private func send() {
         let words = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !words.isEmpty, !sending else { return }
+        let attached = photos
+        guard !words.isEmpty || !attached.isEmpty, !sending else { return }
         sending = true
         sendError = nil
         Task {
             defer { sending = false }
             do {
-                let reply = try await hath.send(words, to: agentId)
+                let reply = try await hath.send(words, to: agentId, attachments: attached.map(\.outbound))
                 draft = ""
+                photos = []
                 sent += 1
                 insert(DurableMessage(seq: reply.seq, fromAgentId: nil, toAgentId: agentId, content: reply.content, attachments: reply.attachments, kind: .message, createdAt: reply.createdAt))
             } catch {

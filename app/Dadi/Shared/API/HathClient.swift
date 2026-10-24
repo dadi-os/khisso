@@ -10,6 +10,9 @@ struct HathClient: Sendable {
     /// The router runs every agent it hands work to before answering.
     static let routerTimeout: TimeInterval = 300
 
+    /// An agent's wake logs can run to megabytes.
+    static let logsTimeout: TimeInterval = 120
+
     /// A large attachment can take a while to come over the mesh.
     static let attachmentTimeout: TimeInterval = 120
 
@@ -50,19 +53,49 @@ struct HathClient: Sendable {
         return response.agents
     }
 
+    /// GET /agents/:id: one agent with the tools it is granted.
+    func agent(_ id: String) async throws -> AgentDetail {
+        try await client.get("/agents/\(id)")
+    }
+
+    /// GET /agents/:id/logs: every row of the agent's newest `wakes` wakes,
+    /// newest first.
+    func logs(agentId: String, wakes: Int) async throws -> [LogRecord] {
+        struct Response: Decodable { let logs: [LogRecord] }
+        let response: Response = try await client.get("/agents/\(agentId)/logs", query: [URLQueryItem(name: "wakes", value: String(wakes))], timeout: Self.logsTimeout, decoder: ServiceJSON.verbatim)
+        return response.logs
+    }
+
+    /// GET /agents/:id/schedules: what the agent sends or receives, next run first.
+    func schedules(agentId: String) async throws -> [ScheduledMessage] {
+        struct Response: Decodable { let schedules: [ScheduledMessage] }
+        let response: Response = try await client.get("/agents/\(agentId)/schedules")
+        return response.schedules
+    }
+
+    /// PATCH /schedules/:id: change a schedule's time, repeat or message.
+    func patchSchedule(_ id: String, _ change: PatchScheduleRequest) async throws -> ScheduledMessage {
+        try await client.patch("/schedules/\(id)", body: change)
+    }
+
+    /// DELETE /schedules/:id: cancel a schedule.
+    func cancelSchedule(_ id: String) async throws {
+        try await client.delete("/schedules/\(id)")
+    }
+
     /// POST /agents/:id/read: Ankur has read `agentId`'s thread through `seq`.
     func markRead(_ agentId: String, through seq: Int) async throws -> ThreadRead {
         try await client.post("/agents/\(agentId)/read", body: ThreadReadRequest(seq: seq))
     }
 
     /// POST /router: hand words to the router, which sends them on as Ankur.
-    func route(_ content: String) async throws -> PostRouterResponse {
-        try await client.post("/router", body: RouterRequest(content: content), timeout: Self.routerTimeout)
+    func route(_ content: String, attachments: [OutboundAttachment] = []) async throws -> PostRouterResponse {
+        try await client.post("/router", body: RouterRequest(content: content, attachments: attachments.isEmpty ? nil : attachments), timeout: Self.routerTimeout)
     }
 
     /// POST /messages: send a message to an agent as Ankur.
-    func send(_ content: String, to agentId: String) async throws -> PostMessageResponse {
-        try await client.post("/messages", body: MessageRequest(toAgentId: agentId, content: content))
+    func send(_ content: String, to agentId: String, attachments: [OutboundAttachment] = []) async throws -> PostMessageResponse {
+        try await client.post("/messages", body: MessageRequest(toAgentId: agentId, content: content, attachments: attachments.isEmpty ? nil : attachments), timeout: Self.attachmentTimeout)
     }
 
     /// Hath pings its event stream every 20 s, so this long without a byte

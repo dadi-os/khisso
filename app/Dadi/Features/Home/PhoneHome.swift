@@ -23,6 +23,8 @@ struct PhoneHome: View {
     /// True while a sideways drag is moving the drawer and just after, so the
     /// row a swipe ends on is not taken as a tap.
     @State private var swiping = false
+    /// True while the open thread's agent sheet is up.
+    @State private var showingAgent = false
 
     /// The strip along the left edge that opens the drawer. It sits over the
     /// page, so a swipe that starts in it always pulls the drawer instead of
@@ -65,6 +67,13 @@ struct PhoneHome: View {
             }
             .gesture(open ? drawerDrag(width: width) : nil)
         }
+        .sheet(isPresented: $showingAgent) {
+            if case .thread(let agentId) = page {
+                AgentSheet(services: services, agentId: agentId, name: store.name(of: agentId), lanes: store.lanes(of: agentId), connections: store.connections, nameOf: store.name(of:))
+                    .presentationDetents([.medium, .large])
+                    .presentationBackground(.boneRaised)
+            }
+        }
         .sensoryFeedback(.selection, trigger: opened)
         .onAppear { withAnimation(Motion.settle.delay(0.35)) { arrived = true } }
     }
@@ -98,6 +107,7 @@ struct PhoneHome: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .scrollEdgeEffectHidden(true, for: .top)
         .safeAreaBar(edge: .top) { topBar }
     }
 
@@ -113,7 +123,7 @@ struct PhoneHome: View {
             .accessibilityLabel("Open sidebar")
             Spacer()
             if let title {
-                NameBubble(title: title)
+                NameBubble(title: title, details: isThread ? { showingAgent = true } : nil)
                     .id(title)
                     .transition(.opacity.combined(with: .scale(scale: 0.92)))
             }
@@ -135,6 +145,10 @@ struct PhoneHome: View {
         .padding(.bottom, 14)
         .opacity(arrived ? 1 : 0)
         .animation(Motion.snap, value: page)
+    }
+
+    private var isThread: Bool {
+        if case .thread = page { true } else { false }
     }
 
     /// The page's name for its bubble; Talk to Dadi has none.
@@ -332,15 +346,24 @@ private struct Drawer: View {
 /// A page's name in a glass bubble, as thaali's pane header.
 struct NameBubble: View {
     let title: String
+    /// Opens the page's details when the name is tapped; nil for a page with none.
+    var details: (() -> Void)?
 
     var body: some View {
-        Text(title)
+        let label = Text(title)
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(.ink)
             .lineLimit(1)
             .padding(.horizontal, 14)
             .padding(.vertical, 9)
-            .glassEffect(.regular, in: .capsule)
+            .glassEffect(details == nil ? .regular : .regular.interactive(), in: .capsule)
+        if let details {
+            Button(action: details) { label }
+                .buttonStyle(.plain)
+                .accessibilityHint("Shows details and activity")
+        } else {
+            label
+        }
     }
 }
 

@@ -112,6 +112,12 @@ extension View {
 /// itself, and both play together when both lanes run.
 struct LaneChip: View {
     let lanes: Set<Lane>
+    /// The glass namespace shared with whatever splits off from the pill (the
+    /// scroll-to-newest caret), so the two flow apart and back as one glass.
+    let glass: Namespace.ID
+
+    /// The pill's height, which the caret beside it matches.
+    static let height: CGFloat = 36
 
     var body: some View {
         ZStack {
@@ -134,15 +140,12 @@ struct LaneChip: View {
                 }
                 .padding(.leading, thinking ? 13 : 17)
                 .padding(.trailing, 17)
-                .padding(.vertical, 9)
-                .background {
-                    Capsule().fill(.ultraThinMaterial)
-                    Capsule().fill(Color.bone.opacity(0.72))
-                }
+                .frame(height: Self.height)
                 .overlay(Capsule().strokeBorder(Color.sageLine.opacity(0.48), lineWidth: 1))
                 .laneSheen(lanes.contains(.reasoning), in: Capsule())
+                .glassEffect(.regular.tint(Color.bone.opacity(0.6)), in: .capsule)
+                .glassEffectID("lane", in: glass)
                 .shadow(color: .black.opacity(0.08), radius: 10, y: 3)
-                .transition(.opacity.combined(with: .offset(y: 6)).combined(with: .scale(scale: 0.96)))
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(label)
                 .accessibilityAddTraits(.updatesFrequently)

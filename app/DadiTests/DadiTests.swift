@@ -418,3 +418,99 @@ struct GharLayoutTests {
         #expect(LightColor.hue(0, saturation: 0) == .white)
     }
 }
+
+/// Nas's Annex B stream becomes one config, then one length-prefixed frame
+/// per delimiter, with key frames marked.
+struct H264SplitterTests {
+    private func annexB(_ nalus: [[UInt8]]) -> Data {
+        Data(nalus.flatMap { [0, 0, 0, 1] + $0 })
+    }
+
+    @Test func splitsConfigAndFramesAcrossChunks() {
+        let sps: [UInt8] = [0x67, 0x64, 0x00, 0x1f]
+        let pps: [UInt8] = [0x68, 0xee, 0x3c]
+        let idr: [UInt8] = [0x65, 0x88, 0x84]
+        let delta: [UInt8] = [0x41, 0x9a]
+        let delimiter: [UInt8] = [0x09, 0x10]
+        let stream = annexB([delimiter, sps, pps, idr, delimiter, delta, delimiter, delimiter])
+        var splitter = H264Splitter()
+        var events: [H264Event] = []
+        for start in stride(from: 0, to: stream.count, by: 5) {
+            events += splitter.push(stream[start..<min(start + 5, stream.count)])
+        }
+        #expect(events == [
+            .config(sps: Data(sps), pps: Data(pps)),
+            .frame(H264Frame(key: true, data: Data([0, 0, 0, 3] + idr))),
+            .frame(H264Frame(key: false, data: Data([0, 0, 0, 2] + delta))),
+        ])
+    }
+
+    @Test func repeatedParameterSetsAreNotNewConfigs() {
+        let sps: [UInt8] = [0x67, 0x64, 0x00, 0x1f]
+        let pps: [UInt8] = [0x68, 0xee, 0x3c]
+        var splitter = H264Splitter()
+        let first = splitter.push(annexB([sps, pps, [0x09, 0x10]]))
+        let again = splitter.push(annexB([sps, pps, [0x09, 0x10]]))
+        #expect(first == [.config(sps: Data(sps), pps: Data(pps))])
+        #expect(again.isEmpty)
+    }
+}
+
+/// Log rows keep the agent's own payload keys, and group into wakes by the
+/// wake id Hath stamps on them.
+struct ActivityTests {
+    private func logs(_ json: String) throws -> [LogRecord] {
+        try ServiceJSON.verbatim.decode([LogRecord].self, from: Data(json.utf8))
+    }
+
+    private let rows = #"""
+    [
+      {"id":"1","agent_id":"a","lane":"conversation","event":"message","wake_id":"w1","created_at":"2026-10-23T10:00:00.000Z",
+       "payload":{"direction":"receive","from_agent_id":null,"content":"hi"}},
+      {"id":"2","agent_id":"a","lane":"conversation","event":"response","wake_id":"w1","created_at":"2026-10-23T10:00:01.000Z",
+       "payload":{"stop_reason":"tool_use","content":[{"type":"thinking","thinking":"**Plan**\nlook it up"},{"type":"tool_use","id":"t1","name":"search","input":{"to_agent_id":"b"}}]}},
+      {"id":"3","agent_id":"a","lane":"conversation","event":"tool_result","wake_id":"w1","created_at":"2026-10-23T10:00:02.000Z",
+       "payload":{"tool_use_id":"t1","content":"boom","is_error":true}},
+      {"id":"4","agent_id":"a","lane":"reasoning","event":"response","wake_id":"w2","created_at":"2026-10-23T11:00:00.000Z",
+       "payload":{"stop_reason":"end_turn","content":[{"type":"text","text":"done"}]}}
+    ]
+    """#
+
+    @Test func keepsPayloadKeysVerbatim() throws {
+        let call = try #require(logs(rows)[1].payload["content"]?.array?.last?.object)
+        #expect(call["input"]?.object?["to_agent_id"]?.string == "b")
+    }
+
+    @Test func groupsByWakeNewestFirstWithToolOutcomes() throws {
+        let wakes = Activity.wakes(from: try logs(rows))
+        #expect(wakes.map(\.key) == ["4", "1"])
+        let first = wakes[1]
+        #expect(first.toolCount == 1)
+        #expect(first.errorCount == 1)
+        guard case .turn(let turn) = first.steps[1], case .tool(_, let tool) = turn.parts[0] else {
+            Issue.record("expected a tool step")
+            return
+        }
+        #expect(tool.result == ToolOutcome(content: "boom", isError: true))
+        #expect(turn.gist == "Plan")
+    }
+
+    @Test func keepsWakeKeysAsLogsSlide() throws {
+        let all = Activity.wakes(from: try logs(rows))
+        let slid = Activity.wakes(from: Array(try logs(rows).dropFirst()))
+        #expect(Activity.carryKeys(from: all, to: slid).map(\.key) == ["4", "1"])
+    }
+}
+
+/// A schedule edit sends only what changed, and "once" is an explicit null.
+struct PatchScheduleTests {
+    @Test func sendsOnlyChangesAndNullsAOneShot() throws {
+        var request = PatchScheduleRequest()
+        request.content = "later"
+        request.repeats = .once
+        let json = try JSONSerialization.jsonObject(with: ServiceJSON.encoder.encode(request)) as? [String: Any]
+        #expect(json?["content"] as? String == "later")
+        #expect(json?["interval_minutes"] is NSNull)
+        #expect(json?["run_at"] == nil)
+    }
+}

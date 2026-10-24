@@ -1,12 +1,15 @@
 import SwiftUI
 
 /// System: the box at a glance. Rings for its processor, memory and disk, how
-/// long it has been up, each module's health, every device on dadi, and the
+/// long it has been up, each module's health, every device on dadi but the box, and the
 /// latest errors in the logs. The meters and devices refresh every two seconds
 /// while open, as in thaali; the slower log read keeps its own pace so it
 /// never holds them up.
 struct SystemPage: View {
     let nas: NasClient
+
+    /// The box's own node, which is the box itself rather than a device on it.
+    private static let boxNode = "os"
 
     @State private var status: NasStatus?
     @State private var devices: [NasClientDevice] = []
@@ -215,7 +218,7 @@ struct SystemPage: View {
             async let nextDevices = nas.devices()
             let (s, d) = try await (nextStatus, nextDevices)
             status = s
-            devices = d.sorted { ($0.online ? 0 : 1, $0.nodeName) < ($1.online ? 0 : 1, $1.nodeName) }
+            devices = d.filter { $0.nodeName != Self.boxNode }.sorted { ($0.online ? 0 : 1, $0.nodeName) < ($1.online ? 0 : 1, $1.nodeName) }
             problem = nil
         } catch is CancellationError {
             return

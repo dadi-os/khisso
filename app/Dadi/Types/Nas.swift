@@ -60,3 +60,16 @@ struct NasLogEntry: Decodable, Sendable, Hashable {
     /// The original JSON line, with fields like the agent's message.
     let raw: String
 }
+
+/// A live headed browser on the box, from GET /browsers.
+struct NasBrowser: Decodable, Sendable, Hashable, Identifiable {
+    let id: Int
+    let healthy: Bool
+}
+
+/// A live host terminal pane on the box, from GET /terminals.
+struct NasTerminal: Decodable, Sendable, Hashable, Identifiable {
+    let id: String
+    let cwd: String
+    let busy: Bool
+}

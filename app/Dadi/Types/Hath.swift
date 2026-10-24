@@ -92,15 +92,24 @@ struct PostMessageResponse: Decodable, Sendable {
     let createdAt: Date
 }
 
+/// A file sent with a message: its bytes as base64, no data-URL prefix.
+struct OutboundAttachment: Encodable, Sendable {
+    let mediaType: String
+    let data: String
+    let filename: String
+}
+
 /// Body of POST /router.
 struct RouterRequest: Encodable, Sendable {
     let content: String
+    var attachments: [OutboundAttachment]?
 }
 
 /// Body of POST /messages.
 struct MessageRequest: Encodable, Sendable {
     let toAgentId: String
     let content: String
+    var attachments: [OutboundAttachment]?
 }
 
 /// An agent's two lanes: conversation is it thinking toward a reply to

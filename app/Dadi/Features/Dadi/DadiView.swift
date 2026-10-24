@@ -25,6 +25,7 @@ struct DadiView: View {
     }
 
     @State private var draft = ""
+    @State private var photos: [DraftPhoto] = []
     @State private var stage: Stage = .idle
     @State private var problem: String?
     @State private var glow = false
@@ -82,7 +83,7 @@ struct DadiView: View {
             }
             .padding(.horizontal, 24)
             Spacer()
-            Composer(text: $draft, placeholder: "Message Dadi…", busy: stage != .idle, lanes: stage == .idle ? [] : [.conversation], send: handOff)
+            Composer(text: $draft, photos: $photos, placeholder: "Message Dadi…", busy: stage != .idle, lanes: stage == .idle ? [] : [.conversation], send: handOff)
                 .padding(.horizontal, 16)
                 .composerInset()
                 .opacity(arrived ? 1 : 0)
@@ -127,20 +128,24 @@ struct DadiView: View {
 
     private func handOff() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, stage == .idle else { return }
+        let attached = photos
+        guard !text.isEmpty || !attached.isEmpty, stage == .idle else { return }
+        let shown = text.isEmpty ? "\(attached.count) photo\(attached.count == 1 ? "" : "s")" : text
         draft = ""
+        photos = []
         problem = nil
-        stage = .routing(text)
+        stage = .routing(shown)
         Task {
             do {
-                let response = try await hath.route(text)
+                let response = try await hath.route(text, attachments: attached.map(\.outbound))
                 guard let first = response.messages.first else {
                     stage = .idle
                     draft = text
+                    photos = attached
                     problem = "Dadi didn't send this anywhere."
                     return
                 }
-                stage = .sent(words: text, to: first.toAgentId)
+                stage = .sent(words: shown, to: first.toAgentId)
                 handedOff += 1
                 try await Task.sleep(for: .milliseconds(900))
                 open(first.toAgentId)
@@ -148,6 +153,7 @@ struct DadiView: View {
             } catch {
                 stage = .idle
                 draft = text
+                photos = attached
                 problem = error.localizedDescription
             }
         }

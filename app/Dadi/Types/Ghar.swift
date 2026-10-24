@@ -1,6 +1,6 @@
 import Foundation
 
-/// Any JSON value, for Ghar's open-ended device state and capability config.
+/// Any JSON value, for open-ended payloads: Ghar's device state and capability config, and Hath's log rows.
 enum JSONValue: Decodable, Sendable, Hashable {
     case null
     case bool(Bool)
@@ -23,6 +23,7 @@ enum JSONValue: Decodable, Sendable, Hashable {
     var number: Double? { if case .number(let v) = self { v } else { nil } }
     var string: String? { if case .string(let v) = self { v } else { nil } }
     var array: [JSONValue]? { if case .array(let v) = self { v } else { nil } }
+    var object: [String: JSONValue]? { if case .object(let v) = self { v } else { nil } }
 }
 
 /// A room from GET /rooms.
