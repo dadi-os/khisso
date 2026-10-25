@@ -107,17 +107,21 @@ struct PlannerLayoutTests {
         return c
     }()
 
-    private func block(_ id: String, _ start: String, _ end: String) -> PlannerBlock {
+    private func block(_ id: String, _ start: String, _ end: String) -> TimelineItem {
         let day = "2026-10-21T"
         func date(_ time: String) -> Date { try! Date("\(day)\(time):00-04:00", strategy: .iso8601) }
-        return PlannerBlock(id: id, startAt: date(start), endAt: date(end), title: id, note: nil, kind: "study", icon: "book", fixed: false, doneAt: nil)
+        return TimelineItem(
+            planId: id, occurrenceDate: "2026-10-21", title: id, body: nil, kind: .study, status: .confirmed,
+            startAt: date(start), endAt: date(end), dueAt: nil, opensAt: nil, allDay: false, hideFromPlanner: false,
+            state: "scheduled", outcome: nil, recurrence: nil, series: nil, place: nil, owner: "schedule-specialist", notes: []
+        )
     }
 
     private var day: Date { try! Date("2026-10-21T12:00:00-04:00", strategy: .iso8601) }
 
     @Test func overlapsGetSideBySideLanes() {
         let segments = PlannerLayout.segments([block("a", "09:00", "10:00"), block("b", "09:30", "10:30"), block("c", "11:00", "12:00")], on: day, calendar: calendar)
-        #expect(segments.map(\.id) == ["a", "b", "c"])
+        #expect(segments.map(\.block.planId) == ["a", "b", "c"])
         #expect(segments.map(\.lane) == [0, 1, 0])
         #expect(segments.map(\.lanes) == [2, 2, 1])
         #expect(segments[0].startMin == 540)
@@ -131,15 +135,56 @@ struct PlannerLayoutTests {
     @Test func findsNowAndNext() {
         let segments = PlannerLayout.segments([block("a", "09:00", "10:00"), block("b", "11:00", "12:00")], on: day, calendar: calendar)
         let during = PlannerLayout.nowAndNext(segments, at: 570)
-        #expect(during.current?.id == "a" && during.next?.id == "b")
+        #expect(during.current?.block.planId == "a" && during.next?.block.planId == "b")
         let between = PlannerLayout.nowAndNext(segments, at: 630)
-        #expect(between.current == nil && between.next?.id == "b")
+        #expect(between.current == nil && between.next?.block.planId == "b")
+    }
+
+    @Test func aSessionSettlesWhenCompletedCancelledOrOver() throws {
+        let ahead = block("a", "13:00", "14:00")
+        let noon = try Date("2026-10-21T12:00:00-04:00", strategy: .iso8601)
+        #expect(!PlannerLayout.isSettled(ahead, now: noon))
+        #expect(PlannerLayout.isSettled(ahead.marked(completed: true), now: noon))
+        #expect(PlannerLayout.isSettled(block("b", "09:00", "10:00"), now: noon))
     }
 
     @Test func spansReadAsHoursAndMinutes() {
         #expect(PlannerLayout.span(80) == "1 h 20 min")
         #expect(PlannerLayout.span(45) == "45 min")
         #expect(PlannerLayout.span(120) == "2 h")
+    }
+}
+
+/// Yaad's timeline items decode as sent, a session is named by its plan and
+/// date, and Ankur's Completed mark sends null to take it back.
+struct TimelineItemTests {
+    private let json = """
+    {"id": "p1", "occurrence_date": "2026-10-29", "title": "CSE 431 lecture", "body": null, "kind": "class",
+     "status": "confirmed", "start_at": "2026-10-29T17:00:00.000Z", "end_at": "2026-10-29T18:20:00.000Z",
+     "due_at": null, "opens_at": null, "all_day": false, "time_zone": null, "hide_from_planner": false,
+     "state": "scheduled", "outcome": "done", "outcome_at": "2026-10-29T18:30:00.000Z", "actual_start": null,
+     "actual_end": null, "recurrence": "every Tue and Thu", "series": {"completed": 16, "total": 17},
+     "place": {"id": "pl", "title": "Engineering Building", "address": "428 S Shaw Ln, East Lansing, MI 48824", "room": "1345"},
+     "owner": "cse-431-specialist", "notes": [{"id": "n1", "title": "BFS and DFS", "body": null}]}
+    """
+
+    @Test func decodesAndNamesTheSession() throws {
+        let item = try ServiceJSON.decoder.decode(TimelineItem.self, from: Data(json.utf8))
+        #expect(item.id == "p1:2026-10-29")
+        #expect(item.kind == .class && item.completed && item.series?.total == 17)
+        #expect(item.ownerAgent == "cse-431-specialist")
+        #expect(!item.marked(completed: false).completed)
+        let directions = try #require(Directions.url(to: item.place))
+        #expect(directions.scheme == "maps")
+        #expect(URLComponents(url: directions, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "daddr" }?.value == item.place?.address)
+    }
+
+    @Test func takingTheMarkBackSendsNull() throws {
+        let body = try ServiceJSON.encoder.encode(OutcomeRequest(planId: "p1", occurrenceDate: "2026-10-29", outcome: nil))
+        let fields = try JSONSerialization.jsonObject(with: body) as? [String: Any]
+        #expect(fields?["plan_id"] as? String == "p1")
+        #expect(fields?["occurrence_date"] as? String == "2026-10-29")
+        #expect(fields?["outcome"] is NSNull)
     }
 }
 

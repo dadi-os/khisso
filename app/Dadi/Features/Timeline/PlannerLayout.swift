@@ -1,8 +1,8 @@
 import Foundation
 
 /// The planner's pure logic, matching thaali's `planner/blocks.ts`: a day's
-/// blocks as segments on a minute axis with side-by-side lanes for overlaps,
-/// the open time between them, and what is now and next.
+/// timed sessions as segments on a minute axis with side-by-side lanes for
+/// overlaps, the open time between them, and what is now and next.
 enum PlannerLayout {
     /// The least open time between two blocks that is drawn as a gap.
     static let gapMinimum = 10
@@ -13,7 +13,7 @@ enum PlannerLayout {
 
     /// One block's part of one day, in minutes after local midnight, with its lane.
     struct Segment: Hashable, Identifiable {
-        let block: PlannerBlock
+        let block: TimelineItem
         let startMin: Int
         let endMin: Int
         /// Lane among the blocks it overlaps, and how many lanes that group has.
@@ -29,15 +29,18 @@ enum PlannerLayout {
         let endMin: Int
     }
 
-    /// `day`'s part of every block that touches it, earliest first, with
-    /// overlapping blocks in side-by-side lanes.
-    static func segments(_ blocks: [PlannerBlock], on day: Date, calendar: Calendar = .current) -> [Segment] {
+    /// `day`'s part of every timed session that touches it, earliest first,
+    /// with overlapping sessions in side-by-side lanes. The planner view only
+    /// holds sessions with a start and an end.
+    static func segments(_ blocks: [TimelineItem], on day: Date, calendar: Calendar = .current) -> [Segment] {
         let dayStart = calendar.startOfDay(for: day)
         guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else { return [] }
         func minutes(_ date: Date) -> Int { Int((date.timeIntervalSince(dayStart) / 60).rounded()) }
         var segments = blocks
-            .filter { $0.startAt < dayEnd && $0.endAt > dayStart }
-            .map { Segment(block: $0, startMin: max(0, minutes($0.startAt)), endMin: min(1440, minutes($0.endAt))) }
+            .compactMap { block -> Segment? in
+                guard let start = block.startAt, let end = block.endAt, start < dayEnd, end > dayStart else { return nil }
+                return Segment(block: block, startMin: max(0, minutes(start)), endMin: min(1440, minutes(end)))
+            }
             .sorted { ($0.startMin, $0.endMin) < ($1.startMin, $1.endMin) }
 
         var group: [Int] = []
@@ -86,35 +89,14 @@ enum PlannerLayout {
         (segments.first { $0.startMin <= nowMin && nowMin < $0.endMin }, segments.first { $0.startMin > nowMin })
     }
 
-    /// True once a block was marked done or its time has passed.
-    static func isSettled(_ block: PlannerBlock, now: Date) -> Bool {
-        block.doneAt != nil || block.endAt <= now
+    /// True once a session was completed or cancelled, or its time has passed.
+    static func isSettled(_ block: TimelineItem, now: Date) -> Bool {
+        block.completed || block.cancelled || block.endAt.map { $0 <= now } == true
     }
 
     /// Minutes as "1 h 20 min", "45 min", or "2 h".
     static func span(_ minutes: Int) -> String {
         let parts = [minutes / 60 > 0 ? "\(minutes / 60) h" : nil, minutes % 60 > 0 ? "\(minutes % 60) min" : nil].compactMap { $0 }
         return parts.isEmpty ? "0 min" : parts.joined(separator: " ")
-    }
-
-    /// The SF Symbol for a planner glyph name.
-    static func symbol(_ icon: String) -> String {
-        switch icon {
-        case "sun": "sun.max"
-        case "cup": "cup.and.saucer"
-        case "fork": "fork.knife"
-        case "book": "book"
-        case "pulse": "waveform.path.ecg"
-        case "drop": "drop"
-        case "brief": "briefcase"
-        case "leaf": "leaf"
-        case "moon": "moon"
-        case "flag": "flag"
-        case "pencil": "pencil"
-        case "walk": "figure.walk"
-        case "users": "person.2"
-        case "phone": "phone"
-        default: "circle"
-        }
     }
 }

@@ -1,40 +1,44 @@
 import SwiftUI
 
-/// The timeline opens on the day planner, the only view that shows a single
-/// day. Upcoming shows what's next with a live countdown, a week strip, and the
-/// next two weeks of Yaad's plans by day; its + adds to them in plain words,
-/// which Yaad reads into plans.
+/// The timeline: Day (the hour axis, `PlannerDay`), Week (each day's
+/// sessions and dues as rows with what is completed) and Month (a calendar
+/// with a dot on each busy day and the month's commitments), with Someday
+/// under Week and Month. Every view is one of Yaad's timeline views; every
+/// session row taps open its sheet, swipes right to Completed and left to
+/// message its owner, and long-presses for its menu. Nothing here edits a
+/// plan: changes go through the owner's thread or Dadi.
 struct TimelinePage: View {
     let yaad: YaadClient
 
-    @Environment(LiveData.self) private var live
-
-    /// The two ways to look at the timeline.
+    /// The three ways to look at the timeline.
     private enum Mode: String, CaseIterable {
         case day = "Day"
-        case upcoming = "Upcoming"
+        case week = "Week"
+        case month = "Month"
     }
 
     @State private var mode: Mode = .day
+    @State private var actions: SessionActions
 
-    @State private var plans: [PlanNode] = []
-    @State private var loaded = false
-    @State private var error: String?
-    @State private var selectedDay = Calendar.current.startOfDay(for: .now)
-    @State private var adding = false
-    @Namespace private var pill
-
-    /// How far ahead the agenda reaches.
-    private let horizon = 14
+    /// - Parameters:
+    ///   - message: opens the thread of the agent with this id.
+    ///   - tellDadi: opens Talk to Dadi.
+    init(yaad: YaadClient, message: @escaping (String) -> Void, tellDadi: @escaping () -> Void) {
+        self.yaad = yaad
+        _actions = State(initialValue: SessionActions(yaad: yaad, message: message, tellDadi: tellDadi))
+    }
 
     var body: some View {
         Group {
             switch mode {
             case .day:
-                PlannerDay(yaad: yaad)
+                PlannerDay(yaad: yaad, actions: actions)
                     .transition(.opacity)
-            case .upcoming:
-                upcoming
+            case .week:
+                WeekList(yaad: yaad, actions: actions)
+                    .transition(.opacity)
+            case .month:
+                MonthList(yaad: yaad, actions: actions)
                     .transition(.opacity)
             }
         }
@@ -48,211 +52,79 @@ struct TimelinePage: View {
             .padding(.horizontal, 20)
             .padding(.bottom, 8)
         }
-        .navigationTitle("Timeline")
-    }
-
-    private var upcoming: some View {
-        ScrollViewReader { reader in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    if let next = plans.first(where: { ($0.occurredAt ?? .distantPast) > .now }) {
-                        NextUp(plan: next)
-                            .transition(.move(edge: .top).combined(with: .opacity))
-                    }
-                    weekStrip(reader)
-                    if let error {
-                        Label(error, systemImage: "exclamationmark.triangle")
-                            .font(.callout)
-                            .foregroundStyle(.danger)
-                    }
-                    if loaded && plans.isEmpty && error == nil {
-                        ContentUnavailableView("Nothing planned", systemImage: "calendar", description: Text("The next two weeks are open. Tap + to add something."))
-                            .foregroundStyle(.inkMuted)
-                            .padding(.top, 40)
-                    }
-                    ForEach(days, id: \.self) { day in
-                        let dayPlans = plans(on: day)
-                        if !dayPlans.isEmpty {
-                            DaySection(day: day, plans: dayPlans)
-                                .id(day)
-                        }
-                    }
-                }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 100)
-                .frame(maxWidth: 760)
-                .frame(maxWidth: .infinity)
-                .animation(Motion.settle, value: plans)
-            }
-            .refreshable { await load() }
+        .overlay(alignment: .bottom) {
+            MarkBanner(actions: actions)
+                .animation(Motion.settle, value: actions.undo)
+                .animation(Motion.settle, value: actions.failure)
         }
-        .overlay(alignment: .bottomTrailing) {
-            Button { adding = true } label: {
-                Image(systemName: "plus")
-                    .font(.title2.weight(.semibold))
-                    .frame(width: 30, height: 30)
-            }
-            .buttonStyle(.glassProminent)
-            .buttonBorderShape(.circle)
-            .controlSize(.extraLarge)
-            .padding(24)
-            .accessibilityLabel("Add to the timeline")
-        }
-        .sheet(isPresented: $adding) {
-            QuickAdd(yaad: yaad) { Task { await load() } }
+        .sheet(item: Bindable(actions).opened) { item in
+            SessionSheet(item: actions.shown(item), actions: actions)
                 .fittedSheet()
                 .presentationBackground(.thinMaterial)
         }
-        .task(id: live.yaad) { await load() }
-    }
-
-    private var days: [Date] {
-        let today = Calendar.current.startOfDay(for: .now)
-        return (0..<horizon).compactMap { Calendar.current.date(byAdding: .day, value: $0, to: today) }
-    }
-
-    private func plans(on day: Date) -> [PlanNode] {
-        plans.filter { plan in plan.occurredAt.map { Calendar.current.isDate($0, inSameDayAs: day) } ?? false }
-    }
-
-    private func weekStrip(_ reader: ScrollViewProxy) -> some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: 6) {
-                ForEach(days, id: \.self) { day in
-                    let selected = Calendar.current.isDate(day, inSameDayAs: selectedDay)
-                    let busy = !plans(on: day).isEmpty
-                    Button {
-                        withAnimation(Motion.snap) { selectedDay = day }
-                        withAnimation(Motion.settle) { reader.scrollTo(day, anchor: .top) }
-                    } label: {
-                        VStack(spacing: 4) {
-                            Text(day, format: .dateTime.weekday(.narrow))
-                                .font(.caption2.weight(.semibold))
-                                .foregroundStyle(selected ? Color.bone.opacity(0.8) : .inkFaint)
-                            Text(day, format: .dateTime.day())
-                                .font(.title3.weight(.semibold).monospacedDigit())
-                                .foregroundStyle(selected ? Color.bone : .ink)
-                            Circle()
-                                .fill(selected ? Color.bone : .clay)
-                                .frame(width: 5, height: 5)
-                                .opacity(busy ? 1 : 0)
-                        }
-                        .frame(width: 46, height: 70)
-                        .background {
-                            if selected {
-                                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .fill(.sageDeep)
-                                    .matchedGeometryEffect(id: "pill", in: pill)
-                            }
-                        }
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(6)
-        }
-        .scrollIndicators(.hidden)
-        .glassEffect(.regular, in: .rect(cornerRadius: 22))
-        .sensoryFeedback(.selection, trigger: selectedDay)
-    }
-
-    private func load() async {
-        let start = Calendar.current.startOfDay(for: .now)
-        guard let end = Calendar.current.date(byAdding: .day, value: horizon, to: start) else { return }
-        do {
-            let fetched = try await yaad.plans(from: start, to: end)
-            plans = fetched.sorted { ($0.occurredAt ?? .distantFuture) < ($1.occurredAt ?? .distantFuture) }
-            error = nil
-        } catch {
-            self.error = error.localizedDescription
-        }
-        loaded = true
+        .sensoryFeedback(.selection, trigger: mode)
+        .navigationTitle("Timeline")
     }
 }
 
-/// The next plan, large, with a countdown that ticks without updates.
-private struct NextUp: View {
-    let plan: PlanNode
+/// Someday: ideas, and tasks with a due or an open but no time yet.
+private struct SomedaySection: View {
+    let items: [TimelineItem]
+    let actions: SessionActions
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Label("NEXT UP", systemImage: "sparkle")
-                .font(.caption.weight(.bold))
-                .tracking(1.2)
-                .foregroundStyle(.sageText)
-            Text(plan.title)
-                .font(.title2.weight(.semibold))
-                .foregroundStyle(.ink)
-                .lineLimit(3)
-            if let start = plan.occurredAt {
+        if !items.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .firstTextBaseline) {
-                    Text(start, format: plan.detail.allDay ? .dateTime.weekday(.wide).month().day() : .dateTime.weekday(.wide).hour().minute())
-                        .font(.callout)
-                        .foregroundStyle(.inkMuted)
+                    Text("Someday").font(.headline).foregroundStyle(.ink)
                     Spacer()
-                    if !plan.detail.allDay && start.timeIntervalSinceNow < 86_400 {
-                        Text(timerInterval: Date.now...start, countsDown: true)
-                            .font(.title.weight(.semibold).monospacedDigit())
-                            .foregroundStyle(.sageDeep)
-                            .contentTransition(.numericText(countsDown: true))
-                    } else {
-                        Text(start, style: .relative)
-                            .font(.headline)
-                            .foregroundStyle(.sageDeep)
+                    let needs = items.filter { $0.status != .idea }.count
+                    if needs > 0 {
+                        Text(needs == 1 ? "1 needs a time" : "\(needs) need a time")
+                            .font(.footnote)
+                            .foregroundStyle(.clay)
                     }
                 }
-            }
-        }
-        .padding(20)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background {
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .fill(LinearGradient(colors: [.sage.opacity(0.22), .sageLine.opacity(0.08)], startPoint: .topLeading, endPoint: .bottomTrailing))
-        }
-        .glassEffect(.regular, in: .rect(cornerRadius: 26))
-    }
-}
-
-/// One day's plans: its heading, then each plan with its time and a bar in
-/// sage (confirmed) or dashed clay (tentative).
-private struct DaySection: View {
-    let day: Date
-    let plans: [PlanNode]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(title).font(.headline).foregroundStyle(.ink)
-                Text(day, format: .dateTime.month(.abbreviated).day())
-                    .font(.subheadline)
-                    .foregroundStyle(.inkFaint)
-            }
-            VStack(spacing: 8) {
-                ForEach(plans) { plan in
-                    PlanRow(plan: plan)
+                ForEach(actions.shown(items)) { item in
+                    HStack {
+                        Text(item.title).font(.subheadline.weight(.medium)).foregroundStyle(.ink)
+                        Spacer(minLength: 8)
+                        Text(somedayWhen(item))
+                            .font(.caption)
+                            .foregroundStyle(item.status == .idea ? Color.inkMuted : .clay)
+                    }
+                    .padding(14)
+                    .background(.boneRaised.opacity(0.75), in: .rect(cornerRadius: 16, style: .continuous))
+                    .sessionGestures(item, actions: actions, radius: 16)
                 }
             }
         }
     }
 
-    private var title: String {
-        if Calendar.current.isDateInToday(day) { return "Today" }
-        if Calendar.current.isDateInTomorrow(day) { return "Tomorrow" }
-        return day.formatted(.dateTime.weekday(.wide))
+    private func somedayWhen(_ item: TimelineItem) -> String {
+        if item.status == .idea { return "Idea" }
+        let day = Date.FormatStyle.dateTime.month(.abbreviated).day()
+        if let opens = item.opensAt { return "Opens \(opens.formatted(day))" }
+        if let due = item.dueAt { return "By \(due.formatted(day))" }
+        return "Needs a time"
     }
 }
 
-/// A plan in the agenda.
-private struct PlanRow: View {
-    let plan: PlanNode
+/// One session in a list: its time, title, and what became of it.
+private struct SessionRow: View {
+    let item: TimelineItem
+
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
-        HStack(alignment: .top, spacing: 14) {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
             Group {
-                if plan.detail.allDay {
+                if item.allDay {
                     Text("All day")
-                } else if let start = plan.occurredAt {
+                } else if let start = item.startAt {
                     Text(start, format: .dateTime.hour().minute())
+                } else if let due = item.dueAt {
+                    Text(due, format: .dateTime.hour().minute())
                 }
             }
             .font(.footnote.weight(.semibold).monospacedDigit())
@@ -260,99 +132,279 @@ private struct PlanRow: View {
             .lineLimit(1)
             .fixedSize()
             .frame(width: 66, alignment: .trailing)
-            .padding(.top, 2)
-            RoundedRectangle(cornerRadius: 2)
-                .strokeBorder(plan.detail.status == .confirmed ? Color.sage : .clay, style: StrokeStyle(lineWidth: 4, dash: plan.detail.status == .confirmed ? [] : [5, 4]))
-                .frame(width: 4)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(plan.title)
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(.ink)
-                if let end = plan.detail.endAt, !plan.detail.allDay {
-                    Text("until \(end.formatted(.dateTime.hour().minute()))")
-                        .font(.footnote)
-                        .foregroundStyle(.inkMuted)
-                }
-                if let agent = plan.agentId {
-                    Text(agent)
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.inkMuted)
-                        .lineLimit(1)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(.inkMuted.opacity(0.1), in: .capsule)
-                }
-            }
+            Text(item.title)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.ink)
+                .strikethrough(item.cancelled, color: .inkFaint)
+                .lineLimit(2)
             Spacer(minLength: 0)
+            if let url = Directions.url(to: item.place), !item.completed {
+                Button { openURL(url) } label: {
+                    Image(systemName: "mappin.and.ellipse").font(.footnote.weight(.semibold)).foregroundStyle(.sageDeep)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Directions to \(item.place?.title ?? item.title)")
+            }
+            Text(mark)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(item.missed || (item.startAt == nil && !item.completed) ? Color.clay : .inkMuted)
         }
         .padding(14)
-        .background(.boneRaised.opacity(0.75), in: .rect(cornerRadius: 18, style: .continuous))
+        .background(item.startAt == nil ? Color.clay.opacity(0.08) : Color.boneRaised.opacity(0.75), in: .rect(cornerRadius: 16, style: .continuous))
+        .opacity(item.completed || item.cancelled ? 0.55 : 1)
+    }
+
+    private var mark: String {
+        if item.cancelled { return "Cancelled" }
+        if item.completed { return "✓" }
+        if item.missed { return "Missed" }
+        return item.startAt == nil ? "Due" : ""
     }
 }
 
-/// Add to the timeline in plain words; Yaad reads them into plans.
-private struct QuickAdd: View {
+/// The week from Monday: each day's sessions and dues, with how many of its
+/// sessions are completed, then Someday. Swipe across a day heading or use
+/// the arrows to move a week.
+private struct WeekList: View {
     let yaad: YaadClient
-    let added: () -> Void
+    let actions: SessionActions
 
-    @State private var text = ""
-    @State private var working = false
-    @State private var problem: String?
-    @State private var done = 0
-    @Environment(\.dismiss) private var dismiss
-    @FocusState private var focused: Bool
+    @Environment(LiveData.self) private var live
+    @State private var start = WeekList.monday(of: .now)
+    @State private var items: [TimelineItem] = []
+    @State private var someday: [TimelineItem] = []
+    @State private var error: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Add to the timeline")
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(.ink)
-            Text("Say it how you'd say it: \u{201C}Dentist next Thursday at 3:30\u{201D}.")
-                .font(.callout)
-                .foregroundStyle(.inkMuted)
-            TextField("What's happening?", text: $text, axis: .vertical)
-                .lineLimit(2...5)
-                .focused($focused)
-                .padding(14)
-                .background(.boneRaised, in: .rect(cornerRadius: 16))
-                .disabled(working)
-            if let problem {
-                Label(problem, systemImage: "exclamationmark.circle")
-                    .font(.footnote)
-                    .foregroundStyle(.danger)
-            }
-            Button {
-                add()
-            } label: {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
                 HStack {
-                    if working { ProgressView().tint(.bone) }
-                    Text(working ? "Yaad is reading it…" : "Add").font(.body.weight(.semibold))
+                    Button { move(by: -1) } label: { Image(systemName: "chevron.left").frame(width: 20, height: 20) }
+                        .buttonStyle(.glass)
+                        .buttonBorderShape(.circle)
+                        .accessibilityLabel("Previous week")
+                    Spacer()
+                    Text(title).font(.title3.weight(.semibold)).foregroundStyle(.ink).contentTransition(.opacity)
+                    Spacer()
+                    Button { move(by: 1) } label: { Image(systemName: "chevron.right").frame(width: 20, height: 20) }
+                        .buttonStyle(.glass)
+                        .buttonBorderShape(.circle)
+                        .accessibilityLabel("Next week")
                 }
-                .frame(maxWidth: .infinity)
+                if let error {
+                    Label(error, systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(.danger)
+                }
+                ForEach(days, id: \.self) { day in
+                    let dayItems = actions.shown(items.filter { item in item.when.map { Calendar.current.isDate($0, inSameDayAs: day) } == true })
+                    if !dayItems.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(alignment: .firstTextBaseline) {
+                                Text(heading(day)).font(.headline).foregroundStyle(Calendar.current.isDateInToday(day) ? Color.sageDeep : .ink)
+                                Spacer()
+                                let held = dayItems.filter { $0.startAt != nil && !$0.cancelled }
+                                Text("\(held.filter(\.completed).count) of \(held.count)")
+                                    .font(.footnote.monospacedDigit())
+                                    .foregroundStyle(.inkMuted)
+                            }
+                            ForEach(dayItems) { item in
+                                SessionRow(item: item).sessionGestures(item, actions: actions, radius: 16)
+                            }
+                        }
+                    }
+                }
+                SomedaySection(items: someday, actions: actions)
             }
-            .buttonStyle(.glassProminent)
-            .controlSize(.large)
-            .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || working)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 100)
+            .frame(maxWidth: 760)
+            .frame(maxWidth: .infinity)
+            .animation(Motion.settle, value: items)
         }
-        .padding(24)
-        .sensoryFeedback(.success, trigger: done)
-        .onAppear { focused = true }
+        .refreshable { await load() }
+        .sensoryFeedback(.selection, trigger: start)
+        .task(id: WeekReload(start: start, change: live.yaad)) { await load() }
     }
 
-    private func add() {
-        let words = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        working = true
-        problem = nil
-        Task {
-            defer { working = false }
-            do {
-                _ = try await yaad.ingest(words)
-                done += 1
-                added()
-                dismiss()
-            } catch {
-                problem = error.localizedDescription
-            }
+    private var days: [Date] {
+        (0..<7).compactMap { Calendar.current.date(byAdding: .day, value: $0, to: start) }
+    }
+
+    private var title: String {
+        guard let last = days.last else { return "" }
+        let day = Date.FormatStyle.dateTime.month(.abbreviated).day()
+        return "\(start.formatted(day)) – \(last.formatted(day))"
+    }
+
+    private func heading(_ day: Date) -> String {
+        if Calendar.current.isDateInToday(day) { return "Today · \(day.formatted(.dateTime.weekday(.wide).day()))" }
+        return day.formatted(.dateTime.weekday(.wide).day())
+    }
+
+    private func move(by weeks: Int) {
+        guard let next = Calendar.current.date(byAdding: .day, value: 7 * weeks, to: start) else { return }
+        withAnimation(Motion.settle) {
+            items = []
+            start = next
         }
     }
+
+    /// Monday at local midnight of the week holding `date`.
+    static func monday(of date: Date) -> Date {
+        let day = Calendar.current.startOfDay(for: date)
+        let weekday = Calendar.current.component(.weekday, from: day)
+        return Calendar.current.date(byAdding: .day, value: -((weekday + 5) % 7), to: day) ?? day
+    }
+
+    private func load() async {
+        guard let end = Calendar.current.date(byAdding: .day, value: 7, to: start) else { return }
+        do {
+            async let planned = yaad.timeline(.planner, from: start, to: end)
+            async let dues = yaad.timeline(.due, from: start, to: end)
+            async let ideas = yaad.timeline(.someday, from: Calendar.current.startOfDay(for: .now), to: end)
+            let (p, d, s) = try await (planned, dues, ideas)
+            let fetched = (p + d).sorted { ($0.when ?? .distantFuture) < ($1.when ?? .distantFuture) }
+            actions.settle(fetched + s)
+            items = fetched
+            someday = s
+            error = nil
+        } catch is CancellationError {
+            return
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+}
+
+/// What makes the week read again: another week, or a change in Yaad.
+private struct WeekReload: Hashable {
+    let start: Date
+    let change: Int
+}
+
+/// The month: a calendar with a dot on each day that has a commitment or a
+/// due, then the month's commitments as rows, then Someday.
+private struct MonthList: View {
+    let yaad: YaadClient
+    let actions: SessionActions
+
+    @Environment(LiveData.self) private var live
+    @State private var month = MonthList.first(of: .now)
+    @State private var items: [TimelineItem] = []
+    @State private var someday: [TimelineItem] = []
+    @State private var error: String?
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                HStack {
+                    Button { move(by: -1) } label: { Image(systemName: "chevron.left").frame(width: 20, height: 20) }
+                        .buttonStyle(.glass)
+                        .buttonBorderShape(.circle)
+                        .accessibilityLabel("Previous month")
+                    Spacer()
+                    Text(month, format: .dateTime.month(.wide).year())
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(.ink)
+                        .contentTransition(.opacity)
+                    Spacer()
+                    Button { move(by: 1) } label: { Image(systemName: "chevron.right").frame(width: 20, height: 20) }
+                        .buttonStyle(.glass)
+                        .buttonBorderShape(.circle)
+                        .accessibilityLabel("Next month")
+                }
+                calendar
+                if let error {
+                    Label(error, systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(.danger)
+                }
+                if !items.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(actions.shown(items)) { item in
+                            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                                if let when = item.when {
+                                    Text(when, format: .dateTime.month(.abbreviated).day())
+                                        .font(.footnote.weight(.semibold).monospacedDigit())
+                                        .foregroundStyle(.inkMuted)
+                                        .frame(width: 52, alignment: .leading)
+                                }
+                                SessionRow(item: item)
+                            }
+                            .sessionGestures(item, actions: actions, radius: 16)
+                        }
+                    }
+                }
+                SomedaySection(items: someday, actions: actions)
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 100)
+            .frame(maxWidth: 760)
+            .frame(maxWidth: .infinity)
+            .animation(Motion.settle, value: items)
+        }
+        .refreshable { await load() }
+        .sensoryFeedback(.selection, trigger: month)
+        .task(id: MonthReload(month: month, change: live.yaad)) { await load() }
+    }
+
+    private var calendar: some View {
+        let columns = Array(repeating: GridItem(.flexible(), spacing: 4), count: 7)
+        let lead = (Calendar.current.component(.weekday, from: month) + 5) % 7
+        let count = Calendar.current.range(of: .day, in: .month, for: month)?.count ?? 0
+        return LazyVGrid(columns: columns, spacing: 6) {
+            ForEach(Array(["M", "T", "W", "T", "F", "S", "S"].enumerated()), id: \.offset) { _, name in
+                Text(name).font(.caption2.weight(.semibold)).foregroundStyle(.inkFaint)
+            }
+            ForEach(0..<(lead + count), id: \.self) { index in
+                if index < lead {
+                    Color.clear.frame(height: 36)
+                } else if let day = Calendar.current.date(byAdding: .day, value: index - lead, to: month) {
+                    let busy = items.contains { $0.when.map { Calendar.current.isDate($0, inSameDayAs: day) } == true }
+                    VStack(spacing: 3) {
+                        Text(day, format: .dateTime.day())
+                            .font(.subheadline.weight(Calendar.current.isDateInToday(day) ? .bold : .medium).monospacedDigit())
+                            .foregroundStyle(Calendar.current.isDateInToday(day) ? Color.sageDeep : .ink)
+                        Circle().fill(.clay).frame(width: 5, height: 5).opacity(busy ? 1 : 0)
+                    }
+                    .frame(height: 36)
+                }
+            }
+        }
+        .padding(12)
+        .glassEffect(.regular, in: .rect(cornerRadius: 22))
+    }
+
+    private func move(by months: Int) {
+        guard let next = Calendar.current.date(byAdding: .month, value: months, to: month) else { return }
+        withAnimation(Motion.settle) {
+            items = []
+            month = next
+        }
+    }
+
+    /// Local midnight of the first day of the month holding `date`.
+    static func first(of date: Date) -> Date {
+        Calendar.current.dateInterval(of: .month, for: date)?.start ?? Calendar.current.startOfDay(for: date)
+    }
+
+    private func load() async {
+        guard let end = Calendar.current.date(byAdding: .month, value: 1, to: month) else { return }
+        do {
+            async let monthly = yaad.timeline(.month, from: month, to: end)
+            async let ideas = yaad.timeline(.someday, from: Calendar.current.startOfDay(for: .now), to: end)
+            let (m, s) = try await (monthly, ideas)
+            actions.settle(m + s)
+            items = m
+            someday = s
+            error = nil
+        } catch is CancellationError {
+            return
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+}
+
+/// What makes the month read again: another month, or a change in Yaad.
+private struct MonthReload: Hashable {
+    let month: Date
+    let change: Int
 }

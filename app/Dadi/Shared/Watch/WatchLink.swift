@@ -3,14 +3,13 @@ import Foundation
 /// What the iPhone tells the watch: today's plan, the latest threads and the
 /// box's health, small enough to send whole and keep on the watch.
 struct WatchSnapshot: Codable, Sendable, Equatable {
-    /// One planner block today.
+    /// One session on today's planner.
     struct Block: Codable, Sendable, Hashable, Identifiable {
         let id: String
         let title: String
-        /// The SF Symbol for its glyph.
-        let symbol: String
         let startAt: Date
         let endAt: Date
+        /// Ankur marked it completed.
         let done: Bool
     }
 

@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Today's plan from the last snapshot: what is on now and until when, what
-/// is next, then the rest of the day, done and past blocks faded.
+/// Today's planner from the last snapshot: what is on now and until when,
+/// what is next, then the rest of the day, completed and past sessions faded.
 struct TodayPage: View {
     let snapshot: WatchSnapshot?
 
@@ -43,7 +43,7 @@ private struct NowCard: View {
                 .font(.system(size: 11, weight: .bold))
                 .tracking(1)
                 .foregroundStyle(.sage)
-            Label(block.title, systemImage: block.symbol)
+            Text(block.title)
                 .font(.body.weight(.semibold))
                 .lineLimit(2)
             Text("until \(block.endAt.formatted(date: .omitted, time: .shortened))")
@@ -64,7 +64,7 @@ private struct BlockRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: block.done ? "checkmark.circle.fill" : block.symbol)
+            Image(systemName: block.done ? "checkmark.circle.fill" : "circle")
                 .font(.footnote)
                 .foregroundStyle(.sage)
                 .frame(width: 18)

@@ -86,15 +86,17 @@ final class WatchRelay: NSObject {
         }
         async let threads = services.hath.threads()
         async let agents = services.hath.agents()
-        async let blocks = services.yaad.planner(from: start, to: end)
+        async let blocks = services.yaad.timeline(.planner, from: start, to: end)
         async let status = services.nas.status()
         let (t, a, b, s) = try await (threads, agents, blocks, status)
         let lanes = Dictionary(uniqueKeysWithValues: a.map { ($0.id, $0.lanes) })
         return WatchSnapshot(
             at: .now,
-            today: b.sorted { $0.startAt < $1.startAt }.map {
-                WatchSnapshot.Block(id: $0.id, title: $0.title, symbol: PlannerLayout.symbol($0.icon), startAt: $0.startAt, endAt: $0.endAt, done: $0.doneAt != nil)
-            },
+            today: b.compactMap { item in
+                guard !item.cancelled, let start = item.startAt, let end = item.endAt else { return nil }
+                return WatchSnapshot.Block(id: item.id, title: item.title, startAt: start, endAt: end, done: item.completed)
+            }
+            .sorted { $0.startAt < $1.startAt },
             threads: t.sorted { $0.lastAt > $1.lastAt }.prefix(WatchLink.threadLimit).map { thread in
                 let running = lanes[thread.agentId] ?? []
                 return WatchSnapshot.Thread(

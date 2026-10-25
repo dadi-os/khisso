@@ -93,8 +93,12 @@ struct PhoneHome: View {
                     .id(agentId)
                     .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .opacity))
             case .timeline:
-                TimelinePage(yaad: services.yaad)
-                    .transition(.opacity)
+                TimelinePage(yaad: services.yaad) { agentId in
+                    withAnimation(Motion.settle) { page = .thread(agentId) }
+                } tellDadi: {
+                    choose(.dadi)
+                }
+                .transition(.opacity)
             case .ghar:
                 GharPage(ghar: services.ghar)
                     .transition(.opacity)
