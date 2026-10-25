@@ -7,13 +7,16 @@ import SwiftUI
 /// highlighted code, links, images, quotes and headings, in dadi's ink with
 /// sage links and accents. Single-dollar math follows thaali's rule
 /// (``MathDelimiters``), so prices are never typeset. Text stays selectable.
+/// Compact sets it at footnote size, for reference text such as a system
+/// prompt rather than a message.
 struct AgentMarkdown: View {
     let source: String
+    var compact = false
 
     var body: some View {
         MarkdownView(MathDelimiters.normalize(source))
             .markdownMathRenderingEnabled()
-            .markdownFontGroup(AgentMarkdownFonts())
+            .markdownFontGroup(AgentMarkdownFonts(compact: compact))
             .markdownLinksUnderlined()
             .tint(.sageDeep, for: .link)
             .tint(.sageDeep, for: .inlineCodeBlock)
@@ -55,21 +58,23 @@ enum InlineMarkdown {
 }
 
 /// The thread's type: body text at `.body`, as before, and headings sized for
-/// a message rather than a page.
+/// a message rather than a page; compact steps everything down to footnote.
 private struct AgentMarkdownFonts: MarkdownFontGroup {
-    var h1: any CustomCTFontConvertible { Font.title3.weight(.semibold) }
-    var h2: any CustomCTFontConvertible { Font.headline }
-    var h3: any CustomCTFontConvertible { Font.headline }
-    var h4: any CustomCTFontConvertible { Font.subheadline.weight(.semibold) }
-    var h5: any CustomCTFontConvertible { Font.subheadline.weight(.semibold) }
-    var h6: any CustomCTFontConvertible { Font.subheadline }
-    var body: any CustomCTFontConvertible { Font.body }
-    var codeBlock: any CustomCTFontConvertible { Font.callout.monospaced() }
-    var blockQuote: any CustomCTFontConvertible { Font.body }
-    var tableHeader: any CustomCTFontConvertible { Font.subheadline.weight(.semibold) }
-    var tableBody: any CustomCTFontConvertible { Font.subheadline }
-    var inlineMath: any CustomCTFontConvertible { Font.body }
-    var displayMath: any CustomCTFontConvertible { Font.body }
+    let compact: Bool
+
+    var h1: any CustomCTFontConvertible { compact ? Font.subheadline.weight(.semibold) : Font.title3.weight(.semibold) }
+    var h2: any CustomCTFontConvertible { compact ? Font.footnote.weight(.semibold) : Font.headline }
+    var h3: any CustomCTFontConvertible { compact ? Font.footnote.weight(.semibold) : Font.headline }
+    var h4: any CustomCTFontConvertible { compact ? Font.footnote.weight(.semibold) : Font.subheadline.weight(.semibold) }
+    var h5: any CustomCTFontConvertible { compact ? Font.footnote.weight(.semibold) : Font.subheadline.weight(.semibold) }
+    var h6: any CustomCTFontConvertible { compact ? Font.footnote : Font.subheadline }
+    var body: any CustomCTFontConvertible { compact ? Font.footnote : Font.body }
+    var codeBlock: any CustomCTFontConvertible { compact ? Font.caption.monospaced() : Font.callout.monospaced() }
+    var blockQuote: any CustomCTFontConvertible { compact ? Font.footnote : Font.body }
+    var tableHeader: any CustomCTFontConvertible { compact ? Font.caption.weight(.semibold) : Font.subheadline.weight(.semibold) }
+    var tableBody: any CustomCTFontConvertible { compact ? Font.caption : Font.subheadline }
+    var inlineMath: any CustomCTFontConvertible { compact ? Font.footnote : Font.body }
+    var displayMath: any CustomCTFontConvertible { compact ? Font.footnote : Font.body }
 }
 
 /// A quote set in from a sage bar, in muted ink.

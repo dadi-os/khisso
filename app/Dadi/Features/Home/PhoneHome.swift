@@ -133,6 +133,8 @@ struct PhoneHome: View {
             case .thread(let agentId):
                 ThreadView(hath: services.hath, agentId: agentId, name: store.name(of: agentId), live: store.live, lanes: store.lanes(of: agentId), connections: store.connections) { seq in
                     Task { await store.markRead(services.hath, agentId: agentId, through: seq) }
+                } details: {
+                    agentSheet = agentId
                 }
                     .id(agentId)
                     .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .opacity))

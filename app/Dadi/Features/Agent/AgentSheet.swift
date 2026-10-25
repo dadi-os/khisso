@@ -102,13 +102,26 @@ struct AgentSheet: View {
         .task(id: lanes) { await followActivity() }
     }
 
+    /// The agent's state in a pill: thinking plays the flowing dots, working
+    /// runs the sheen, and an idle or retired agent sits quiet.
     private var header: some View {
         HStack(spacing: 8) {
-            Circle()
-                .fill(!lanes.isEmpty ? Color.sageDeep : isActive ? .sage : .inkFaint)
-                .frame(width: 8, height: 8)
-            Text(status).font(.subheadline).foregroundStyle(.inkMuted)
+            if lanes.contains(.conversation) {
+                ThinkingMark()
+            } else {
+                Circle()
+                    .fill(!lanes.isEmpty ? Color.sageDeep : isActive ? .sage : .inkFaint)
+                    .frame(width: 7, height: 7)
+            }
+            Text(status)
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(lanes.isEmpty ? Color.inkMuted : .sageText)
         }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .background(lanes.isEmpty ? Color.ink.opacity(0.05) : .sage.opacity(0.14), in: .capsule)
+        .laneSheen(lanes.contains(.reasoning), in: Capsule())
+        .animation(Motion.settle, value: lanes)
     }
 
     private var isActive: Bool { detail?.agent.active ?? true }
@@ -116,7 +129,7 @@ struct AgentSheet: View {
     private var status: String {
         if !isActive { return "Retired" }
         if lanes.isEmpty { return "Idle" }
-        return "In flight · " + [Lane.conversation, .reasoning].filter(lanes.contains).map(\.label).joined(separator: " + ")
+        return [Lane.conversation, .reasoning].filter(lanes.contains).map(\.label).joined(separator: " + ").capitalized
     }
 
     private var facts: some View {
@@ -163,8 +176,7 @@ struct AgentSheet: View {
 
     private func prompt(_ text: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            AgentMarkdown(source: text)
-                .font(.footnote)
+            AgentMarkdown(source: text, compact: true)
                 .frame(maxHeight: promptOpen ? nil : 130, alignment: .top)
                 .clipped()
                 .mask {
