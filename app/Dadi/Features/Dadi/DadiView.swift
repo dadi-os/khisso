@@ -1,21 +1,37 @@
 import SwiftUI
 
 /// Talk to Dadi: your words go to the router, which sends them on as you to the
-/// agent that owns them. While it works this is a waiting room: the words lift
-/// out of the composer above it, the wordmark breathes, and once the router has
-/// sent them it says to whom before that thread opens. Arriving from
-/// Connecting, the wordmark stays where it was and the rest fades in around it.
+/// agent that owns them. At rest the wordmark breathes over a greeting, a chip
+/// says how many agents are working (it opens the drawer), and the threads
+/// with replies you have not read, or else the latest ones, wait below; they
+/// step aside while you type. While the router works this is a waiting room:
+/// the words lift out of the composer above it, the wordmark glows, and once
+/// the router has sent them it says to whom before that thread opens.
+/// Arriving from Connecting, the wordmark stays where it was and the rest
+/// fades in around it.
 struct DadiView: View {
     /// The idle wordmark's size, which Connecting shares so the mark does not
     /// change size as Home arrives.
     static let wordmarkSize: CGFloat = 84
 
+    /// How many threads wait under the greeting.
+    private static let shownThreads = 3
+
     let hath: HathClient
+    /// Every thread, newest first, as Home has them.
+    let threads: [ThreadSummary]
+    /// Each agent's running lanes.
+    let lanes: (String) -> Set<Lane>
     /// An agent's name as Hath names it, for "Sent to".
     let name: (String) -> String
     let wordmark: Namespace.ID
-    /// Opens the thread of the agent the router handed off to.
+    /// Opens the thread of an agent: the one the router handed off to, or a
+    /// row tapped.
     let open: (String) -> Void
+    /// Opens an agent's sheet.
+    let details: (String) -> Void
+    /// Opens the drawer, where the working agents are.
+    let openDrawer: () -> Void
 
     /// Where a hand-off is.
     private enum Stage: Equatable {
@@ -31,29 +47,39 @@ struct DadiView: View {
     @State private var glow = false
     @State private var handedOff = 0
     @State private var arrived = false
+    @State private var typing = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 0) {
-            Spacer()
-            VStack(spacing: 22) {
+            Spacer(minLength: 24)
+            VStack(spacing: 20) {
                 Text("દાદી")
                     .font(.wordmark(stage == .idle ? Self.wordmarkSize : 56))
                     .inkCentered(.word, size: stage == .idle ? Self.wordmarkSize : 56)
                     .foregroundStyle(.sageDeep)
                     .shadow(color: .sage.opacity(stage == .idle ? 0 : (glow ? 0.5 : 0.1)), radius: glow ? 24 : 8)
+                    .phaseAnimator([false, true]) { mark, inhale in
+                        mark.scaleEffect(stage == .idle && inhale && !reduceMotion ? 1.025 : 1)
+                    } animation: { _ in .easeInOut(duration: 2.4) }
                     .matchedGeometryEffect(id: "wordmark", in: wordmark)
                 switch stage {
                 case .idle:
-                    VStack(spacing: 8) {
+                    VStack(spacing: 12) {
                         Text(greeting)
                             .font(.title3.weight(.semibold))
                             .foregroundStyle(.ink)
-                        Text("Tell Dadi what you need. It lands with the agent who owns it, and that chat opens.")
-                            .font(.callout)
-                            .foregroundStyle(.inkMuted)
-                            .multilineTextAlignment(.center)
-                            .frame(maxWidth: 320)
+                        if threads.isEmpty {
+                            Text("Tell Dadi what you need. It lands with the agent who owns it, and that chat opens.")
+                                .font(.callout)
+                                .foregroundStyle(.inkMuted)
+                                .multilineTextAlignment(.center)
+                                .frame(maxWidth: 320)
+                        }
+                        if !working.isEmpty && !typing {
+                            workingChip
+                                .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                        }
                     }
                     .opacity(arrived ? 1 : 0)
                     .offset(y: arrived ? 0 : 10)
@@ -82,7 +108,14 @@ struct DadiView: View {
                 }
             }
             .padding(.horizontal, 24)
-            Spacer()
+            Spacer(minLength: 24)
+            if stage == .idle && !typing && !waiting.isEmpty {
+                waitingList
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 14)
+                    .opacity(arrived ? 1 : 0)
+                    .transition(.opacity.combined(with: .offset(y: 12)))
+            }
             Composer(text: $draft, photos: $photos, placeholder: "Message Dadi…", busy: stage != .idle, lanes: stage == .idle ? [] : [.conversation], send: handOff)
                 .padding(.horizontal, 16)
                 .composerInset()
@@ -90,9 +123,82 @@ struct DadiView: View {
                 .offset(y: arrived ? 0 : 16)
         }
         .onAppear { withAnimation(Motion.settle.delay(0.3)) { arrived = true } }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+            withAnimation(Motion.snap) { typing = true }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+            withAnimation(Motion.settle) { typing = false }
+        }
         .animation(.spring(response: 0.6, dampingFraction: 0.8), value: stage)
+        .animation(Motion.settle, value: waiting.map(\.agentId))
+        .animation(Motion.settle, value: working.count)
         .sensoryFeedback(.success, trigger: handedOff)
         .navigationTitle("Dadi")
+    }
+
+    /// Agents with a lane running.
+    private var working: [ThreadSummary] {
+        threads.filter { !lanes($0.agentId).isEmpty }
+    }
+
+    /// Threads with replies not yet read, or the newest when there are none.
+    private var waiting: [ThreadSummary] {
+        let unread = threads.filter { $0.unread > 0 }
+        return Array((unread.isEmpty ? threads : unread).prefix(Self.shownThreads))
+    }
+
+    /// "2 agents working" in a pill that runs the working sheen; it opens the drawer.
+    private var workingChip: some View {
+        Button(action: openDrawer) {
+            HStack(spacing: 8) {
+                ThinkingMark()
+                Text(working.count == 1 ? "\(working[0].agentName) is working" : "\(working.count) agents working")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.sageText)
+                    .lineLimit(1)
+                    .contentTransition(.numericText())
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(.sage.opacity(0.12), in: .capsule)
+            .laneSheen(true, in: Capsule())
+            .contentShape(.capsule)
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Opens the drawer")
+    }
+
+    /// The waiting threads: unread first, else the newest, each opening its
+    /// thread, with its menu on a long press.
+    private var waitingList: some View {
+        let unread = threads.contains { $0.unread > 0 }
+        return VStack(alignment: .leading, spacing: 8) {
+            Text(unread ? "UNREAD" : "RECENT")
+                .font(.caption2.weight(.semibold))
+                .tracking(1.4)
+                .foregroundStyle(.inkFaint)
+                .padding(.horizontal, 6)
+            GlassEffectContainer(spacing: 8) {
+                VStack(spacing: 8) {
+                    ForEach(waiting) { thread in
+                        Button { open(thread.agentId) } label: {
+                            ThreadRow(thread: thread, lanes: lanes(thread.agentId), unread: thread.unread)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 11)
+                                .laneSheen(lanes(thread.agentId).contains(.reasoning), in: .rect(cornerRadius: 20, style: .continuous))
+                                .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 20, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                        .contextMenu {
+                            Button { open(thread.agentId) } label: { Label("Open thread", systemImage: "bubble.left.and.text.bubble.right") }
+                            Button { details(thread.agentId) } label: { Label("Agent details", systemImage: "info.circle") }
+                        }
+                        .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: 680)
     }
 
     private var status: some View {

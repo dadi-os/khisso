@@ -29,8 +29,8 @@ struct PhoneHome: View {
     /// True while a sideways drag is moving the drawer and just after, so the
     /// row a swipe ends on is not taken as a tap.
     @State private var swiping = false
-    /// True while the open thread's agent sheet is up.
-    @State private var showingAgent = false
+    /// The agent whose sheet is up.
+    @State private var agentSheet: String?
     @State private var dadiIcon = DadiGlyph.render()
 
     /// The strip along the left edge that opens the drawer. It sits over the
@@ -45,9 +45,14 @@ struct PhoneHome: View {
             let progress = shift / width
             ZStack(alignment: .leading) {
                 FieldBloom()
-                Drawer(store: store, page: page) { next in
-                    guard !swiping else { return }
-                    choose(next)
+                Drawer {
+                    AgentsDrawer(store: store, page: page) { next in
+                        guard !swiping else { return }
+                        choose(next)
+                    } details: { agentId in
+                        set(open: false)
+                        agentSheet = agentId
+                    }
                 }
                     .frame(width: width)
                     .opacity(progress > 0 ? 1 : 0)
@@ -74,8 +79,8 @@ struct PhoneHome: View {
             }
             .gesture(open ? drawerDrag(width: width) : nil)
         }
-        .sheet(isPresented: $showingAgent) {
-            if case .thread(let agentId) = dadiPage {
+        .sheet(isPresented: Binding { agentSheet != nil } set: { if !$0 { agentSheet = nil } }) {
+            if let agentId = agentSheet {
                 AgentSheet(services: services, agentId: agentId, name: store.name(of: agentId), lanes: store.lanes(of: agentId), connections: store.connections, nameOf: store.name(of:))
                     .presentationDetents([.medium, .large])
                     .presentationBackground(.boneRaised)
@@ -132,8 +137,12 @@ struct PhoneHome: View {
                     .id(agentId)
                     .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .opacity))
             default:
-                DadiView(hath: services.hath, name: store.name(of:), wordmark: wordmark) { agentId in
+                DadiView(hath: services.hath, threads: store.threads, lanes: store.lanes(of:), name: store.name(of:), wordmark: wordmark) { agentId in
                     show(.thread(agentId))
+                } details: { agentId in
+                    agentSheet = agentId
+                } openDrawer: {
+                    set(open: true)
                 }
                 .transition(.opacity)
             }
@@ -163,7 +172,7 @@ struct PhoneHome: View {
             .accessibilityLabel("Open sidebar")
             Spacer()
             if let title = title(of: shown) {
-                NameBubble(title: title, details: shown.isThread ? { showingAgent = true } : nil)
+                NameBubble(title: title, details: shown.isThread ? { if case .thread(let agentId) = shown { agentSheet = agentId } } : nil)
                     .id(title)
                     .transition(.opacity.combined(with: .scale(scale: 0.92)))
             }
@@ -277,12 +286,10 @@ private func dismissKeyboard() {
     UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
 }
 
-/// The drawer: Talk to Dadi, then every agent thread with its unread count,
-/// on a frosted sheet that runs to every edge of the screen.
-private struct Drawer: View {
-    let store: HomeStore
-    let page: HomeView.Page
-    let choose: (HomeView.Page) -> Void
+/// The drawer's sheet: the wordmark over the page's own drawer content, on a
+/// frosted sheet that runs to every edge of the screen.
+private struct Drawer<Content: View>: View {
+    @ViewBuilder let content: Content
 
     var body: some View {
         ScrollView {
@@ -294,79 +301,12 @@ private struct Drawer: View {
                     .padding(.horizontal, 20)
                     .padding(.top, 12)
                     .padding(.bottom, 14)
-                Button { choose(.dadi) } label: {
-                    HStack(spacing: 12) {
-                        ZStack {
-                            if store.routing {
-                                PulseOut()
-                            }
-                            Text("દ")
-                                .font(.wordmark(21))
-                                .foregroundStyle(store.routing ? Color.sageDeep : .sageText)
-                                .inkCentered(.letter, size: 21)
-                                .frame(width: 34, height: 34)
-                                .background(.sage.opacity(page == .dadi || store.routing ? 0.26 : 0.14), in: .circle)
-                        }
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text("Talk to Dadi")
-                                .font(.body.weight(.semibold))
-                                .foregroundStyle(.ink)
-                            if store.routing {
-                                HStack(spacing: 6) {
-                                    ThinkingMark()
-                                    Text("routing").font(.footnote).foregroundStyle(.sageText)
-                                }
-                                .transition(.opacity)
-                            } else {
-                                Text("Start something new")
-                                    .font(.footnote)
-                                    .foregroundStyle(.inkFaint)
-                                    .transition(.opacity)
-                            }
-                        }
-                        Spacer()
-                    }
-                    .animation(Motion.settle, value: store.routing)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .frame(maxWidth: .infinity)
-                    .background(page == .dadi ? Color.sage.opacity(0.14) : .clear, in: .rect(cornerRadius: 16))
-                    .contentShape(.rect(cornerRadius: 16))
-                }
-                .buttonStyle(.plain)
-                .padding(.horizontal, 8)
-                LazyVStack(alignment: .leading, spacing: 2) {
-                    Text("AGENTS")
-                        .font(.caption2.weight(.semibold))
-                        .tracking(1.4)
-                        .foregroundStyle(.inkFaint)
-                        .padding(.horizontal, 12)
-                        .padding(.top, 18)
-                        .padding(.bottom, 6)
-                    if let error = store.error {
-                        Label(error, systemImage: "exclamationmark.triangle")
-                            .font(.footnote)
-                            .foregroundStyle(.danger)
-                            .padding(12)
-                    }
-                    ForEach(store.threads) { thread in
-                        let selected = page == .thread(thread.agentId)
-                        let lanes = store.lanes(of: thread.agentId)
-                        Button { choose(.thread(thread.agentId)) } label: {
-                            ThreadRow(thread: thread, lanes: lanes, unread: thread.unread)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 8)
-                                .background(selected ? Color.sage.opacity(0.14) : .clear, in: .rect(cornerRadius: 16))
-                                .laneSheen(lanes.contains(.reasoning), in: .rect(cornerRadius: 16))
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(.horizontal, 8)
-                .padding(.bottom, 12)
+                content
             }
+            .padding(.bottom, 12)
         }
         .scrollIndicators(.hidden)
+        .scrollDismissesKeyboard(.immediately)
         .frame(maxHeight: .infinity, alignment: .top)
         .background {
             Rectangle()
@@ -405,21 +345,5 @@ struct NameBubble: View {
         } else {
             label
         }
-    }
-}
-
-/// Thaali's live ring: a sage disc swelling out and fading behind a busy mark.
-private struct PulseOut: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        Circle()
-            .fill(.sage.opacity(0.45))
-            .frame(width: 34, height: 34)
-            .phaseAnimator([false, true]) { ring, out in
-                ring.scaleEffect(out ? 1.55 : 1).opacity(out ? 0 : 0.55)
-            } animation: { out in
-                out && !reduceMotion ? .easeOut(duration: 2.4) : nil
-            }
     }
 }
