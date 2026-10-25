@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// Home: Talk to Dadi and every agent thread, live from Hath, one page at a
-/// time with the drawer beside it (PhoneHome). Home owns the event stream that
-/// keeps threads, running lanes and the open thread current.
+/// Home: dadi's pages in the dock, with Talk to Dadi and every agent thread
+/// live from Hath, and the drawer beside them (PhoneHome). Home owns the event
+/// stream that keeps threads, running lanes and the open thread current.
 struct HomeView: View {
     /// The page Home shows.
     enum Page: Hashable {
@@ -12,6 +12,37 @@ struct HomeView: View {
         case ghar
         case chaavi
         case system
+
+        /// The dock tab the page belongs to; a thread is Dadi's.
+        var tab: Tab {
+            switch self {
+            case .dadi, .thread: .dadi
+            case .timeline: .timeline
+            case .ghar: .ghar
+            case .chaavi: .chaavi
+            case .system: .system
+            }
+        }
+
+        var isThread: Bool {
+            if case .thread = self { true } else { false }
+        }
+    }
+
+    /// The dock's five tabs.
+    enum Tab: Hashable {
+        case dadi, timeline, ghar, chaavi, system
+
+        /// The page a tab opens on.
+        var home: Page {
+            switch self {
+            case .dadi: .dadi
+            case .timeline: .timeline
+            case .ghar: .ghar
+            case .chaavi: .chaavi
+            case .system: .system
+            }
+        }
     }
 
     let services: Services

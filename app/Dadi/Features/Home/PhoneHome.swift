@@ -1,13 +1,16 @@
 import SwiftUI
 
-/// The iPhone's Home: one page at a time on the field, with the drawer lying
-/// underneath. Swipe from the left edge or tap the menu button and the page
-/// slides right to uncover it, following the finger and springing open or
-/// closed by where and how fast it was let go. Opening it puts the keyboard
-/// away; a swipe left anywhere on the page, or a tap on it, closes it. Pages
-/// run the full height of the screen: their content scrolls up under the
-/// floating menu and compose buttons and the page's name in its glass bubble,
-/// on past the Dynamic Island.
+/// The iPhone's Home: dadi's five pages in the dock, one at a time on the
+/// field, with the drawer lying underneath. The dock is the system tab bar,
+/// liquid glass that shrinks while a page scrolls down; each page keeps its
+/// own place while another is open, and Dadi keeps the thread that was open.
+/// Swipe from the left edge or tap the menu button and the whole page, dock
+/// and all, slides right to uncover the drawer, following the finger and
+/// springing open or closed by where and how fast it was let go. Opening it
+/// puts the keyboard away; a swipe left anywhere on the page, or a tap on it,
+/// closes it. Pages run the full height of the screen: their content scrolls
+/// up under the floating menu button, the page's name in its glass bubble
+/// and the page's action, on past the Dynamic Island.
 struct PhoneHome: View {
     let services: Services
     let wordmark: Namespace.ID
@@ -17,6 +20,9 @@ struct PhoneHome: View {
     @State private var open = false
     @State private var drag: CGFloat = 0
     @State private var opened = 0
+    /// What the Dadi tab shows: Talk to Dadi or a thread, kept while another
+    /// tab is open.
+    @State private var dadiPage: HomeView.Page = .dadi
     /// False until Home has settled in from Connecting, so the bar fades in
     /// around the wordmark instead of arriving with it.
     @State private var arrived = false
@@ -25,6 +31,7 @@ struct PhoneHome: View {
     @State private var swiping = false
     /// True while the open thread's agent sheet is up.
     @State private var showingAgent = false
+    @State private var dadiIcon = DadiGlyph.render()
 
     /// The strip along the left edge that opens the drawer. It sits over the
     /// page, so a swipe that starts in it always pulls the drawer instead of
@@ -44,9 +51,7 @@ struct PhoneHome: View {
                 }
                     .frame(width: width)
                     .opacity(progress > 0 ? 1 : 0)
-                pageView
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background { FieldBloom() }
+                dock
                     .overlay {
                         Color.black.opacity(0.18 * progress)
                             .ignoresSafeArea()
@@ -62,61 +67,92 @@ struct PhoneHome: View {
                                 .gesture(drawerDrag(width: width))
                         }
                     }
+                    .clipShape(.rect(cornerRadius: 44 * min(1, progress * 4), style: .continuous))
                     .shadow(color: .black.opacity(0.14 * progress), radius: 18, x: -4)
                     .offset(x: shift)
+                    .ignoresSafeArea()
             }
             .gesture(open ? drawerDrag(width: width) : nil)
         }
         .sheet(isPresented: $showingAgent) {
-            if case .thread(let agentId) = page {
+            if case .thread(let agentId) = dadiPage {
                 AgentSheet(services: services, agentId: agentId, name: store.name(of: agentId), lanes: store.lanes(of: agentId), connections: store.connections, nameOf: store.name(of:))
                     .presentationDetents([.medium, .large])
                     .presentationBackground(.boneRaised)
             }
         }
         .sensoryFeedback(.selection, trigger: opened)
+        .sensoryFeedback(.selection, trigger: page.tab)
         .onAppear { withAnimation(Motion.settle.delay(0.35)) { arrived = true } }
+        .onChange(of: page, initial: true) {
+            if page.tab == .dadi { dadiPage = page }
+        }
     }
 
-    private var pageView: some View {
-        Group {
-            switch page {
-            case .dadi:
-                DadiView(hath: services.hath, name: store.name(of:), wordmark: wordmark) { agentId in
-                    withAnimation(Motion.settle) { page = .thread(agentId) }
-                }
-                .transition(.opacity)
+    /// The five pages in the system tab bar.
+    private var dock: some View {
+        TabView(selection: tabSelection) {
+            Tab(value: HomeView.Tab.dadi) {
+                chrome(dadiContent, tab: .dadi)
+            } label: {
+                Label { Text("Dadi") } icon: { Image(uiImage: dadiIcon) }
+            }
+            Tab("Timeline", systemImage: "calendar", value: HomeView.Tab.timeline) {
+                chrome(
+                    TimelinePage(yaad: services.yaad) { agentId in
+                        show(.thread(agentId))
+                    } tellDadi: {
+                        show(.dadi)
+                    },
+                    tab: .timeline
+                )
+            }
+            Tab("Ghar", systemImage: "house", value: HomeView.Tab.ghar) {
+                chrome(GharPage(ghar: services.ghar), tab: .ghar)
+            }
+            Tab("Chaavi", systemImage: "key.horizontal", value: HomeView.Tab.chaavi) {
+                chrome(ChaaviPage(chaavi: services.chaavi), tab: .chaavi)
+            }
+            Tab("System", systemImage: "server.rack", value: HomeView.Tab.system) {
+                chrome(SystemPage(nas: services.nas), tab: .system)
+            }
+        }
+        .tabBarMinimizeBehavior(.onScrollDown)
+        .tint(.sageDeep)
+    }
+
+    /// Talk to Dadi, or the thread the Dadi tab has open.
+    private var dadiContent: some View {
+        ZStack {
+            switch dadiPage {
             case .thread(let agentId):
                 ThreadView(hath: services.hath, agentId: agentId, name: store.name(of: agentId), live: store.live, lanes: store.lanes(of: agentId), connections: store.connections) { seq in
                     Task { await store.markRead(services.hath, agentId: agentId, through: seq) }
                 }
                     .id(agentId)
                     .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .opacity))
-            case .timeline:
-                TimelinePage(yaad: services.yaad) { agentId in
-                    withAnimation(Motion.settle) { page = .thread(agentId) }
-                } tellDadi: {
-                    choose(.dadi)
+            default:
+                DadiView(hath: services.hath, name: store.name(of:), wordmark: wordmark) { agentId in
+                    show(.thread(agentId))
                 }
                 .transition(.opacity)
-            case .ghar:
-                GharPage(ghar: services.ghar)
-                    .transition(.opacity)
-            case .chaavi:
-                ChaaviPage(chaavi: services.chaavi)
-                    .transition(.opacity)
-            case .system:
-                SystemPage(nas: services.nas)
-                    .transition(.opacity)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .scrollEdgeEffectHidden(true, for: .top)
-        .safeAreaBar(edge: .top) { topBar }
     }
 
-    private var topBar: some View {
-        HStack {
+    /// A page on the field under its floating bar, running the full height
+    /// of the screen.
+    private func chrome(_ content: some View, tab: HomeView.Tab) -> some View {
+        content
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background { FieldBloom() }
+            .scrollEdgeEffectHidden(true, for: .top)
+            .safeAreaBar(edge: .top) { topBar(tab) }
+    }
+
+    private func topBar(_ tab: HomeView.Tab) -> some View {
+        let shown = tab == .dadi ? dadiPage : tab.home
+        return HStack {
             Button { set(open: !open) } label: {
                 Image(systemName: "line.3.horizontal")
                     .font(.body.weight(.semibold))
@@ -126,21 +162,21 @@ struct PhoneHome: View {
             .buttonBorderShape(.circle)
             .accessibilityLabel("Open sidebar")
             Spacer()
-            if let title {
-                NameBubble(title: title, details: isThread ? { showingAgent = true } : nil)
+            if let title = title(of: shown) {
+                NameBubble(title: title, details: shown.isThread ? { showingAgent = true } : nil)
                     .id(title)
                     .transition(.opacity.combined(with: .scale(scale: 0.92)))
             }
             Spacer()
-            Button { choose(.dadi) } label: {
+            Button { show(.dadi) } label: {
                 Image(systemName: "square.and.pencil")
                     .font(.body.weight(.semibold))
                     .frame(width: 22, height: 22)
             }
             .buttonStyle(.glass)
             .buttonBorderShape(.circle)
-            .opacity(page == .dadi ? 0 : 1)
-            .disabled(page == .dadi)
+            .opacity(shown == .dadi ? 0 : 1)
+            .disabled(shown == .dadi)
             .accessibilityLabel("Talk to Dadi")
         }
         .controlSize(.large)
@@ -148,15 +184,11 @@ struct PhoneHome: View {
         .padding(.top, 4)
         .padding(.bottom, 14)
         .opacity(arrived ? 1 : 0)
-        .animation(Motion.snap, value: page)
-    }
-
-    private var isThread: Bool {
-        if case .thread = page { true } else { false }
+        .animation(Motion.snap, value: shown)
     }
 
     /// The page's name for its bubble; Talk to Dadi has none.
-    private var title: String? {
+    private func title(of page: HomeView.Page) -> String? {
         switch page {
         case .dadi: nil
         case .thread(let agentId): store.name(of: agentId)
@@ -167,9 +199,28 @@ struct PhoneHome: View {
         }
     }
 
+    /// The dock's selection: choosing Dadi goes back to the thread it had open.
+    private var tabSelection: Binding<HomeView.Tab> {
+        Binding {
+            page.tab
+        } set: { next in
+            guard next != page.tab else { return }
+            dismissKeyboard()
+            page = next == .dadi ? dadiPage : next.home
+        }
+    }
+
+    /// Opens `next`, in its own tab.
+    private func show(_ next: HomeView.Page) {
+        withAnimation(Motion.settle) {
+            if next.tab == .dadi { dadiPage = next }
+            page = next
+        }
+    }
+
     /// Shows `next` and closes the drawer.
     private func choose(_ next: HomeView.Page) {
-        withAnimation(Motion.settle) { page = next }
+        show(next)
         set(open: false)
     }
 
@@ -203,14 +254,31 @@ struct PhoneHome: View {
     }
 }
 
+/// The Dadi tab's icon: દ, the wordmark's first letter, drawn as a template
+/// image, since a tab's icon has to be an image.
+private enum DadiGlyph {
+    /// The icon's side in points, a system tab icon's size.
+    static let side: CGFloat = 28
+
+    @MainActor
+    static func render() -> UIImage {
+        let renderer = ImageRenderer(content: Text("દ")
+            .font(.wordmark(25, weight: .semibold))
+            .inkCentered(.letter, size: 25)
+            .frame(width: side, height: side))
+        renderer.scale = 3
+        return renderer.uiImage!.withRenderingMode(.alwaysTemplate)
+    }
+}
+
 /// Puts the keyboard away, whichever field has it.
 @MainActor
 private func dismissKeyboard() {
     UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
 }
 
-/// The drawer: Talk to Dadi, dadi's pages, then every agent thread with its
-/// unread count, on a frosted sheet that runs to every edge of the screen.
+/// The drawer: Talk to Dadi, then every agent thread with its unread count,
+/// on a frosted sheet that runs to every edge of the screen.
 private struct Drawer: View {
     let store: HomeStore
     let page: HomeView.Page
@@ -218,63 +286,55 @@ private struct Drawer: View {
 
     var body: some View {
         ScrollView {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("દાદી")
-                .font(.wordmark(34))
-                .inkCentered(.word, size: 34)
-                .foregroundStyle(.sageDeep)
-                .padding(.horizontal, 20)
-                .padding(.top, 12)
-                .padding(.bottom, 14)
-            Button { choose(.dadi) } label: {
-                HStack(spacing: 12) {
-                    ZStack {
-                        if store.routing {
-                            PulseOut()
-                        }
-                        Text("દ")
-                            .font(.wordmark(21))
-                            .foregroundStyle(store.routing ? Color.sageDeep : .sageText)
-                            .inkCentered(.letter, size: 21)
-                            .frame(width: 34, height: 34)
-                            .background(.sage.opacity(page == .dadi || store.routing ? 0.26 : 0.14), in: .circle)
-                    }
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Talk to Dadi")
-                            .font(.body.weight(.semibold))
-                            .foregroundStyle(.ink)
-                        if store.routing {
-                            HStack(spacing: 6) {
-                                ThinkingMark()
-                                Text("routing").font(.footnote).foregroundStyle(.sageText)
+            VStack(alignment: .leading, spacing: 0) {
+                Text("દાદી")
+                    .font(.wordmark(34))
+                    .inkCentered(.word, size: 34)
+                    .foregroundStyle(.sageDeep)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 12)
+                    .padding(.bottom, 14)
+                Button { choose(.dadi) } label: {
+                    HStack(spacing: 12) {
+                        ZStack {
+                            if store.routing {
+                                PulseOut()
                             }
-                            .transition(.opacity)
-                        } else {
-                            Text("Start something new")
-                                .font(.footnote)
-                                .foregroundStyle(.inkFaint)
-                                .transition(.opacity)
+                            Text("દ")
+                                .font(.wordmark(21))
+                                .foregroundStyle(store.routing ? Color.sageDeep : .sageText)
+                                .inkCentered(.letter, size: 21)
+                                .frame(width: 34, height: 34)
+                                .background(.sage.opacity(page == .dadi || store.routing ? 0.26 : 0.14), in: .circle)
                         }
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("Talk to Dadi")
+                                .font(.body.weight(.semibold))
+                                .foregroundStyle(.ink)
+                            if store.routing {
+                                HStack(spacing: 6) {
+                                    ThinkingMark()
+                                    Text("routing").font(.footnote).foregroundStyle(.sageText)
+                                }
+                                .transition(.opacity)
+                            } else {
+                                Text("Start something new")
+                                    .font(.footnote)
+                                    .foregroundStyle(.inkFaint)
+                                    .transition(.opacity)
+                            }
+                        }
+                        Spacer()
                     }
-                    Spacer()
+                    .animation(Motion.settle, value: store.routing)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .frame(maxWidth: .infinity)
+                    .background(page == .dadi ? Color.sage.opacity(0.14) : .clear, in: .rect(cornerRadius: 16))
+                    .contentShape(.rect(cornerRadius: 16))
                 }
-                .animation(Motion.settle, value: store.routing)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .frame(maxWidth: .infinity)
-                .background(page == .dadi ? Color.sage.opacity(0.14) : .clear, in: .rect(cornerRadius: 16))
-                .contentShape(.rect(cornerRadius: 16))
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 8)
-            VStack(spacing: 8) {
-                pageTile("Timeline", systemImage: "calendar", page: .timeline)
-                pageTile("Ghar", systemImage: "house.fill", page: .ghar)
-                pageTile("Chaavi", systemImage: "key.fill", page: .chaavi)
-                pageTile("System", systemImage: "server.rack", page: .system)
-            }
-            .padding(.horizontal, 12)
-            .padding(.top, 12)
+                .buttonStyle(.plain)
+                .padding(.horizontal, 8)
                 LazyVStack(alignment: .leading, spacing: 2) {
                     Text("AGENTS")
                         .font(.caption2.weight(.semibold))
@@ -304,7 +364,7 @@ private struct Drawer: View {
                 }
                 .padding(.horizontal, 8)
                 .padding(.bottom, 12)
-        }
+            }
         }
         .scrollIndicators(.hidden)
         .frame(maxHeight: .infinity, alignment: .top)
@@ -315,36 +375,6 @@ private struct Drawer: View {
                 .ignoresSafeArea()
         }
     }
-
-    /// A full-width drawer tile that opens one of dadi's pages, lit sage while
-    /// its page is open.
-    private func pageTile(_ title: String, systemImage: String, page target: HomeView.Page) -> some View {
-        let current = page == target
-        return Button { choose(target) } label: {
-            HStack(spacing: 14) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(current ? Color.bone : .sageDeep)
-                    .frame(width: 36, height: 36)
-                    .background(current ? AnyShapeStyle(Color.sageDeep) : AnyShapeStyle(Color.sage.opacity(0.16)), in: .rect(cornerRadius: 11, style: .continuous))
-                Text(title)
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(.ink)
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.inkFaint)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .frame(maxWidth: .infinity)
-            .background(current ? Color.sage.opacity(0.16) : Color.bone.opacity(0.45), in: .rect(cornerRadius: 18, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(current ? Color.sage.opacity(0.4) : .sageLine.opacity(0.3), lineWidth: 1))
-            .contentShape(.rect(cornerRadius: 18, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .animation(Motion.snap, value: current)
-    }
 }
 
 /// A page's name in a glass bubble, as thaali's pane header.
@@ -354,13 +384,20 @@ struct NameBubble: View {
     var details: (() -> Void)?
 
     var body: some View {
-        let label = Text(title)
-            .font(.subheadline.weight(.semibold))
-            .foregroundStyle(.ink)
-            .lineLimit(1)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 9)
-            .glassEffect(details == nil ? .regular : .regular.interactive(), in: .capsule)
+        let label = HStack(spacing: 5) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.ink)
+                .lineLimit(1)
+            if details != nil {
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.inkFaint)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+        .glassEffect(details == nil ? .regular : .regular.interactive(), in: .capsule)
         if let details {
             Button(action: details) { label }
                 .buttonStyle(.plain)
