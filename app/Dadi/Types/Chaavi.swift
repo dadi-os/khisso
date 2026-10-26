@@ -53,5 +53,42 @@ struct ChaaviTotp: Decodable, Sendable, Equatable {
     let remaining: Int
 }
 
+/// Body of POST /v1/items for a login or a secure note. Chaavi's keys are
+/// camelCase, so it goes out verbatim; fields left nil are not sent.
+struct ChaaviNewItem: Encodable, Sendable, Equatable {
+    /// A login's website, as Chaavi takes it.
+    struct Uri: Encodable, Sendable, Equatable {
+        let uri: String
+    }
+
+    /// What a login holds.
+    struct Login: Encodable, Sendable, Equatable {
+        var username: String?
+        var password: String?
+        /// The one-time-code key: an `otpauth://` URI or its base32 secret.
+        var totp: String?
+        var uris: [Uri]?
+    }
+
+    /// login or note.
+    let type: String
+    let name: String
+    var folderId: String?
+    var favorite: Bool?
+    var notes: String?
+    var login: Login?
+}
+
+/// Body of PATCH /v1/items/:id that stars or unstars an item.
+struct ChaaviFavorite: Encodable, Sendable {
+    let favorite: Bool
+}
+
+/// Body of POST /v1/generate: how long a password to make and whether it has symbols.
+struct ChaaviGenerate: Encodable, Sendable {
+    let length: Int
+    let special: Bool
+}
+
 /// An empty request body.
 struct EmptyBody: Encodable, Sendable {}

@@ -38,6 +38,10 @@ struct PhoneHome: View {
     @State private var ghar: GharStore
     /// What the Ghar page is narrowed to, set from its chips or its drawer.
     @State private var gharFilter = GharPage.Filter.everywhere
+    /// Chaavi's vault, which its page and its drawer share.
+    @State private var chaavi: ChaaviStore
+    /// True while Chaavi's new item sheet is up.
+    @State private var creatingItem = false
     @State private var dadiIcon = DadiGlyph.render()
 
     /// The strip along the left edge that opens the drawer. It sits over the
@@ -51,6 +55,7 @@ struct PhoneHome: View {
         self.store = store
         _page = page
         _ghar = State(initialValue: GharStore(ghar: services.ghar))
+        _chaavi = State(initialValue: ChaaviStore(chaavi: services.chaavi))
     }
 
     var body: some View {
@@ -66,6 +71,15 @@ struct PhoneHome: View {
                         GharDrawer(store: ghar, filter: gharFilter) { next in
                             guard !swiping else { return }
                             withAnimation(Motion.snap) { gharFilter = next }
+                            set(open: false)
+                        }
+                    case .chaavi:
+                        ChaaviDrawer(store: chaavi) { kind, scope in
+                            guard !swiping else { return }
+                            withAnimation(Motion.settle) {
+                                chaavi.kind = kind
+                                chaavi.scope = scope
+                            }
                             set(open: false)
                         }
                     case .timeline:
@@ -148,7 +162,7 @@ struct PhoneHome: View {
                 chrome(GharPage(store: ghar, filter: $gharFilter), tab: .ghar)
             }
             Tab("Chaavi", systemImage: "key.horizontal", value: HomeView.Tab.chaavi) {
-                chrome(ChaaviPage(chaavi: services.chaavi), tab: .chaavi)
+                chrome(ChaaviPage(store: chaavi, creating: $creatingItem), tab: .chaavi)
             }
             Tab("System", systemImage: "server.rack", value: HomeView.Tab.system) {
                 chrome(SystemPage(nas: services.nas), tab: .system)
@@ -224,16 +238,27 @@ struct PhoneHome: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.92)))
             }
             Spacer()
-            Button { show(.dadi) } label: {
-                Image(systemName: "square.and.pencil")
-                    .font(.body.weight(.semibold))
-                    .frame(width: 22, height: 22)
+            if tab == .chaavi {
+                Button { creatingItem = true } label: {
+                    Image(systemName: "plus")
+                        .font(.body.weight(.semibold))
+                        .frame(width: 22, height: 22)
+                }
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
+                .accessibilityLabel("New login or note")
+            } else {
+                Button { show(.dadi) } label: {
+                    Image(systemName: "square.and.pencil")
+                        .font(.body.weight(.semibold))
+                        .frame(width: 22, height: 22)
+                }
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
+                .opacity(shown == .dadi ? 0 : 1)
+                .disabled(shown == .dadi)
+                .accessibilityLabel("Talk to Dadi")
             }
-            .buttonStyle(.glass)
-            .buttonBorderShape(.circle)
-            .opacity(shown == .dadi ? 0 : 1)
-            .disabled(shown == .dadi)
-            .accessibilityLabel("Talk to Dadi")
         }
         .controlSize(.large)
         .padding(.horizontal, 16)

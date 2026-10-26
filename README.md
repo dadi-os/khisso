@@ -25,7 +25,7 @@ khisso/
     Dadi/Shared/      API clients, Connection (setup code, in-app node), design, components, the watch link
     Dadi/Features/    Join, Home (the dock and the drawer), Dadi, Thread, Agent (the sheet behind an agent's name: live browser, schedules, prompt, tools, activity), Timeline, Ghar, Chaavi, System, Watch (the relay)
     DadiWatch/        the watch app: Talk to Dadi, Today, Agents, Box
-    DadiTests/        setup codes, errors, events, planner layout, timeline items, folders, Nas status, math as Unicode
+    DadiTests/        setup codes, errors, events, planner layout, timeline items, folders, new Chaavi items, Nas status, math as Unicode
   scripts/            build-xcframework.sh
 ```
 

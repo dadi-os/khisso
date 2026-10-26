@@ -559,3 +559,22 @@ struct PatchScheduleTests {
         #expect(json?["run_at"] == nil)
     }
 }
+
+/// New Chaavi items go out with Chaavi's camelCase keys, leaving unset
+/// fields out, since Chaavi's schema refuses unknown keys.
+struct ChaaviNewItemTests {
+    @Test func encodesCamelCaseKeysWithoutUnsetFields() throws {
+        var item = ChaaviNewItem(type: "login", name: "GitHub")
+        item.folderId = "f1"
+        item.login = ChaaviNewItem.Login(username: "ankur", password: "pw", totp: nil, uris: [ChaaviNewItem.Uri(uri: "github.com")])
+        let json = try #require(try JSONSerialization.jsonObject(with: ServiceJSON.verbatimEncoder.encode(item)) as? [String: Any])
+        #expect(json["folderId"] as? String == "f1")
+        #expect(json["folder_id"] == nil)
+        #expect(json["favorite"] == nil)
+        #expect(json["notes"] == nil)
+        let login = try #require(json["login"] as? [String: Any])
+        #expect(login["password"] as? String == "pw")
+        #expect(login["totp"] == nil)
+        #expect((login["uris"] as? [[String: String]])?.first?["uri"] == "github.com")
+    }
+}

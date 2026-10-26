@@ -35,6 +35,14 @@ enum ServiceJSON {
         return d
     }()
 
+    /// Like `encoder` but keeping keys as written, for a service whose bodies
+    /// are camelCase, as Chaavi's are.
+    static let verbatimEncoder: JSONEncoder = {
+        let e = JSONEncoder()
+        e.dateEncodingStrategy = encoder.dateEncodingStrategy
+        return e
+    }()
+
     static let encoder: JSONEncoder = {
         let e = JSONEncoder()
         e.keyEncodingStrategy = .convertToSnakeCase
@@ -82,18 +90,18 @@ struct ServiceClient: Sendable {
     }
 
     /// POST `body` as JSON to `path` and decode the response as `T`.
-    func post<B: Encodable, T: Decodable>(_ path: String, body: B, timeout: TimeInterval = 30) async throws -> T {
+    func post<B: Encodable, T: Decodable>(_ path: String, body: B, timeout: TimeInterval = 30, encoder: JSONEncoder = ServiceJSON.encoder) async throws -> T {
         var req = request("POST", path, timeout: timeout)
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try ServiceJSON.encoder.encode(body)
+        req.httpBody = try encoder.encode(body)
         return try await send(req)
     }
 
     /// PATCH `body` as JSON to `path` and decode the response as `T`.
-    func patch<B: Encodable, T: Decodable>(_ path: String, body: B, timeout: TimeInterval = 30) async throws -> T {
+    func patch<B: Encodable, T: Decodable>(_ path: String, body: B, timeout: TimeInterval = 30, encoder: JSONEncoder = ServiceJSON.encoder) async throws -> T {
         var req = request("PATCH", path, timeout: timeout)
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try ServiceJSON.encoder.encode(body)
+        req.httpBody = try encoder.encode(body)
         return try await send(req)
     }
 

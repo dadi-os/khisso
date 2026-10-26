@@ -3,45 +3,47 @@ import SwiftUI
 import UIKit
 
 /// Chaavi: the vault's logins and notes, browsed by folder or searched across
-/// the whole vault, favorites first. Nothing
-/// secret is fetched until it is asked for: copying or revealing a password
-/// or code asks for Face ID or Touch ID, which then holds for five minutes.
-/// Copies stay on this device and clear after 90 seconds.
+/// the whole vault, favorites first, narrowed by kind from the drawer.
+/// Nothing secret is fetched until it is asked for: copying or revealing a
+/// password or code asks for Face ID or Touch ID, which then holds for five
+/// minutes. Copies stay on this device and clear after 90 seconds. Swipe a
+/// row right to copy its password, left to delete it (after asking); hold it
+/// for its menu. The bar's plus makes a new login or note.
 struct ChaaviPage: View {
-    let chaavi: ChaaviClient
+    let store: ChaaviStore
+    /// True while the new item sheet is up; the bar's plus sets it.
+    @Binding var creating: Bool
 
     @Environment(LiveData.self) private var live
-    @State private var items: [ChaaviItem] = []
-    @State private var folders: [ChaaviFolder] = []
-    /// The folder being browsed; nil at the top.
-    @State private var scope: String?
     @State private var query = ""
-    @State private var loaded = false
-    @State private var error: String?
     @State private var opened: ChaaviItem?
-    @State private var vault = VaultLock()
+    @State private var deleting: ChaaviItem?
     @State private var copied: String?
     @State private var copies = 0
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 8) {
-                if let error {
+                if let error = store.error {
                     Label(error, systemImage: "exclamationmark.triangle")
                         .font(.callout)
                         .foregroundStyle(.danger)
                 }
-                if loaded && shown.isEmpty && error == nil {
-                    ContentUnavailableView(query.isEmpty ? "The vault is empty" : "No matches", systemImage: "key", description: Text(query.isEmpty ? "Logins saved in Chaavi show up here." : "Nothing in Chaavi matches \u{201C}\(query)\u{201D}."))
+                if store.kind != .all && query.isEmpty {
+                    kindHeader
+                }
+                if store.loaded && shown.isEmpty && store.error == nil {
+                    ContentUnavailableView(emptyTitle, systemImage: "key", description: Text(emptyDetail))
                         .foregroundStyle(.inkMuted)
                         .padding(.top, 40)
                 }
-                if query.isEmpty {
-                    if let scope {
+                if query.isEmpty && store.kind == .all {
+                    if let scope = store.scope {
                         breadcrumb(scope)
                     }
-                    ForEach(FolderTree.children(of: scope, folders: folders, items: items)) { folder in
-                        Button { withAnimation(Motion.settle) { self.scope = folder.path } } label: {
+                    ForEach(FolderTree.children(of: store.scope, folders: store.folders, items: store.items)) { folder in
+                        Button { withAnimation(Motion.settle) { store.scope = folder.path } } label: {
                             HStack(spacing: 14) {
                                 Image(systemName: "folder.fill")
                                     .font(.system(size: 17))
@@ -60,11 +62,11 @@ struct ChaaviPage: View {
                     }
                 }
                 ForEach(shown) { item in
-                    Button { opened = item } label: {
-                        ItemRow(item: item, copy: { copyPassword(item) })
-                    }
-                    .buttonStyle(.plain)
-                    .transition(.opacity)
+                    ItemRow(item: item, copy: { copyPassword(item) })
+                        .onTapGesture { opened = item }
+                        .modifier(ItemSwipe(copyable: item.login?.hasPassword == true, copy: { copyPassword(item) }, delete: { deleting = item }))
+                        .contextMenu { menu(item) }
+                        .transition(.opacity)
                 }
             }
             .padding(.horizontal, 20)
@@ -72,6 +74,7 @@ struct ChaaviPage: View {
             .frame(maxWidth: 760)
             .frame(maxWidth: .infinity)
             .animation(Motion.settle, value: shown)
+            .animation(Motion.settle, value: store.kind)
         }
         .safeAreaBar(edge: .top) {
             HStack(spacing: 10) {
@@ -83,6 +86,7 @@ struct ChaaviPage: View {
                 if !query.isEmpty {
                     Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.inkFaint) }
                         .buttonStyle(.plain)
+                        .accessibilityLabel("Clear search")
                 }
             }
             .padding(.horizontal, 16)
@@ -105,21 +109,68 @@ struct ChaaviPage: View {
         }
         .animation(Motion.snap, value: copied)
         .sensoryFeedback(.success, trigger: copies)
-        .refreshable { await load() }
+        .refreshable { await store.load() }
         .sheet(item: $opened) { item in
-            ItemDetail(item: item, chaavi: chaavi, vault: vault, copy: copy)
+            ItemDetail(item: item, chaavi: store.chaavi, vault: store.vault, copy: copy)
                 .fittedSheet()
                 .presentationBackground(.thinMaterial)
         }
+        .sheet(isPresented: $creating) {
+            NewItemSheet(store: store)
+                .presentationDetents([.large])
+                .presentationBackground(Color.boneRaised)
+        }
+        .confirmationDialog(deleting.map { "Delete \($0.name)?" } ?? "", isPresented: Binding { deleting != nil } set: { if !$0 { deleting = nil } }, titleVisibility: .visible) {
+            Button("Delete", role: .destructive) {
+                guard let item = deleting else { return }
+                deleting = nil
+                Task {
+                    do {
+                        try await store.delete(item)
+                    } catch {
+                        store.error = "Couldn't delete \(item.name): \(error.localizedDescription)"
+                    }
+                }
+            }
+        } message: {
+            Text("It goes from Chaavi on every device, and from the agents it is shared with.")
+        }
         .navigationTitle("Chaavi")
-        .task(id: live.chaavi) { await load() }
+        .task(id: live.chaavi) { await store.load() }
+    }
+
+    /// The kind the drawer narrowed to, with a way back to everything.
+    private var kindHeader: some View {
+        HStack {
+            Label(store.kind.rawValue, systemImage: store.kind.symbol)
+                .font(.headline)
+                .foregroundStyle(.ink)
+            Spacer()
+            Button("Show all") { withAnimation(Motion.settle) { store.kind = .all } }
+                .font(.subheadline.weight(.semibold))
+                .tint(.sageDeep)
+        }
+        .padding(.vertical, 4)
+    }
+
+    private var emptyTitle: String {
+        if !query.isEmpty { return "No matches" }
+        return store.kind == .all ? "The vault is empty" : "No \(store.kind.rawValue.lowercased())"
+    }
+
+    private var emptyDetail: String {
+        if !query.isEmpty { return "Nothing in Chaavi matches \u{201C}\(query)\u{201D}." }
+        return "Tap the plus to add a login or a note."
     }
 
     /// Items matching the search across the vault, or the browsed folder's
-    /// items, favorites first, then by name.
+    /// items of the chosen kind, favorites first, then by name.
     private var shown: [ChaaviItem] {
         let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
-        return (needle.isEmpty ? FolderTree.items(in: scope, folders: folders, items: items) : items)
+        let base = needle.isEmpty
+            ? (store.kind == .all ? FolderTree.items(in: store.scope, folders: store.folders, items: store.items) : store.items.filter(store.kind.holds))
+            : store.items
+        return base
             .filter { item in
                 needle.isEmpty || item.name.lowercased().contains(needle)
                     || (item.login?.username?.lowercased().contains(needle) ?? false)
@@ -128,16 +179,43 @@ struct ChaaviPage: View {
             .sorted { ($0.favorite ? 0 : 1, $0.name.lowercased()) < ($1.favorite ? 0 : 1, $1.name.lowercased()) }
     }
 
+    /// An item's long-press menu.
+    @ViewBuilder
+    private func menu(_ item: ChaaviItem) -> some View {
+        if let username = item.login?.username {
+            Button { copy(username, "Username copied") } label: { Label("Copy username", systemImage: "person") }
+        }
+        if item.login?.hasPassword == true {
+            Button { copyPassword(item) } label: { Label("Copy password", systemImage: "key") }
+        }
+        if let host = item.host, let url = URL(string: "https://\(host)") {
+            Button { openURL(url) } label: { Label("Open \(host)", systemImage: "safari") }
+        }
+        Button {
+            Task {
+                do {
+                    try await store.setFavorite(!item.favorite, item)
+                } catch {
+                    store.error = error.localizedDescription
+                }
+            }
+        } label: {
+            Label(item.favorite ? "Remove from favorites" : "Add to favorites", systemImage: item.favorite ? "star.slash" : "star")
+        }
+        Divider()
+        Button(role: .destructive) { deleting = item } label: { Label("Delete", systemImage: "trash") }
+    }
+
     /// The trail back from the browsed folder: the top, then each parent.
     private func breadcrumb(_ scope: String) -> some View {
         let parts = scope.split(separator: FolderTree.separator).map(String.init)
         return ScrollView(.horizontal) {
             HStack(spacing: 6) {
-                Button("Chaavi") { withAnimation(Motion.settle) { self.scope = nil } }
+                Button("Chaavi") { withAnimation(Motion.settle) { store.scope = nil } }
                 ForEach(parts.indices, id: \.self) { index in
                     Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.inkFaint)
                     let path = parts[0...index].joined(separator: String(FolderTree.separator))
-                    Button(parts[index]) { withAnimation(Motion.settle) { self.scope = path } }
+                    Button(parts[index]) { withAnimation(Motion.settle) { store.scope = path } }
                         .disabled(index == parts.count - 1)
                 }
             }
@@ -148,25 +226,13 @@ struct ChaaviPage: View {
         .scrollIndicators(.hidden)
     }
 
-    private func load() async {
-        do {
-            async let nextItems = chaavi.items()
-            async let nextFolders = chaavi.folders()
-            (items, folders) = try await (nextItems, nextFolders)
-            error = nil
-        } catch {
-            self.error = error.localizedDescription
-        }
-        loaded = true
-    }
-
     private func copyPassword(_ item: ChaaviItem) {
         Task {
             do {
-                try await vault.unlock()
-                copy(try await chaavi.reveal("password", of: item.id), "Password copied")
+                try await store.vault.unlock()
+                copy(try await store.chaavi.reveal("password", of: item.id), "Password copied")
             } catch {
-                self.error = error.localizedDescription
+                store.error = error.localizedDescription
             }
         }
     }
@@ -183,6 +249,51 @@ struct ChaaviPage: View {
     }
 }
 
+/// A vault row's swipes: right copies its password, left asks to delete it.
+/// The row follows the finger and shows what letting go will do.
+private struct ItemSwipe: ViewModifier {
+    /// Whether the item has a password to copy.
+    let copyable: Bool
+    let copy: () -> Void
+    let delete: () -> Void
+
+    @State private var offset: CGFloat = 0
+
+    /// How far a swipe travels before letting go acts.
+    private let reach: CGFloat = 84
+
+    func body(content: Content) -> some View {
+        content
+            .offset(x: offset)
+            .background(alignment: offset > 0 ? .leading : .trailing) {
+                if offset != 0 {
+                    Label(offset > 0 ? "Copy password" : "Delete", systemImage: offset > 0 ? "key.fill" : "trash.fill")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.bone)
+                        .padding(.horizontal, 18)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: offset > 0 ? .leading : .trailing)
+                        .background(offset > 0 ? Color.sageDeep : .danger, in: .rect(cornerRadius: 18, style: .continuous))
+                        .opacity(min(1, abs(offset) / reach))
+                        .scaleEffect(abs(offset) >= reach ? 1 : 0.97)
+                        .animation(Motion.snap, value: abs(offset) >= reach)
+                }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 16)
+                    .onChanged { drag in
+                        guard abs(drag.translation.width) > abs(drag.translation.height) else { return }
+                        offset = drag.translation.width > 0 && !copyable ? 0 : drag.translation.width
+                    }
+                    .onEnded { _ in
+                        if offset >= reach { copy() }
+                        if offset <= -reach { delete() }
+                        withAnimation(Motion.snap) { offset = 0 }
+                    }
+            )
+            .sensoryFeedback(.impact(flexibility: .soft), trigger: abs(offset) >= reach)
+    }
+}
+
 /// Asks for Face ID or Touch ID before a secret leaves Chaavi; a success holds
 /// for five minutes.
 @MainActor
@@ -190,10 +301,21 @@ struct ChaaviPage: View {
 final class VaultLock {
     private var until: Date?
 
+    /// Whether a secret can leave without asking.
+    var isOpen: Bool {
+        guard let until else { return false }
+        return until > .now
+    }
+
     /// Why the vault would not open.
     struct Refused: LocalizedError {
         let message: String
         var errorDescription: String? { message }
+    }
+
+    /// Asks again next time.
+    func lock() {
+        until = nil
     }
 
     func unlock() async throws {
