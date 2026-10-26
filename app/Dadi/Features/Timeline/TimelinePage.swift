@@ -241,7 +241,7 @@ private struct WeekList: View {
     let actions: SessionActions
 
     @Environment(LiveData.self) private var live
-    @State private var start = WeekList.monday(of: .now)
+    @State private var start = PlannerDay.monday(of: .now)
     @State private var items: [TimelineItem] = []
     @State private var someday: [TimelineItem] = []
     @State private var error: String?
@@ -317,13 +317,6 @@ private struct WeekList: View {
             items = []
             start = next
         }
-    }
-
-    /// Monday at local midnight of the week holding `date`.
-    static func monday(of date: Date) -> Date {
-        let day = Calendar.current.startOfDay(for: date)
-        let weekday = Calendar.current.component(.weekday, from: day)
-        return Calendar.current.date(byAdding: .day, value: -((weekday + 5) % 7), to: day) ?? day
     }
 
     private func load() async {
@@ -419,7 +412,7 @@ private struct MonthList: View {
     private var calendar: some View {
         let columns = Array(repeating: GridItem(.flexible(), spacing: 4), count: 7)
         let lead = (Calendar.current.component(.weekday, from: month) + 5) % 7
-        let count = Calendar.current.range(of: .day, in: .month, for: month)?.count ?? 0
+        let count = Calendar.current.range(of: .day, in: .month, for: month)!.count
         return LazyVGrid(columns: columns, spacing: 6) {
             ForEach(Array(["M", "T", "W", "T", "F", "S", "S"].enumerated()), id: \.offset) { _, name in
                 Text(name).font(.caption2.weight(.semibold)).foregroundStyle(.inkFaint)
@@ -453,7 +446,7 @@ private struct MonthList: View {
 
     /// Local midnight of the first day of the month holding `date`.
     static func first(of date: Date) -> Date {
-        Calendar.current.dateInterval(of: .month, for: date)?.start ?? Calendar.current.startOfDay(for: date)
+        Calendar.current.dateInterval(of: .month, for: date)!.start
     }
 
     private func load() async {

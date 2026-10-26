@@ -146,11 +146,9 @@ struct TimelineDrawer: View {
     }
 
     private func load() async {
-        let calendar = Calendar.current
-        let today = calendar.startOfDay(for: .now)
-        let weekday = calendar.component(.weekday, from: today)
-        guard let monday = calendar.date(byAdding: .day, value: -((weekday + 5) % 7), to: today),
-              let until = calendar.date(byAdding: .day, value: Self.dueDays, to: today) else { return }
+        let today = Calendar.current.startOfDay(for: .now)
+        let monday = PlannerDay.monday(of: today)
+        guard let until = Calendar.current.date(byAdding: .day, value: Self.dueDays, to: today) else { return }
         do {
             async let upcoming = yaad.timeline(.due, from: today, to: until)
             async let sessions = yaad.timeline(.planner, from: monday, to: .now)
