@@ -31,6 +31,8 @@ struct PhoneHome: View {
     @State private var swiping = false
     /// The agent whose sheet is up.
     @State private var agentSheet: String?
+    /// The Timeline's view, set from its name bubble or its drawer.
+    @State private var timelineMode = TimelineMode.day
     @State private var dadiIcon = DadiGlyph.render()
 
     /// The strip along the left edge that opens the drawer. It sits over the
@@ -46,12 +48,23 @@ struct PhoneHome: View {
             ZStack(alignment: .leading) {
                 FieldBloom()
                 Drawer {
-                    AgentsDrawer(store: store, page: page) { next in
-                        guard !swiping else { return }
-                        choose(next)
-                    } details: { agentId in
-                        set(open: false)
-                        agentSheet = agentId
+                    switch page.tab {
+                    case .timeline:
+                        TimelineDrawer(yaad: services.yaad, mode: timelineMode) { mode in
+                            guard !swiping else { return }
+                            withAnimation(Motion.settle) { timelineMode = mode }
+                            set(open: false)
+                        } tellDadi: {
+                            choose(.dadi)
+                        }
+                    default:
+                        AgentsDrawer(store: store, page: page) { next in
+                            guard !swiping else { return }
+                            choose(next)
+                        } details: { agentId in
+                            set(open: false)
+                            agentSheet = agentId
+                        }
                     }
                 }
                     .frame(width: width)
@@ -104,7 +117,7 @@ struct PhoneHome: View {
             }
             Tab("Timeline", systemImage: "calendar", value: HomeView.Tab.timeline) {
                 chrome(
-                    TimelinePage(yaad: services.yaad) { agentId in
+                    TimelinePage(yaad: services.yaad, mode: $timelineMode) { agentId in
                         show(.thread(agentId))
                     } tellDadi: {
                         show(.dadi)
@@ -173,7 +186,20 @@ struct PhoneHome: View {
             .buttonBorderShape(.circle)
             .accessibilityLabel("Open sidebar")
             Spacer()
-            if let title = title(of: shown) {
+            if tab == .timeline {
+                Menu {
+                    Picker("View", selection: $timelineMode.animation(Motion.settle)) {
+                        ForEach(TimelineMode.allCases, id: \.self) { mode in
+                            Label(mode.rawValue, systemImage: mode.symbol).tag(mode)
+                        }
+                    }
+                } label: {
+                    NameBubble(title: timelineMode.rawValue, accessory: "chevron.down")
+                        .contentTransition(.opacity)
+                }
+                .accessibilityLabel("Timeline view: \(timelineMode.rawValue)")
+                .sensoryFeedback(.selection, trigger: timelineMode)
+            } else if let title = title(of: shown) {
                 NameBubble(title: title, details: shown.isThread ? { if case .thread(let agentId) = shown { agentSheet = agentId } } : nil)
                     .id(title)
                     .transition(.opacity.combined(with: .scale(scale: 0.92)))
@@ -324,22 +350,26 @@ struct NameBubble: View {
     let title: String
     /// Opens the page's details when the name is tapped; nil for a page with none.
     var details: (() -> Void)?
+    /// The symbol after the name: a chevron right when it opens details, or
+    /// the caller's, as a menu's chevron down.
+    var accessory: String?
 
     var body: some View {
+        let symbol = accessory ?? (details == nil ? nil : "chevron.right")
         let label = HStack(spacing: 5) {
             Text(title)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.ink)
                 .lineLimit(1)
-            if details != nil {
-                Image(systemName: "chevron.right")
+            if let symbol {
+                Image(systemName: symbol)
                     .font(.caption2.weight(.bold))
                     .foregroundStyle(.inkFaint)
             }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 9)
-        .glassEffect(details == nil ? .regular : .regular.interactive(), in: .capsule)
+        .glassEffect(symbol == nil ? .regular : .regular.interactive(), in: .capsule)
         if let details {
             Button(action: details) { label }
                 .buttonStyle(.plain)

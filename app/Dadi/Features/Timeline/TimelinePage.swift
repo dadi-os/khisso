@@ -1,30 +1,44 @@
 import SwiftUI
 
+/// The ways to look at the timeline, chosen from the page's name bubble or
+/// its drawer.
+enum TimelineMode: String, CaseIterable, Hashable {
+    case day = "Day"
+    case week = "Week"
+    case month = "Month"
+    case someday = "Needs a time"
+
+    var symbol: String {
+        switch self {
+        case .day: "clock"
+        case .week: "calendar.day.timeline.left"
+        case .month: "calendar"
+        case .someday: "tray"
+        }
+    }
+}
+
 /// The timeline: Day (the hour axis, `PlannerDay`), Week (each day's
-/// sessions and dues as rows with what is completed) and Month (a calendar
-/// with a dot on each busy day and the month's commitments), with Someday
-/// under Week and Month. Every view is one of Yaad's timeline views; every
-/// session row taps open its sheet, swipes right to Completed and left to
-/// message its owner, and long-presses for its menu. Nothing here edits a
-/// plan: changes go through the owner's thread or Dadi.
+/// sessions and dues as rows with what is completed), Month (a calendar with
+/// a dot on each busy day and the month's commitments) and Needs a time
+/// (ideas, and tasks with a due but no time yet), with Someday under Week and
+/// Month too. Every view is one of Yaad's timeline views; every session row
+/// taps open its sheet, swipes right to Completed and left to message its
+/// owner, and long-presses for its menu. Nothing here edits a plan: changes
+/// go through the owner's thread or Dadi.
 struct TimelinePage: View {
     let yaad: YaadClient
+    @Binding var mode: TimelineMode
 
-    /// The three ways to look at the timeline.
-    private enum Mode: String, CaseIterable {
-        case day = "Day"
-        case week = "Week"
-        case month = "Month"
-    }
-
-    @State private var mode: Mode = .day
     @State private var actions: SessionActions
 
     /// - Parameters:
+    ///   - mode: the view shown, which the name bubble and the drawer also set.
     ///   - message: opens the thread of the agent with this id.
     ///   - tellDadi: opens Talk to Dadi.
-    init(yaad: YaadClient, message: @escaping (String) -> Void, tellDadi: @escaping () -> Void) {
+    init(yaad: YaadClient, mode: Binding<TimelineMode>, message: @escaping (String) -> Void, tellDadi: @escaping () -> Void) {
         self.yaad = yaad
+        _mode = mode
         _actions = State(initialValue: SessionActions(yaad: yaad, message: message, tellDadi: tellDadi))
     }
 
@@ -40,18 +54,12 @@ struct TimelinePage: View {
             case .month:
                 MonthList(yaad: yaad, actions: actions)
                     .transition(.opacity)
+            case .someday:
+                SomedayList(yaad: yaad, actions: actions)
+                    .transition(.opacity)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .safeAreaBar(edge: .top) {
-            Picker("View", selection: $mode.animation(Motion.settle)) {
-                ForEach(Mode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-            }
-            .pickerStyle(.segmented)
-            .frame(maxWidth: 300)
-            .padding(.horizontal, 20)
-            .padding(.bottom, 8)
-        }
         .overlay(alignment: .bottom) {
             MarkBanner(actions: actions)
                 .animation(Motion.settle, value: actions.undo)
@@ -71,18 +79,22 @@ struct TimelinePage: View {
 private struct SomedaySection: View {
     let items: [TimelineItem]
     let actions: SessionActions
+    /// False where the page already names the section.
+    var titled = true
 
     var body: some View {
         if !items.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text("Someday").font(.headline).foregroundStyle(.ink)
-                    Spacer()
-                    let needs = items.filter { $0.status != .idea }.count
-                    if needs > 0 {
-                        Text(needs == 1 ? "1 needs a time" : "\(needs) need a time")
-                            .font(.footnote)
-                            .foregroundStyle(.clay)
+                if titled {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("Someday").font(.headline).foregroundStyle(.ink)
+                        Spacer()
+                        let needs = items.filter { $0.status != .idea }.count
+                        if needs > 0 {
+                            Text(needs == 1 ? "1 needs a time" : "\(needs) need a time")
+                                .font(.footnote)
+                                .foregroundStyle(.clay)
+                        }
                     }
                 }
                 ForEach(actions.shown(items)) { item in
@@ -107,6 +119,65 @@ private struct SomedaySection: View {
         if let opens = item.opensAt { return "Opens \(opens.formatted(day))" }
         if let due = item.dueAt { return "By \(due.formatted(day))" }
         return "Needs a time"
+    }
+}
+
+/// Needs a time on its own: every idea, and every task with a due or an
+/// open but no time set aside, soonest due first. Dadi places them on the
+/// week; a row's swipe left asks its owner.
+private struct SomedayList: View {
+    let yaad: YaadClient
+    let actions: SessionActions
+
+    /// How far ahead a due counts.
+    private static let horizon = 120
+
+    @Environment(LiveData.self) private var live
+    @State private var items: [TimelineItem] = []
+    @State private var loaded = false
+    @State private var error: String?
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Dadi places these on your week before they're due.")
+                    .font(.subheadline)
+                    .foregroundStyle(.inkMuted)
+                    .padding(.top, 8)
+                if let error {
+                    Label(error, systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(.danger)
+                }
+                if loaded && items.isEmpty && error == nil {
+                    ContentUnavailableView("Nothing waiting", systemImage: "tray", description: Text("Ideas and tasks without a time show up here."))
+                        .foregroundStyle(.inkMuted)
+                        .padding(.top, 40)
+                }
+                SomedaySection(items: items, actions: actions, titled: false)
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 100)
+            .frame(maxWidth: 760)
+            .frame(maxWidth: .infinity)
+            .animation(Motion.settle, value: items)
+        }
+        .refreshable { await load() }
+        .task(id: live.yaad) { await load() }
+    }
+
+    private func load() async {
+        let today = Calendar.current.startOfDay(for: .now)
+        guard let end = Calendar.current.date(byAdding: .day, value: Self.horizon, to: today) else { return }
+        do {
+            let fetched = try await yaad.timeline(.someday, from: today, to: end)
+            actions.settle(fetched)
+            items = fetched.sorted { ($0.dueAt ?? .distantFuture) < ($1.dueAt ?? .distantFuture) }
+            error = nil
+        } catch is CancellationError {
+            return
+        } catch {
+            self.error = error.localizedDescription
+        }
+        loaded = true
     }
 }
 

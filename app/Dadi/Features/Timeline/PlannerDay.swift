@@ -1,10 +1,14 @@
 import SwiftUI
 
-/// One day of the timeline: what's happening now and next, what is due that
-/// day, then the day's timed sessions (Yaad's planner view) on an hour axis,
-/// each as tall as its time, with open time left as space and labeled with
-/// its length. Commitments are solid, the gym warm, routines quiet, and a
-/// cancelled session is struck through. A session's gestures are
+/// One day of the timeline: the week's days in a strip (a dot on each with
+/// something due), what's happening now and next, what is due that day, then
+/// the day's timed sessions (Yaad's planner view) on an hour axis, each as
+/// tall as its time, with open time left as space and labeled with its
+/// length. Commitments are solid, the gym warm, routines quiet, and a
+/// cancelled session is struck through. Each session's circle marks it
+/// Completed (dashed once it has ended unmarked), the one happening now
+/// fills a bar as it runs, and the time now sits in the gutter on a line
+/// that runs behind the sessions. A session's other gestures are
 /// `SessionGestures`; a drag across the empty day moves a day. The day is
 /// read again whenever Yaad announces a change.
 struct PlannerDay: View {
@@ -17,6 +21,8 @@ struct PlannerDay: View {
     @State private var due: [TimelineItem] = []
     @State private var error: String?
     @State private var direction: Edge = .trailing
+    /// The days of the shown week with something due.
+    @State private var dueDays: Set<Date> = []
 
     /// Points per minute on the axis.
     private let scale: CGFloat = 1.3
@@ -33,6 +39,54 @@ struct PlannerDay: View {
                 }
         )
         .task(id: Reload(day: day, change: live.yaad)) { await load() }
+        .task(id: Reload(day: Self.monday(of: day), change: live.yaad)) { await loadWeek() }
+    }
+
+    /// The week holding `day` as a row of days to tap, today in sage, the
+    /// shown day filled, a dot under each day with something due.
+    private var weekStrip: some View {
+        let monday = Self.monday(of: day)
+        return HStack(spacing: 0) {
+            ForEach(0..<7, id: \.self) { offset in
+                if let date = Calendar.current.date(byAdding: .day, value: offset, to: monday) {
+                    let shown = Calendar.current.isDate(date, inSameDayAs: day)
+                    let today = Calendar.current.isDateInToday(date)
+                    Button { go(to: date) } label: {
+                        VStack(spacing: 3) {
+                            Text(date, format: .dateTime.weekday(.narrow))
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(shown ? Color.bone.opacity(0.8) : .inkFaint)
+                            Text(date, format: .dateTime.day())
+                                .font(.callout.weight(shown || today ? .bold : .medium).monospacedDigit())
+                                .foregroundStyle(shown ? Color.bone : today ? .sageDeep : .ink)
+                            Circle()
+                                .fill(shown ? Color.bone : .clay)
+                                .frame(width: 4, height: 4)
+                                .opacity(dueDays.contains(Calendar.current.startOfDay(for: date)) ? 1 : 0)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                        .background {
+                            if shown {
+                                RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.sageDeep)
+                            }
+                        }
+                        .contentShape(.rect(cornerRadius: 14))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(date.formatted(.dateTime.weekday(.wide).month().day()))
+                    .accessibilityAddTraits(shown ? .isSelected : [])
+                }
+            }
+        }
+        .animation(Motion.snap, value: day)
+    }
+
+    /// Monday at local midnight of the week holding `date`.
+    static func monday(of date: Date) -> Date {
+        let calendar = Calendar.current
+        let start = calendar.startOfDay(for: date)
+        return calendar.date(byAdding: .day, value: -((calendar.component(.weekday, from: start) + 5) % 7), to: start)!
     }
 
     private var header: some View {
@@ -68,7 +122,14 @@ struct PlannerDay: View {
 
     private func move(by days: Int) {
         guard let next = Calendar.current.date(byAdding: .day, value: days, to: day) else { return }
-        direction = days > 0 ? .trailing : .leading
+        go(to: next)
+    }
+
+    /// Shows `date`, sliding in from the side it lies on.
+    private func go(to date: Date) {
+        let next = Calendar.current.startOfDay(for: date)
+        guard next != day else { return }
+        direction = next > day ? .trailing : .leading
         withAnimation(Motion.settle) {
             blocks = []
             due = []
@@ -77,14 +138,16 @@ struct PlannerDay: View {
     }
 
     private func axis(_ segments: [PlannerLayout.Segment]) -> some View {
-        let hours = PlannerLayout.hours(segments)
+        let now = Calendar.current.component(.hour, from: .now) * 60 + Calendar.current.component(.minute, from: .now)
+        let spanned = PlannerLayout.hours(segments)
+        let hours = Calendar.current.isDateInToday(day) ? min(spanned.lowerBound, now / 60)..<max(spanned.upperBound, now / 60 + 1) : spanned
         let origin = hours.lowerBound * 60
         let height = CGFloat(hours.count * 60) * scale
-        let now = Calendar.current.component(.hour, from: .now) * 60 + Calendar.current.component(.minute, from: .now)
         let start = Calendar.current.isDateInToday(day) ? UnitPoint(x: 0, y: max(0, min(1, CGFloat(now - 60 - origin) / CGFloat(max(1, hours.count * 60))))) : .top
         return ScrollView {
             VStack(spacing: 14) {
                 header
+                weekStrip
                 if Calendar.current.isDateInToday(day) {
                     NowNext(segments: segments)
                 }
@@ -118,15 +181,16 @@ struct PlannerDay: View {
                                 .frame(width: lane, height: CGFloat(gap.endMin - gap.startMin) * scale)
                                 .offset(x: 56, y: CGFloat(gap.startMin - origin) * scale)
                         }
-                        ForEach(segments) { segment in
-                            let width = lane / CGFloat(segment.lanes)
-                            BlockView(segment: segment, height: max(30, CGFloat(segment.endMin - segment.startMin) * scale - 3))
-                                .sessionGestures(segment.block, actions: actions)
-                                .frame(width: width - 4)
-                                .offset(x: 56 + width * CGFloat(segment.lane), y: CGFloat(segment.startMin - origin) * scale + 1.5)
-                        }
                         if Calendar.current.isDateInToday(day) {
                             NowLine(origin: origin, scale: scale, hours: hours)
+                        }
+                        ForEach(segments) { segment in
+                            let width = lane / CGFloat(segment.lanes)
+                            let block = segment.block
+                            BlockView(segment: segment, height: max(30, CGFloat(segment.endMin - segment.startMin) * scale - 3), toggle: actions.markable(block) ? { actions.toggle(block) } : nil)
+                                .sessionGestures(block, actions: actions)
+                                .frame(width: width - 4)
+                                .offset(x: 56 + width * CGFloat(segment.lane), y: CGFloat(segment.startMin - origin) * scale + 1.5)
                         }
                     }
                 }
@@ -144,6 +208,20 @@ struct PlannerDay: View {
 
     private func hourLabel(_ hour: Int) -> String {
         Calendar.current.date(bySettingHour: hour % 24, minute: 0, second: 0, of: day)?.formatted(.dateTime.hour()) ?? "\(hour)"
+    }
+
+    /// Reads which days of the shown week have something due, for the strip's dots.
+    private func loadWeek() async {
+        let monday = Self.monday(of: day)
+        guard let end = Calendar.current.date(byAdding: .day, value: 7, to: monday) else { return }
+        do {
+            let dues = try await yaad.timeline(.due, from: monday, to: end)
+            dueDays = Set(dues.compactMap(\.dueAt).map(Calendar.current.startOfDay(for:)))
+        } catch is CancellationError {
+            return
+        } catch {
+            self.error = error.localizedDescription
+        }
     }
 
     private func load() async {
@@ -207,11 +285,15 @@ private enum Tone {
 }
 
 /// One session on the axis: its title and time, toned by kind, faded once it
-/// is settled, struck through when cancelled or completed, with a check once
-/// completed and a pin that opens directions when its place has an address.
+/// is settled, struck through when cancelled or completed, with a pin that
+/// opens directions when its place has an address and a circle that marks it
+/// Completed: a check once it is, dashed once it has ended without a mark.
+/// The session happening now fills a bar along its foot as it runs.
 private struct BlockView: View {
     let segment: PlannerLayout.Segment
     let height: CGFloat
+    /// Marks the session Completed or takes the mark back; nil when it cannot be marked.
+    let toggle: (() -> Void)?
 
     @Environment(\.openURL) private var openURL
 
@@ -233,32 +315,74 @@ private struct BlockView: View {
                 }
             }
             Spacer(minLength: 0)
-            if block.completed {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(tone.ink)
-                    .transition(.scale.combined(with: .opacity))
-            } else if let url = Directions.url(to: block.place) {
+            if !block.completed, let url = Directions.url(to: block.place) {
                 Button { openURL(url) } label: {
                     Image(systemName: "mappin.and.ellipse")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(tone.ink)
-                        .frame(width: 28, height: 28)
+                        .frame(width: 26, height: 26)
+                        .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Directions to \(block.place?.title ?? block.title)")
+            }
+            if let toggle {
+                Button(action: toggle) { mark(block, tone: tone) }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(block.completed ? "Completed. Take the mark back" : "Mark \(block.title) completed")
             }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, height > 40 ? 8 : 5)
         .frame(height: height, alignment: .top)
+        .overlay(alignment: .bottom) {
+            if height > 40, let start = block.startAt, let end = block.endAt, !block.cancelled {
+                TimelineView(.periodic(from: .now, by: 30)) { context in
+                    let total = end.timeIntervalSince(start)
+                    let gone = context.date.timeIntervalSince(start)
+                    if total > 0, gone > 0, gone < total {
+                        GeometryReader { proxy in
+                            Capsule()
+                                .fill(tone.ink.opacity(0.75))
+                                .frame(width: proxy.size.width * gone / total)
+                        }
+                        .frame(height: 3)
+                        .background(tone.ink.opacity(0.12), in: .capsule)
+                        .padding(.horizontal, 10)
+                        .padding(.bottom, 6)
+                        .transition(.opacity)
+                    }
+                }
+            }
+        }
         .background(tone.fill, in: .rect(cornerRadius: 12, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(tone.edge, lineWidth: 1))
         .opacity(settled ? 0.55 : 1)
         .scaleEffect(block.completed ? 0.985 : 1)
         .animation(Motion.settle, value: block.completed)
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isButton)
+        .accessibilityElement(children: .contain)
+    }
+
+    /// The Completed circle: a filled check once completed, a dashed ring once
+    /// the session has ended unmarked, a plain ring before that.
+    private func mark(_ block: TimelineItem, tone: Tone) -> some View {
+        let ended = block.endAt.map { $0 <= .now } == true
+        return ZStack {
+            if block.completed {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(tone.ink)
+                    .transition(.scale(scale: 0.4).combined(with: .opacity))
+            } else {
+                Circle()
+                    .strokeBorder(tone.ink.opacity(ended ? 0.7 : 0.45), style: StrokeStyle(lineWidth: 1.5, dash: ended ? [2.5, 2.5] : []))
+                    .frame(width: 17, height: 17)
+                    .transition(.opacity)
+            }
+        }
+        .frame(width: 26, height: 26)
+        .contentShape(.circle)
+        .animation(Motion.pop, value: block.completed)
     }
 }
 
@@ -325,7 +449,8 @@ private struct NowNext: View {
     }
 }
 
-/// A clay line across the axis at the current minute.
+/// The time now in a clay pill in the gutter, on a line across the axis at
+/// the current minute that runs behind the sessions.
 private struct NowLine: View {
     let origin: Int
     let scale: CGFloat
@@ -335,13 +460,19 @@ private struct NowLine: View {
         TimelineView(.periodic(from: .now, by: 30)) { context in
             let minute = Calendar.current.component(.hour, from: context.date) * 60 + Calendar.current.component(.minute, from: context.date)
             if hours.contains(minute / 60) {
-                HStack(spacing: 0) {
-                    Circle().fill(.clay).frame(width: 9, height: 9)
+                HStack(spacing: 4) {
+                    Text(context.date, format: .dateTime.hour(.defaultDigits(amPM: .omitted)).minute())
+                        .font(.system(size: 11, weight: .bold).monospacedDigit())
+                        .foregroundStyle(.bone)
+                        .padding(.horizontal, 6)
+                        .frame(height: 18)
+                        .background(.clay, in: .capsule)
+                        .frame(width: 50, alignment: .trailing)
                     Rectangle().fill(.clay).frame(height: 1.5)
                 }
-                .padding(.leading, 52)
-                .offset(y: CGFloat(minute - origin) * scale - 4.5)
+                .offset(y: CGFloat(minute - origin) * scale - 9)
                 .allowsHitTesting(false)
+                .accessibilityHidden(true)
             }
         }
     }
