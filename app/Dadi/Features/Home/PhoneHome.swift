@@ -10,7 +10,8 @@ import SwiftUI
 /// puts the keyboard away; a swipe left anywhere on the page, or a tap on it,
 /// closes it. Pages run the full height of the screen: their content scrolls
 /// up under the floating menu button, the page's name in its glass bubble
-/// and the page's action, on past the Dynamic Island.
+/// and the page's action, on past the Dynamic Island, and down under the
+/// dock, softening as it goes under either so nothing reads through the glass.
 struct PhoneHome: View {
     let services: Services
     let wordmark: Namespace.ID
@@ -170,7 +171,7 @@ struct PhoneHome: View {
         content
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background { FieldBloom() }
-            .scrollEdgeEffectHidden(true, for: .top)
+            .scrollEdgeEffectStyle(.soft, for: .all)
             .safeAreaBar(edge: .top) { topBar(tab) }
     }
 
