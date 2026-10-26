@@ -120,9 +120,8 @@ struct ChaaviPage: View {
                 .presentationDetents([.large])
                 .presentationBackground(Color.boneRaised)
         }
-        .confirmationDialog(deleting.map { "Delete \($0.name)?" } ?? "", isPresented: Binding { deleting != nil } set: { if !$0 { deleting = nil } }, titleVisibility: .visible) {
-            Button("Delete", role: .destructive) {
-                guard let item = deleting else { return }
+        .confirmationDialog("Delete this item?", isPresented: Binding { deleting != nil } set: { if !$0 { deleting = nil } }, titleVisibility: .visible, presenting: deleting) { item in
+            Button("Delete \(item.name)", role: .destructive) {
                 deleting = nil
                 Task {
                     do {
@@ -132,7 +131,7 @@ struct ChaaviPage: View {
                     }
                 }
             }
-        } message: {
+        } message: { _ in
             Text("It goes from Chaavi on every device, and from the agents it is shared with.")
         }
         .navigationTitle("Chaavi")
