@@ -42,6 +42,10 @@ struct PhoneHome: View {
     @State private var chaavi: ChaaviStore
     /// True while Chaavi's new item sheet is up.
     @State private var creatingItem = false
+    /// The box's status, devices and errors, which System's page and drawer share.
+    @State private var system: SystemStore
+    /// The System section the drawer asked the page to scroll to.
+    @State private var systemFocus: SystemPage.Section?
     @State private var dadiIcon = DadiGlyph.render()
 
     /// The strip along the left edge that opens the drawer. It sits over the
@@ -56,6 +60,7 @@ struct PhoneHome: View {
         _page = page
         _ghar = State(initialValue: GharStore(ghar: services.ghar))
         _chaavi = State(initialValue: ChaaviStore(chaavi: services.chaavi))
+        _system = State(initialValue: SystemStore(nas: services.nas))
     }
 
     var body: some View {
@@ -80,6 +85,12 @@ struct PhoneHome: View {
                                 chaavi.kind = kind
                                 chaavi.scope = scope
                             }
+                            set(open: false)
+                        }
+                    case .system:
+                        SystemDrawer(store: system) { section in
+                            guard !swiping else { return }
+                            systemFocus = section
                             set(open: false)
                         }
                     case .timeline:
@@ -165,7 +176,7 @@ struct PhoneHome: View {
                 chrome(ChaaviPage(store: chaavi, creating: $creatingItem), tab: .chaavi)
             }
             Tab("System", systemImage: "server.rack", value: HomeView.Tab.system) {
-                chrome(SystemPage(nas: services.nas), tab: .system)
+                chrome(SystemPage(store: system, focus: $systemFocus), tab: .system)
             }
         }
         .tabBarMinimizeBehavior(.onScrollDown)
