@@ -34,12 +34,24 @@ struct PhoneHome: View {
     @State private var agentSheet: String?
     /// The Timeline's view, set from its name bubble or its drawer.
     @State private var timelineMode = TimelineMode.day
+    /// Ghar's devices and rooms, which its page and its drawer share.
+    @State private var ghar: GharStore
+    /// What the Ghar page is narrowed to, set from its chips or its drawer.
+    @State private var gharFilter = GharPage.Filter.everywhere
     @State private var dadiIcon = DadiGlyph.render()
 
     /// The strip along the left edge that opens the drawer. It sits over the
     /// page, so a swipe that starts in it always pulls the drawer instead of
     /// moving the page, as the Timeline's day swipe would.
     private let edge: CGFloat = 28
+
+    init(services: Services, wordmark: Namespace.ID, store: HomeStore, page: Binding<HomeView.Page>) {
+        self.services = services
+        self.wordmark = wordmark
+        self.store = store
+        _page = page
+        _ghar = State(initialValue: GharStore(ghar: services.ghar))
+    }
 
     var body: some View {
         GeometryReader { proxy in
@@ -50,6 +62,12 @@ struct PhoneHome: View {
                 FieldBloom()
                 Drawer {
                     switch page.tab {
+                    case .ghar:
+                        GharDrawer(store: ghar, filter: gharFilter) { next in
+                            guard !swiping else { return }
+                            withAnimation(Motion.snap) { gharFilter = next }
+                            set(open: false)
+                        }
                     case .timeline:
                         TimelineDrawer(yaad: services.yaad, mode: timelineMode) { mode in
                             guard !swiping else { return }
@@ -127,7 +145,7 @@ struct PhoneHome: View {
                 )
             }
             Tab("Ghar", systemImage: "house", value: HomeView.Tab.ghar) {
-                chrome(GharPage(ghar: services.ghar), tab: .ghar)
+                chrome(GharPage(store: ghar, filter: $gharFilter), tab: .ghar)
             }
             Tab("Chaavi", systemImage: "key.horizontal", value: HomeView.Tab.chaavi) {
                 chrome(ChaaviPage(chaavi: services.chaavi), tab: .chaavi)

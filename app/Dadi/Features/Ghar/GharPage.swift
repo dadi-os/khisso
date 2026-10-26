@@ -1,11 +1,11 @@
 import SwiftUI
 
 /// Ghar: what is on at a glance, All off and Evening, chips to narrow to a
-/// room or a group, then each room on the field with its switch, its
-/// brightness and its lights as tiles. Tap a tile to switch it, hold it for
-/// the light sheet, tap a room's name for the room page. The page reads Ghar
-/// again whenever Ghar announces a change, so changes made elsewhere show up
-/// at once.
+/// room or a group (the drawer narrows it too), then each room on the field
+/// with its switch, its brightness and its lights as tiles. Tap a tile to
+/// switch it, hold it for the light sheet, tap a room's name for the room
+/// page. The page reads Ghar again whenever Ghar announces a change, so
+/// changes made elsewhere show up at once.
 struct GharPage: View {
     /// What the chips narrow the page to.
     enum Filter: Hashable {
@@ -14,9 +14,11 @@ struct GharPage: View {
         case group(String)
     }
 
+    let store: GharStore
+    /// What the page is narrowed to, shared with the drawer.
+    @Binding var filter: Filter
+
     @Environment(LiveData.self) private var live
-    @State private var store: GharStore
-    @State private var filter = Filter.everywhere
     @State private var focused: GharDevice?
     @State private var opened: GharRoom?
     @State private var filling: GharRoom?
@@ -25,10 +27,6 @@ struct GharPage: View {
     @State private var switched = 0
     @Namespace private var zoom
     @Namespace private var chip
-
-    init(ghar: GharClient) {
-        _store = State(initialValue: GharStore(ghar: ghar))
-    }
 
     var body: some View {
         let sections = GharLayout.sections(store.devices, rooms: store.rooms)
