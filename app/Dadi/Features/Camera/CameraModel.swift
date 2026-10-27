@@ -54,6 +54,15 @@ final class CameraModel: NSObject, AVCapturePhotoCaptureDelegate {
         configureOrFail()
     }
 
+    /// Starts the session ahead of the viewfinder when access is already
+    /// granted, so choosing the camera opens on a live picture; it stops again
+    /// after a while if the camera is not chosen. Never asks for access.
+    func warm() async {
+        guard AVCaptureDevice.authorizationStatus(for: .video) == .authorized else { return }
+        await start()
+        release()
+    }
+
     /// Asks for camera access if it has not been asked, then starts the session.
     func start() async {
         stopping?.cancel()

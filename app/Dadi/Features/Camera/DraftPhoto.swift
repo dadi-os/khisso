@@ -1,3 +1,5 @@
+import PhotosUI
+import SwiftUI
 import UIKit
 
 /// A photo waiting in the composer to go with the next message: shrunk and
@@ -30,6 +32,14 @@ struct DraftPhoto: Identifiable, Equatable {
         }
         jpeg = encoded
         self.thumbnail = thumbnail
+    }
+
+    /// A photo from an item picked in the photo library.
+    static func picked(_ item: PhotosPickerItem) async throws -> DraftPhoto {
+        guard let data = try await item.loadTransferable(type: Data.self) else {
+            throw PhotoProblem(message: "A photo couldn't be read from your library.")
+        }
+        return try DraftPhoto(data: data)
     }
 
     /// The photo as Hath takes it on a message.

@@ -264,11 +264,7 @@ struct CameraPanel: View {
         problem = nil
         for item in items {
             do {
-                guard let data = try await item.loadTransferable(type: Data.self) else {
-                    problem = "A photo couldn't be read from your library."
-                    continue
-                }
-                add(try DraftPhoto(data: data))
+                add(try await DraftPhoto.picked(item))
             } catch {
                 problem = error.localizedDescription
             }

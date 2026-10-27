@@ -1,4 +1,5 @@
 import Combine
+import PhotosUI
 import SwiftUI
 import UIKit
 
@@ -24,15 +25,26 @@ struct Composer: View {
 
     @Namespace private var glass
     @FocusState private var focused: Bool
-    @State private var cameraOpen = false
+    @State private var attach = Attach.closed
     @State private var camera = CameraModel()
+    @State private var libraryOpen = false
+    @State private var picked: [PhotosPickerItem] = []
+    @State private var problem: String?
     @State private var opened = 0
     @State private var dismissing = false
     /// The composer's width, which the open viewfinder fills.
     @State private var width: CGFloat = 0
 
+    /// What the plus is showing: itself, the choice of camera or photos, or
+    /// the camera.
+    private enum Attach: Equatable {
+        case closed, choosing, camera
+    }
+
     /// How tall the viewfinder grows to.
     private static let cameraHeight: CGFloat = 430
+    /// How tall the choice of camera or photos is.
+    private static let chooserHeight: CGFloat = 104
 
     /// The gap between field and button at rest, wider than `merge`.
     private let gap: CGFloat = 10
@@ -56,24 +68,43 @@ struct Composer: View {
                 PhotoStrip(photos: $photos)
                     .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .bottomLeading)))
             }
+            if let problem {
+                Label(problem, systemImage: "exclamationmark.circle")
+                    .font(.footnote)
+                    .foregroundStyle(.danger)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 6)
+                    .padding(.bottom, 8)
+                    .transition(.opacity)
+            }
             fieldRow
         }
         .animation(Motion.settle, value: photos)
+        .animation(Motion.snap, value: problem)
         .sensoryFeedback(.impact(flexibility: .soft), trigger: opened)
         .frame(maxWidth: 680)
+        .photosPicker(isPresented: $libraryOpen, selection: $picked, maxSelectionCount: max(1, DraftPhoto.limit - photos.count), matching: .images)
+        .onChange(of: picked) { _, items in
+            guard !items.isEmpty else { return }
+            picked = []
+            Task { await addPicked(items) }
+        }
         .task { await camera.prepare() }
         .onAppear { if focusOnAppear { focused = true } }
     }
 
-    /// The plus, which is also the viewfinder: it grows from a glass circle at
-    /// the field's start into the camera, the field and send button giving
-    /// way, and shrinks back when the camera closes. The viewfinder is laid out
-    /// at its open size from the start and the growing surface uncovers it from
-    /// the plus's corner, so the live preview never resizes mid-animation.
+    /// The plus, which is also the attachment chooser and the viewfinder: it
+    /// grows from a glass circle at the field's start into a choice of Camera
+    /// or Photos (the camera warming up behind it), and Camera grows it on into
+    /// the viewfinder, the field and send button giving way; it shrinks back
+    /// into the plus when closed. The viewfinder is laid out at its open size
+    /// from the start and the growing surface uncovers it from the plus's
+    /// corner, so the live preview never resizes mid-animation.
     private var surface: some View {
-        let shape = RoundedRectangle(cornerRadius: 36, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: attach == .choosing ? 30 : 36, style: .continuous)
         return ZStack {
-            if cameraOpen {
+            switch attach {
+            case .camera:
                 CameraPanel(camera: camera, count: photos.count, dismissing: dismissing, add: { photos.append($0) }, close: closeCamera)
                     .frame(width: max(width, 46), height: Self.cameraHeight)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
@@ -81,8 +112,16 @@ struct Composer: View {
                         insertion: .opacity.animation(.easeOut(duration: 0.16)),
                         removal: .opacity.animation(.easeIn(duration: 0.2).delay(0.12))
                     ))
-            } else {
-                Button(action: openCamera) {
+            case .choosing:
+                chooser
+                    .frame(width: max(width, 46), height: Self.chooserHeight)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                    .transition(.asymmetric(
+                        insertion: .opacity.animation(.easeOut(duration: 0.18).delay(0.06)),
+                        removal: .opacity.animation(.easeIn(duration: 0.1))
+                    ))
+            case .closed:
+                Button(action: openChooser) {
                     Image(systemName: "plus")
                         .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(.sageDeep)
@@ -90,23 +129,59 @@ struct Composer: View {
                         .contentShape(.circle)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Add photos")
+                .accessibilityLabel("Add a photo")
                 .transition(.opacity)
             }
         }
-        .frame(maxWidth: cameraOpen ? .infinity : 46)
-        .frame(height: cameraOpen ? Self.cameraHeight : 46)
-        .background(Color.black.opacity(cameraOpen ? 1 : 0), in: shape)
+        .frame(maxWidth: attach == .closed ? 46 : .infinity)
+        .frame(height: attach == .camera ? Self.cameraHeight : attach == .choosing ? Self.chooserHeight : 46)
+        .background(Color.black.opacity(attach == .camera ? 1 : 0), in: shape)
         .clipShape(shape)
         .glassEffect(.regular.interactive(), in: shape)
         .glassEffectID("plus", in: glass)
+    }
+
+    /// Camera or Photos, as two tiles, with a way back to the plus.
+    private var chooser: some View {
+        HStack(spacing: 10) {
+            chooserTile("Camera", symbol: "camera.fill", action: openCamera)
+            chooserTile("Photos", symbol: "photo.on.rectangle", action: openLibrary)
+            Button(action: closeChooser) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(.inkMuted)
+                    .frame(width: 40, height: 40)
+                    .background(.ink.opacity(0.06), in: .circle)
+                    .contentShape(.circle)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Close")
+        }
+        .padding(12)
+    }
+
+    private func chooserTile(_ title: String, symbol: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 6) {
+                Image(systemName: symbol)
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(.sageDeep)
+                Text(title)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.ink)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(.sage.opacity(0.14), in: .rect(cornerRadius: 22, style: .continuous))
+            .contentShape(.rect(cornerRadius: 22))
+        }
+        .buttonStyle(.plain)
     }
 
     private var fieldRow: some View {
         GlassEffectContainer(spacing: merge) {
             HStack(alignment: .bottom, spacing: gap) {
                 surface
-                if !cameraOpen {
+                if attach == .closed {
                     TextField(placeholder, text: $text, axis: .vertical)
                         .focused($focused)
                         .lineLimit(1...6)
@@ -148,25 +223,55 @@ struct Composer: View {
             }
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
-        .animation(.spring(response: 0.4, dampingFraction: 0.88), value: cameraOpen)
+        .animation(.spring(response: 0.4, dampingFraction: 0.88), value: attach)
         .animation(.spring(response: 0.42, dampingFraction: 0.82), value: showsSend)
     }
 
-    /// Puts the keyboard away and opens the camera: nobody types and shoots at once.
-    private func openCamera() {
+    /// Puts the keyboard away and opens the choice of camera or photos,
+    /// warming the camera up behind it.
+    private func openChooser() {
         focused = false
-        cameraOpen = true
+        problem = nil
+        attach = .choosing
+        opened += 1
+        Task { await camera.warm() }
+    }
+
+    private func closeChooser() {
+        attach = .closed
+    }
+
+    /// Grows the choice on into the viewfinder: nobody types and shoots at once.
+    private func openCamera() {
+        attach = .camera
         opened += 1
         Task { await camera.start() }
+    }
+
+    /// Opens the photo library and folds the choice back into the plus.
+    private func openLibrary() {
+        attach = .closed
+        libraryOpen = true
+    }
+
+    /// Adds the picked library photos, as many as the message has room for.
+    private func addPicked(_ items: [PhotosPickerItem]) async {
+        for item in items {
+            do {
+                photos.append(try await DraftPhoto.picked(item))
+            } catch {
+                problem = error.localizedDescription
+            }
+        }
     }
 
     /// Closes in one motion: the controls fade while the surface shrinks back
     /// into the plus, the frozen preview clipped inside it, and the camera keeps
     /// running a while so opening it again is instant.
     private func closeCamera() {
-        guard cameraOpen, !dismissing else { return }
+        guard attach == .camera, !dismissing else { return }
         dismissing = true
-        cameraOpen = false
+        attach = .closed
         camera.release()
         Task {
             do { try await Task.sleep(for: .milliseconds(450)) } catch { return }
@@ -182,6 +287,7 @@ struct Composer: View {
     private func submit() {
         guard ready else { return }
         closeCamera()
+        closeChooser()
         send()
         Task {
             do { try await Task.sleep(for: keyboardLag) } catch { return }
