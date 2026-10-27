@@ -55,7 +55,7 @@ struct PhoneHome: View {
     /// The strip along the left edge that opens the drawer. It sits over the
     /// page, so a swipe that starts in it always pulls the drawer instead of
     /// moving the page, as the Timeline's day swipe would.
-    private let edge: CGFloat = 28
+    private let edge: CGFloat = 36
 
     init(services: Services, wordmark: Namespace.ID, store: HomeStore, page: Binding<HomeView.Page>) {
         self.services = services

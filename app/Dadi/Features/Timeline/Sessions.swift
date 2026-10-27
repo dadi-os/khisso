@@ -198,52 +198,159 @@ struct SessionMenu: View {
     }
 }
 
-/// A session row's gestures: tap opens its sheet, a swipe right marks it
-/// Completed, a swipe left messages its owner, and a long press opens its
-/// menu. The row follows the finger and shows what letting go will do; its
-/// drag wins over the page's day swipe because it sits on the row, and the
-/// drawer's left-edge strip lies over both.
+extension EnvironmentValues {
+    /// Moves the day shown by this many days; set by Day, so a quick flick
+    /// across a session there pages the day instead of acting on the session.
+    @Entry var pageDay: ((Int) -> Void)? = nil
+}
+
+/// A session row's gestures: tap opens its sheet, a long press opens its
+/// menu, and a sideways drag either acts on it or pages the day. A drag only
+/// becomes the row's once it is clearly sideways; then a slow, deliberate
+/// drag past the mark (felt as a tap, and seen as the ring filling to a
+/// check, or the bubble filling) marks it Completed to the right or messages
+/// its owner to the left when let go, while a quick flick pages the day in
+/// Day and springs back elsewhere, so flicking through days never marks
+/// anything. Past the mark the row pulls back like a rubber band. The
+/// drawer's left-edge strip lies over all of it.
 struct SessionGestures: ViewModifier {
     let item: TimelineItem
     let actions: SessionActions
-    /// Corner radius of the row, for the label revealed behind it.
+    /// Corner radius of the row, for what is revealed behind it.
     var radius: CGFloat = 12
 
-    @State private var offset: CGFloat = 0
+    /// Which way a drag has been read.
+    private enum Axis {
+        case undecided, sideways, vertical
+    }
 
-    /// How far a swipe travels before letting go acts.
-    private let reach: CGFloat = 80
+    @Environment(\.pageDay) private var pageDay
+    @State private var offset: CGFloat = 0
+    @State private var axis = Axis.undecided
+
+    /// How far a deliberate drag travels before letting go acts.
+    private let reach: CGFloat = 96
+    /// How far a drag must go, and how much more sideways than up or down,
+    /// before it is the row's.
+    private let slop: CGFloat = 14
+    private let sidewaysRatio: CGFloat = 1.8
+    /// A release faster than this, in points a second, is a flick.
+    private let flickSpeed: CGFloat = 650
+
+    private var armed: Bool { abs(offset) >= reach }
 
     func body(content: Content) -> some View {
         content
+            .scaleEffect(offset == 0 ? 1 : 0.985)
             .offset(x: offset)
             .background(alignment: offset > 0 ? .leading : .trailing) {
                 if offset != 0 {
-                    Text(offset > 0 ? (item.completed ? "Undo" : "Completed") : "Message")
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(offset > 0 ? Color.bone : .ink)
-                        .padding(.horizontal, 14)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: offset > 0 ? .leading : .trailing)
-                        .background(offset > 0 ? Color.sageDeep : .boneRaised, in: .rect(cornerRadius: radius, style: .continuous))
-                        .opacity(min(1, abs(offset) / reach))
+                    reveal
                 }
             }
             .contentShape(.rect)
             .onTapGesture { actions.opened = item }
             .contextMenu { SessionMenu(item: item, actions: actions) }
             .gesture(
-                DragGesture(minimumDistance: 16)
-                    .onChanged { drag in
-                        guard abs(drag.translation.width) > abs(drag.translation.height) else { return }
-                        offset = drag.translation.width > 0 && !actions.markable(item) ? 0 : drag.translation.width
-                    }
-                    .onEnded { _ in
-                        if offset >= reach { actions.toggle(item) }
-                        if offset <= -reach { actions.messageOwner(item) }
-                        withAnimation(Motion.snap) { offset = 0 }
-                    }
+                DragGesture(minimumDistance: slop)
+                    .onChanged(track)
+                    .onEnded(release)
             )
-            .sensoryFeedback(.impact(flexibility: .soft), trigger: abs(offset) >= reach)
+            .sensoryFeedback(.impact(weight: .light), trigger: armed) { _, now in now }
+            .animation(.interactiveSpring(response: 0.28, dampingFraction: 0.82), value: armed)
+    }
+
+    /// What letting go will do, growing in behind the row: a ring that fills
+    /// toward a check for Completed, a bubble for the message, each saying
+    /// what it does once armed.
+    private var reveal: some View {
+        let right = offset > 0
+        let progress = min(1, abs(offset) / reach)
+        let completing = right && !item.completed
+        return HStack(spacing: 8) {
+            if right {
+                mark(completing: completing, progress: progress)
+                if armed {
+                    Text(completing ? "Completed" : "Take back")
+                        .font(.footnote.weight(.semibold))
+                        .transition(.opacity.combined(with: .offset(x: -6)))
+                }
+            } else {
+                if armed {
+                    Text(actions.owner(of: item) == nil ? "Tell Dadi" : "Message")
+                        .font(.footnote.weight(.semibold))
+                        .transition(.opacity.combined(with: .offset(x: 6)))
+                }
+                Image(systemName: armed ? "bubble.left.fill" : "bubble.left")
+                    .font(.system(size: 17, weight: .semibold))
+                    .scaleEffect(0.7 + 0.3 * progress)
+                    .contentTransition(.symbolEffect(.replace))
+            }
+        }
+        .foregroundStyle(armed ? Color.bone : right ? .sageDeep : .tide)
+        .padding(.horizontal, 16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: right ? .leading : .trailing)
+        .background {
+            RoundedRectangle(cornerRadius: radius, style: .continuous)
+                .fill(armed ? (right ? Color.sageDeep : .tide) : (right ? Color.sage : .tide).opacity(0.08 + 0.12 * progress))
+        }
+        .opacity(min(1, abs(offset) / 24))
+    }
+
+    /// A ring that fills as the drag nears the mark and turns into a check on it.
+    private func mark(completing: Bool, progress: CGFloat) -> some View {
+        ZStack {
+            if armed {
+                Image(systemName: completing ? "checkmark.circle.fill" : "arrow.uturn.backward.circle.fill")
+                    .font(.system(size: 22, weight: .semibold))
+                    .transition(.scale(scale: 0.5).combined(with: .opacity))
+            } else {
+                Circle()
+                    .trim(from: 0, to: progress)
+                    .stroke(Color.sageDeep, style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                    .frame(width: 20, height: 20)
+                    .background(Circle().stroke(Color.sageDeep.opacity(0.2), lineWidth: 2.2))
+            }
+        }
+        .frame(width: 24, height: 24)
+    }
+
+    /// Reads which way the drag goes once, then follows the finger, with a
+    /// rubber band past the mark.
+    private func track(_ drag: DragGesture.Value) {
+        let dx = drag.translation.width
+        let dy = drag.translation.height
+        if axis == .undecided {
+            guard abs(dx) > slop || abs(dy) > slop else { return }
+            axis = abs(dx) > abs(dy) * sidewaysRatio ? .sideways : .vertical
+        }
+        guard axis == .sideways else { return }
+        let allowed = dx > 0 ? actions.markable(item) : true
+        guard allowed else {
+            offset = 0
+            return
+        }
+        let travel = abs(dx)
+        let pulled = travel <= reach ? travel : reach + (travel - reach) * 0.28
+        offset = dx > 0 ? pulled : -pulled
+    }
+
+    /// Acts on a slow drag past the mark, pages the day on a flick, and
+    /// springs the row home either way.
+    private func release(_ drag: DragGesture.Value) {
+        defer {
+            axis = .undecided
+            withAnimation(.spring(response: 0.34, dampingFraction: 0.82)) { offset = 0 }
+        }
+        guard axis == .sideways else { return }
+        let speed = abs(drag.predictedEndTranslation.width - drag.translation.width) / 0.25
+        if speed > flickSpeed {
+            pageDay?(drag.translation.width < 0 ? 1 : -1)
+            return
+        }
+        guard armed else { return }
+        if offset > 0 { actions.toggle(item) } else { actions.messageOwner(item) }
     }
 }
 

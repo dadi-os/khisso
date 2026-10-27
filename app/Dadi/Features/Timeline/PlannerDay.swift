@@ -9,8 +9,10 @@ import SwiftUI
 /// Completed (dashed once it has ended unmarked), the one happening now
 /// fills a bar as it runs, and the time now sits in the gutter on a line
 /// that runs behind the sessions. A session's other gestures are
-/// `SessionGestures`; a drag across the empty day moves a day. The day is
-/// read again whenever Yaad announces a change.
+/// `SessionGestures`, where a quick flick pages the day too; a drag across
+/// the empty day follows the finger a little and moves a day once it goes
+/// far enough or is flung. The day is read again whenever Yaad announces a
+/// change.
 struct PlannerDay: View {
     let yaad: YaadClient
     let actions: SessionActions
@@ -21,6 +23,8 @@ struct PlannerDay: View {
     @State private var due: [TimelineItem] = []
     @State private var error: String?
     @State private var direction: Edge = .trailing
+    /// How far the day follows a sideways drag across its empty time.
+    @State private var drift: CGFloat = 0
     /// The days of the shown week with something due.
     @State private var dueDays: Set<Date> = []
 
@@ -30,14 +34,23 @@ struct PlannerDay: View {
     var body: some View {
         let segments = PlannerLayout.segments(actions.shown(blocks), on: day)
         axis(segments)
+        .offset(x: drift)
         .contentShape(.rect)
         .gesture(
-            DragGesture(minimumDistance: 30)
+            DragGesture(minimumDistance: 20)
+                .onChanged { drag in
+                    guard abs(drag.translation.width) > abs(drag.translation.height) * 1.8 else { return }
+                    drift = drag.translation.width * 0.22
+                }
                 .onEnded { drag in
-                    guard abs(drag.translation.width) > abs(drag.translation.height) * 1.5 else { return }
-                    move(by: drag.translation.width < 0 ? 1 : -1)
+                    let dx = drag.translation.width
+                    let flung = abs(drag.predictedEndTranslation.width) > 160
+                    withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) { drift = 0 }
+                    guard abs(dx) > abs(drag.translation.height) * 1.8, abs(dx) > 70 || flung else { return }
+                    move(by: dx < 0 ? 1 : -1)
                 }
         )
+        .environment(\.pageDay, move(by:))
         .task(id: Reload(day: day, change: live.yaad)) { await load() }
         .task(id: Reload(day: Self.monday(of: day), change: live.yaad)) { await loadWeek() }
     }
