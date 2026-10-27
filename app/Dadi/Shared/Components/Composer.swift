@@ -28,6 +28,8 @@ struct Composer: View {
     @State private var camera = CameraModel()
     @State private var opened = 0
     @State private var dismissing = false
+    /// The composer's width, which the open viewfinder fills.
+    @State private var width: CGFloat = 0
 
     /// How tall the viewfinder grows to.
     private static let cameraHeight: CGFloat = 430
@@ -65,13 +67,20 @@ struct Composer: View {
 
     /// The plus, which is also the viewfinder: it grows from a glass circle at
     /// the field's start into the camera, the field and send button giving
-    /// way, and shrinks back when the camera closes.
+    /// way, and shrinks back when the camera closes. The viewfinder is laid out
+    /// at its open size from the start and the growing surface uncovers it from
+    /// the plus's corner, so the live preview never resizes mid-animation.
     private var surface: some View {
         let shape = RoundedRectangle(cornerRadius: 36, style: .continuous)
         return ZStack {
             if cameraOpen {
                 CameraPanel(camera: camera, count: photos.count, dismissing: dismissing, add: { photos.append($0) }, close: closeCamera)
-                    .transition(.asymmetric(insertion: .opacity.animation(.easeOut(duration: 0.3).delay(0.1)), removal: .identity))
+                    .frame(width: max(width, 46), height: Self.cameraHeight)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                    .transition(.asymmetric(
+                        insertion: .opacity.animation(.easeOut(duration: 0.16)),
+                        removal: .opacity.animation(.easeIn(duration: 0.2).delay(0.12))
+                    ))
             } else {
                 Button(action: openCamera) {
                     Image(systemName: "plus")
@@ -138,7 +147,8 @@ struct Composer: View {
                 }
             }
         }
-        .animation(.spring(response: 0.58, dampingFraction: 0.8), value: cameraOpen)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+        .animation(.spring(response: 0.4, dampingFraction: 0.88), value: cameraOpen)
         .animation(.spring(response: 0.42, dampingFraction: 0.82), value: showsSend)
     }
 
@@ -150,15 +160,16 @@ struct Composer: View {
         Task { await camera.start() }
     }
 
-    /// Closes in two steps: the panel's content goes first, then the empty
-    /// surface shrinks back into the button, so no live preview is resized.
+    /// Closes in one motion: the controls fade while the surface shrinks back
+    /// into the plus, the frozen preview clipped inside it, and the camera keeps
+    /// running a while so opening it again is instant.
     private func closeCamera() {
         guard cameraOpen, !dismissing else { return }
         dismissing = true
+        cameraOpen = false
         camera.release()
         Task {
-            do { try await Task.sleep(for: .milliseconds(180)) } catch { return }
-            cameraOpen = false
+            do { try await Task.sleep(for: .milliseconds(450)) } catch { return }
             dismissing = false
         }
     }

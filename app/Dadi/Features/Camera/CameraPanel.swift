@@ -27,10 +27,10 @@ private struct Viewfinder: UIViewRepresentable {
 /// front camera, the shutter in the middle with a plus for the photo library
 /// on its left and the camera's light on its right; swipe down or tap the
 /// grabber to close. Photos go to the composer as they are taken or picked,
-/// and it stays open for more. It arrives in stages: the dark poster first,
-/// the controls rising into place, and the live preview only once the surface
-/// has finished growing, so the preview is never resized mid-animation. It
-/// leaves the same way in reverse.
+/// and it stays open for more. The composer lays it out at its open size
+/// while its surface grows and shrinks around it, so the live preview mounts
+/// at once and fades in with its first frames, and the controls rise into
+/// place just behind it; closing, the controls fade as the surface shrinks.
 struct CameraPanel: View {
     let camera: CameraModel
     /// Photos already waiting, so the panel knows when the message is full.
@@ -50,8 +50,6 @@ struct CameraPanel: View {
     @State private var taking = false
     @State private var shutter = 0
     @State private var arrived = false
-    /// The surface has finished growing, so the live preview may mount.
-    @State private var settled = false
     @State private var turning = false
     @State private var flips = 0
     @State private var pinching = false
@@ -60,8 +58,6 @@ struct CameraPanel: View {
     var body: some View {
         ZStack {
             viewfinder
-                .opacity(arrived ? 1 : 0)
-                .scaleEffect(arrived ? 1 : 1.06)
             LinearGradient(colors: [.clear, .black.opacity(0.5)], startPoint: .center, endPoint: .bottom)
                 .allowsHitTesting(false)
             grabber
@@ -81,15 +77,10 @@ struct CameraPanel: View {
         }
         .sensoryFeedback(.impact(weight: .medium), trigger: shutter)
         .sensoryFeedback(.impact(flexibility: .rigid), trigger: flips)
-        .onAppear { withAnimation(.spring(response: 0.7, dampingFraction: 0.86).delay(0.08)) { arrived = true } }
-        .task {
-            do { try await Task.sleep(for: .milliseconds(480)) } catch { return }
-            withAnimation(.easeOut(duration: 0.3)) { settled = true }
-        }
+        .onAppear { withAnimation(.spring(response: 0.38, dampingFraction: 0.86).delay(0.06)) { arrived = true } }
         .onChange(of: dismissing) { _, leaving in
             guard leaving else { return }
-            settled = false
-            withAnimation(.easeIn(duration: 0.17)) { arrived = false }
+            withAnimation(.easeIn(duration: 0.12)) { arrived = false }
         }
     }
 
@@ -101,14 +92,11 @@ struct CameraPanel: View {
                 Image(systemName: "camera.fill")
                     .font(.system(size: 30))
                     .foregroundStyle(.white.opacity(0.18))
-                if settled {
-                    Viewfinder(session: camera.session)
-                        .opacity(camera.state == .running ? 1 : 0)
-                        .animation(.easeOut(duration: 0.4), value: camera.state)
-                        .blur(radius: turning ? 26 : 0)
-                        .scaleEffect(turning ? 1.06 : 1)
-                        .transition(.opacity)
-                }
+                Viewfinder(session: camera.session)
+                    .opacity(camera.state == .running ? 1 : 0)
+                    .animation(.easeOut(duration: 0.22), value: camera.state)
+                    .blur(radius: turning ? 26 : 0)
+                    .scaleEffect(turning ? 1.06 : 1)
             }
         case .denied:
             message("dadi can't use the camera.\nAllow it in Settings, or choose from your library.")
