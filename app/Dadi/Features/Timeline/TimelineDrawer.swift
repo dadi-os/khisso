@@ -1,14 +1,12 @@
 import SwiftUI
 
 /// The Timeline's drawer: its four views as tiles, what comes due in the
-/// next two weeks, how much of this week is completed, and Tell Dadi, which
-/// is how anything on the timeline gets added, moved or dropped.
+/// next two weeks, and how much of this week is completed.
 struct TimelineDrawer: View {
     let yaad: YaadClient
     let mode: TimelineMode
     /// Shows a view and closes the drawer.
     let choose: (TimelineMode) -> Void
-    let tellDadi: () -> Void
 
     /// How far ahead Coming due looks.
     private static let dueDays = 14
@@ -58,25 +56,6 @@ struct TimelineDrawer: View {
                     .background(.bone.opacity(0.55), in: .rect(cornerRadius: 16, style: .continuous))
                 }
             }
-            Button(action: tellDadi) {
-                HStack(spacing: 12) {
-                    Text("દ")
-                        .font(.wordmark(19))
-                        .inkCentered(.letter, size: 19)
-                        .foregroundStyle(.sageDeep)
-                        .frame(width: 32, height: 32)
-                        .background(.sage.opacity(0.24), in: .circle)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Tell Dadi").font(.body.weight(.semibold)).foregroundStyle(.ink)
-                        Text("Add, move or drop anything").font(.footnote).foregroundStyle(.inkMuted)
-                    }
-                    Spacer()
-                }
-                .padding(10)
-                .background(.sage.opacity(0.16), in: .rect(cornerRadius: 16, style: .continuous))
-                .contentShape(.rect(cornerRadius: 16))
-            }
-            .buttonStyle(.plain)
         }
         .padding(.horizontal, 14)
         .animation(Motion.settle, value: dues)
@@ -107,9 +86,17 @@ struct TimelineDrawer: View {
                     .minimumScaleFactor(0.85)
             }
             .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(current ? AnyShapeStyle(Color.sageDeep) : AnyShapeStyle(Color.bone.opacity(0.55)), in: .rect(cornerRadius: 16, style: .continuous))
-            .contentShape(.rect(cornerRadius: 16))
+            .frame(maxWidth: .infinity, minHeight: 74, alignment: .topLeading)
+            .background {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(current ? AnyShapeStyle(Color.sageDeep) : AnyShapeStyle(Color.boneRaised.opacity(0.92)))
+                    .shadow(color: .black.opacity(current ? 0.12 : 0.05), radius: current ? 8 : 4, y: 2)
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .strokeBorder(current ? Color.clear : Color.sageLine.opacity(0.55), lineWidth: 1)
+            }
+            .contentShape(.rect(cornerRadius: 18))
         }
         .buttonStyle(.plain)
         .animation(Motion.snap, value: current)

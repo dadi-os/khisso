@@ -102,8 +102,6 @@ struct PhoneHome: View {
                             guard !swiping else { return }
                             withAnimation(Motion.settle) { timelineMode = mode }
                             set(open: false)
-                        } tellDadi: {
-                            choose(.dadi)
                         }
                     default:
                         AgentsDrawer(store: store, page: page) { next in
@@ -190,7 +188,7 @@ struct PhoneHome: View {
             } label: {
                 Label { Text("Dadi") } icon: { Image(uiImage: dadiIcon) }
             }
-            Tab("Timeline", systemImage: "calendar", value: HomeView.Tab.timeline) {
+            Tab("Yaad", systemImage: "calendar", value: HomeView.Tab.timeline) {
                 chrome(
                     TimelinePage(yaad: services.yaad, mode: $timelineMode) { agentId in
                         show(.thread(agentId))
@@ -212,7 +210,7 @@ struct PhoneHome: View {
                 chrome(SystemPage(store: system, focus: $systemFocus), tab: .system)
             }
         }
-        .tabBarMinimizeBehavior(.onScrollDown)
+        .tabBarMinimizeBehavior(page.tab == .dadi ? .never : .onScrollDown)
         .tint(.sageDeep)
     }
 
@@ -271,9 +269,21 @@ struct PhoneHome: View {
                         }
                     }
                 } label: {
-                    NameBubble(title: timelineMode.rawValue, accessory: "chevron.down")
-                        .contentTransition(.opacity)
+                    HStack(spacing: 5) {
+                        Text(timelineMode.rawValue)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.ink)
+                            .contentTransition(.opacity)
+                        Image(systemName: "chevron.down")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.inkFaint)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 9)
+                    .contentShape(.capsule)
                 }
+                .buttonStyle(.plain)
+                .glassEffect(.regular.interactive(), in: .capsule)
                 .accessibilityLabel("Timeline view: \(timelineMode.rawValue)")
                 .sensoryFeedback(.selection, trigger: timelineMode)
             } else if let title = title(of: shown) {
