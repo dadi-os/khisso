@@ -128,6 +128,8 @@ final class HomeStore {
     private(set) var threads: [ThreadSummary] = []
     /// Each agent's lanes running right now.
     private(set) var lanes: [String: Set<Lane>] = [:]
+    /// The agents not retired, which can still be messaged.
+    private(set) var active: Set<String> = []
     /// True while the router is choosing whom Ankur's words go to.
     private(set) var routing = false
     /// The newest message from the event stream, for the open thread to pick up.
@@ -158,7 +160,9 @@ final class HomeStore {
         while !Task.isCancelled {
             do {
                 let events = try await hath.events()
-                lanes = Dictionary(uniqueKeysWithValues: try await hath.agents().map { ($0.id, $0.lanes) }).filter { !$0.value.isEmpty }
+                let agents = try await hath.agents()
+                lanes = Dictionary(uniqueKeysWithValues: agents.map { ($0.id, $0.lanes) }).filter { !$0.value.isEmpty }
+                active = Set(agents.filter(\.active).map(\.id))
                 await load(hath)
                 connections += 1
                 for try await event in events {
@@ -202,6 +206,9 @@ final class HomeStore {
 
     /// Agents with any lane running.
     var running: Set<String> { Set(lanes.keys) }
+
+    /// Whether `agentId` is an agent that can still be messaged.
+    func isActive(_ agentId: String) -> Bool { active.contains(agentId) }
 
     /// The lanes `agentId` has running.
     func lanes(of agentId: String) -> Set<Lane> { lanes[agentId] ?? [] }

@@ -18,6 +18,8 @@ struct Composer: View {
     /// A send is in flight: the button spins and another send waits.
     let busy: Bool
     var lanes: Set<Lane> = []
+    /// Puts the cursor in the field as soon as it shows, for a page opened to write.
+    var focusOnAppear = false
     let send: () -> Void
 
     @Namespace private var glass
@@ -58,6 +60,7 @@ struct Composer: View {
         .sensoryFeedback(.impact(flexibility: .soft), trigger: opened)
         .frame(maxWidth: 680)
         .task { await camera.prepare() }
+        .onAppear { if focusOnAppear { focused = true } }
     }
 
     /// The plus, which is also the viewfinder: it grows from a glass circle at

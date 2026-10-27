@@ -4,8 +4,9 @@ import UIKit
 /// What Ankur can do with a session from any timeline view: mark it
 /// Completed or take the mark back (the only write the app makes, shown at
 /// once and put back with Yaad's reason if it is not saved, with an undo
-/// after each mark), message the agent that keeps it (Dadi when none does),
-/// and open directions to where it happens.
+/// after each mark), message the agent that keeps it, or tell Dadi about it
+/// when no agent does or the one that recorded it has since retired (as the
+/// one-shot workers do), and open directions to where it happens.
 @MainActor
 @Observable
 final class SessionActions {
@@ -29,7 +30,8 @@ final class SessionActions {
 
     private let yaad: YaadClient
     private let message: (String) -> Void
-    private let tellDadi: () -> Void
+    private let tellDadi: (TimelineItem) -> Void
+    private let reachable: (String) -> Bool
 
     /// Completed or not as Ankur last marked each session, shown over what
     /// Yaad returns until his save lands.
@@ -41,10 +43,21 @@ final class SessionActions {
     /// The session whose sheet is up.
     var opened: TimelineItem?
 
-    init(yaad: YaadClient, message: @escaping (String) -> Void, tellDadi: @escaping () -> Void) {
+    /// - Parameters:
+    ///   - message: opens the thread of the agent with this id.
+    ///   - tellDadi: opens Talk to Dadi about this session.
+    ///   - reachable: whether an agent can still be messaged.
+    init(yaad: YaadClient, message: @escaping (String) -> Void, tellDadi: @escaping (TimelineItem) -> Void, reachable: @escaping (String) -> Bool) {
         self.yaad = yaad
         self.message = message
         self.tellDadi = tellDadi
+        self.reachable = reachable
+    }
+
+    /// The agent to message about `item`: the one that keeps it, while it can
+    /// still be messaged; nil means Dadi.
+    func owner(of item: TimelineItem) -> String? {
+        item.ownerAgent.flatMap { reachable($0) ? $0 : nil }
     }
 
     /// `items` with Ankur's unsaved marks over them.
@@ -76,10 +89,11 @@ final class SessionActions {
         set(!undo.completed, on: undo.item, offeringUndo: false)
     }
 
-    /// Opens the thread of the agent that keeps `item`, or Dadi when none does.
+    /// Opens the thread of the agent that keeps `item`, or Talk to Dadi
+    /// about it when no agent that can be messaged does.
     func messageOwner(_ item: TimelineItem) {
         opened = nil
-        if let agent = item.ownerAgent { message(agent) } else { tellDadi() }
+        if let agent = owner(of: item) { message(agent) } else { tellDadi(item) }
     }
 
     func clearFailure() {
@@ -170,7 +184,7 @@ struct SessionMenu: View {
             }
         }
         Button { actions.messageOwner(item) } label: {
-            Label(item.ownerAgent.map { "Message \($0)" } ?? "Tell Dadi", systemImage: "bubble.left")
+            Label(actions.owner(of: item).map { "Message \($0)" } ?? "Tell Dadi", systemImage: "bubble.left")
         }
         if let url = Directions.url(to: item.place) {
             Button { openURL(url) } label: { Label("Directions", systemImage: "map") }
@@ -367,7 +381,7 @@ struct SessionSheet: View {
                 .accessibilityHint(item.completed ? "Takes the mark back" : "")
             }
             Button { actions.messageOwner(item) } label: {
-                Text(item.ownerAgent.map { "Message \($0)" } ?? "Tell Dadi")
+                Text(actions.owner(of: item).map { "Message \($0)" } ?? "Tell Dadi")
                     .font(.body.weight(.semibold))
                     .frame(maxWidth: .infinity)
             }

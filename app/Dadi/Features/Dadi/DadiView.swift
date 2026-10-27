@@ -32,6 +32,10 @@ struct DadiView: View {
     let details: (String) -> Void
     /// Opens the drawer, where the working agents are.
     let openDrawer: () -> Void
+    /// Words the composer starts with, as when Dadi is told about a session.
+    var opening = ""
+    /// Puts the cursor in the composer as the page opens.
+    var focusComposer = false
 
     /// Where a hand-off is.
     private enum Stage: Equatable {
@@ -116,13 +120,16 @@ struct DadiView: View {
                     .opacity(arrived ? 1 : 0)
                     .transition(.opacity.combined(with: .offset(y: 12)))
             }
-            Composer(text: $draft, photos: $photos, placeholder: "Message Dadi…", busy: stage != .idle, lanes: stage == .idle ? [] : [.conversation], send: handOff)
+            Composer(text: $draft, photos: $photos, placeholder: "Message Dadi…", busy: stage != .idle, lanes: stage == .idle ? [] : [.conversation], focusOnAppear: focusComposer, send: handOff)
                 .padding(.horizontal, 16)
                 .composerInset()
                 .opacity(arrived ? 1 : 0)
                 .offset(y: arrived ? 0 : 16)
         }
-        .onAppear { withAnimation(Motion.settle.delay(0.3)) { arrived = true } }
+        .onAppear {
+            if draft.isEmpty { draft = opening }
+            withAnimation(Motion.settle.delay(0.3)) { arrived = true }
+        }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
             withAnimation(Motion.snap) { typing = true }
         }

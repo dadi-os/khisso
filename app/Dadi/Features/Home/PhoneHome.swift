@@ -32,6 +32,10 @@ struct PhoneHome: View {
     @State private var swiping = false
     /// The agent whose sheet is up.
     @State private var agentSheet: String?
+    /// Talk to Dadi over the page, from the bar's new message button or a
+    /// session told to Dadi; it starts with these words.
+    @State private var composing: Compose?
+    @Namespace private var sheetWordmark
     /// The Timeline's view, set from its name bubble or its drawer.
     @State private var timelineMode = TimelineMode.day
     /// Ghar's devices and rooms, which its page and its drawer share.
@@ -143,6 +147,33 @@ struct PhoneHome: View {
                     .presentationBackground(.boneRaised)
             }
         }
+        .sheet(item: $composing) { compose in
+            DadiView(
+                hath: services.hath,
+                threads: store.threads,
+                lanes: store.lanes(of:),
+                name: store.name(of:),
+                wordmark: sheetWordmark,
+                open: { agentId in
+                    composing = nil
+                    show(.thread(agentId))
+                },
+                details: { agentId in
+                    composing = nil
+                    agentSheet = agentId
+                },
+                openDrawer: {
+                    composing = nil
+                    set(open: true)
+                },
+                opening: compose.draft,
+                focusComposer: true
+            )
+            .padding(.top, 24)
+            .background { FieldBloom() }
+            .presentationDetents([.large])
+            .presentationCornerRadius(34)
+        }
         .sensoryFeedback(.selection, trigger: opened)
         .sensoryFeedback(.selection, trigger: page.tab)
         .onAppear { withAnimation(Motion.settle.delay(0.35)) { arrived = true } }
@@ -163,8 +194,10 @@ struct PhoneHome: View {
                 chrome(
                     TimelinePage(yaad: services.yaad, mode: $timelineMode) { agentId in
                         show(.thread(agentId))
-                    } tellDadi: {
-                        show(.dadi)
+                    } tellDadi: { item in
+                        composing = Compose(draft: "About \u{201C}\(item.title)\u{201D} (\(sessionWhen(item))): ")
+                    } reachable: { agentId in
+                        store.isActive(agentId)
                     },
                     tab: .timeline
                 )
@@ -259,7 +292,7 @@ struct PhoneHome: View {
                 .buttonBorderShape(.circle)
                 .accessibilityLabel("New login or note")
             } else {
-                Button { show(.dadi) } label: {
+                Button { composing = Compose(draft: "") } label: {
                     Image(systemName: "square.and.pencil")
                         .font(.body.weight(.semibold))
                         .frame(width: 22, height: 22)
@@ -344,6 +377,12 @@ struct PhoneHome: View {
                 }
             }
     }
+}
+
+/// Talk to Dadi opened over the page, with the words it starts with.
+private struct Compose: Identifiable {
+    let id = UUID()
+    let draft: String
 }
 
 /// The Dadi tab's icon: દ, the wordmark's first letter, drawn as a template

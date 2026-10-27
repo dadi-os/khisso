@@ -35,11 +35,12 @@ struct TimelinePage: View {
     /// - Parameters:
     ///   - mode: the view shown, which the name bubble and the drawer also set.
     ///   - message: opens the thread of the agent with this id.
-    ///   - tellDadi: opens Talk to Dadi.
-    init(yaad: YaadClient, mode: Binding<TimelineMode>, message: @escaping (String) -> Void, tellDadi: @escaping () -> Void) {
+    ///   - tellDadi: opens Talk to Dadi about a session.
+    ///   - reachable: whether an agent can still be messaged.
+    init(yaad: YaadClient, mode: Binding<TimelineMode>, message: @escaping (String) -> Void, tellDadi: @escaping (TimelineItem) -> Void, reachable: @escaping (String) -> Bool) {
         self.yaad = yaad
         _mode = mode
-        _actions = State(initialValue: SessionActions(yaad: yaad, message: message, tellDadi: tellDadi))
+        _actions = State(initialValue: SessionActions(yaad: yaad, message: message, tellDadi: tellDadi, reachable: reachable))
     }
 
     var body: some View {
