@@ -33,9 +33,11 @@ struct ChaaviPage: View {
                 if store.kind != .all && query.isEmpty {
                     kindHeader
                 }
+                if !store.loaded && store.error == nil {
+                    SkeletonRows(count: 7)
+                }
                 if store.loaded && shown.isEmpty && store.error == nil {
-                    ContentUnavailableView(emptyTitle, systemImage: "key", description: Text(emptyDetail))
-                        .foregroundStyle(.inkMuted)
+                    EmptyState(title: emptyTitle, detail: emptyDetail)
                         .padding(.top, 40)
                 }
                 if query.isEmpty && store.kind == .all {

@@ -27,6 +27,9 @@ final class Connection {
     private(set) var services: Services?
     /// This device's name on dadi.
     private(set) var nodeName: String?
+    /// When an online connection stopped hearing from dadi; nil while online or
+    /// before it has ever been online. Home stays on screen, dimmed, while set.
+    private(set) var offlineSince: Date?
 
     private var node: InAppNode?
     private var checking = false
@@ -181,6 +184,7 @@ final class Connection {
                 _ = try await hath.health(timeout: online ? Self.onlineTimeout : Self.connectingTimeout)
                 misses = 0
                 unansweredSince = nil
+                offlineSince = nil
                 state = .online
             } catch is CancellationError {
                 return
@@ -191,6 +195,7 @@ final class Connection {
                 log.error("hath health: \(error.localizedDescription, privacy: .public)")
                 if online {
                     if misses >= Self.allowedMisses {
+                        offlineSince = .now
                         state = .connecting(detail: "dadi isn't answering: \(error.localizedDescription)")
                     }
                 } else if ContinuousClock.now - since >= Self.quietBeforeSaying {

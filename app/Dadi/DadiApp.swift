@@ -26,8 +26,18 @@ struct DadiApp: App {
                     JoinView(connection: connection, wordmark: wordmark)
                         .transition(.opacity)
                 case .connecting, .failed:
-                    ConnectingView(connection: connection, wordmark: wordmark)
-                        .transition(.opacity)
+                    if let services = connection.services, let since = connection.offlineSince {
+                        HomeView(services: services, wordmark: wordmark)
+                            .saturation(0.5)
+                            .overlay(alignment: .top) {
+                                OfflinePill(since: since)
+                                    .padding(.top, 4)
+                                    .transition(.move(edge: .top).combined(with: .opacity))
+                            }
+                    } else {
+                        ConnectingView(connection: connection, wordmark: wordmark)
+                            .transition(.opacity)
+                    }
                 case .online:
                     if let services = connection.services {
                         HomeView(services: services, wordmark: wordmark)

@@ -88,9 +88,11 @@ struct GharPage: View {
                     ForEach(sections) { roomSection($0) }
                 }
 
+                if !store.loaded && store.error == nil {
+                    SkeletonRows(count: 4, height: 132)
+                }
                 if store.loaded && sections.isEmpty && store.error == nil {
-                    ContentUnavailableView("No devices yet", systemImage: "house", description: Text("Add devices from the Ghar page on your Mac or the box."))
-                        .foregroundStyle(.inkMuted)
+                    EmptyState(title: "No devices yet", detail: "Add devices from the Ghar page on your Mac or the box.")
                         .padding(.top, 40)
                 }
             }
@@ -224,7 +226,7 @@ struct GharPage: View {
                 if section.placed {
                     Button { filling = section.room } label: { addTile }
                         .buttonStyle(.plain)
-                        .accessibilityLabel("Add lights to \(section.room.name)")
+                        .accessibilityLabel("Add a device to \(section.room.name)")
                 }
             }
             .animation(Motion.settle, value: section.devices.map(\.id))
@@ -285,7 +287,7 @@ struct GharPage: View {
     private var addTile: some View {
         VStack(spacing: 6) {
             Image(systemName: "plus").font(.system(size: 18, weight: .semibold))
-            Text("Add lights").font(.system(size: 14, weight: .semibold))
+            Text("Add a device here").font(.system(size: 14, weight: .semibold))
         }
         .foregroundStyle(.sageDeep)
         .frame(maxWidth: .infinity, minHeight: 124)

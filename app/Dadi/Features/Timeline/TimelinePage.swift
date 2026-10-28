@@ -148,9 +148,11 @@ private struct SomedayList: View {
                 if let error {
                     Label(error, systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(.danger)
                 }
+                if !loaded && error == nil {
+                    SkeletonRows(count: 6)
+                }
                 if loaded && items.isEmpty && error == nil {
-                    ContentUnavailableView("Nothing waiting", systemImage: "tray", description: Text("Ideas and tasks without a time show up here."))
-                        .foregroundStyle(.inkMuted)
+                    EmptyState(title: "Nothing waiting", detail: "Ideas and tasks without a time show up here.")
                         .padding(.top, 40)
                 }
                 SomedaySection(items: items, actions: actions, titled: false)
