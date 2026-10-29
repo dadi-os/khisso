@@ -105,8 +105,8 @@ final class WatchRelay: NSObject {
                     lastMessage: String(thread.lastMessage.prefix(WatchLink.messageLimit)),
                     lastAt: thread.lastAt,
                     fromUser: thread.fromUser,
-                    thinking: running.contains(.conversation),
-                    working: running.contains(.reasoning),
+                    processing: running.contains(.process),
+                    working: running.contains(.work),
                     unread: thread.unread
                 )
             },

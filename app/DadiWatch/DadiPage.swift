@@ -59,7 +59,7 @@ struct DadiPage: View {
             Text("Tap to talk to Dadi").foregroundStyle(.secondary)
         case .sending, .routing:
             HStack(spacing: 6) {
-                ThinkingMark()
+                ProcessingMark()
                 Text("routing").foregroundStyle(.sage)
             }
         case .sent(let name):

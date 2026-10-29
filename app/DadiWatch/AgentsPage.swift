@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The latest agent threads: a thinking agent shows thaali's flowing dots in
+/// The latest agent threads: a processing agent shows thaali's flowing dots in
 /// place of its last line, a working one says so. A thread opens on its
 /// latest message with a dictated reply.
 struct AgentsPage: View {
@@ -45,8 +45,8 @@ private struct Row: View {
                         .background(.sage, in: .capsule)
                 }
             }
-            if thread.thinking {
-                ThinkingMark().frame(height: 14)
+            if thread.processing {
+                ProcessingMark().frame(height: 14)
             } else if thread.working {
                 Text("working").font(.caption2).foregroundStyle(.sage)
             } else {

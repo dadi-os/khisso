@@ -21,7 +21,7 @@ struct WatchSnapshot: Codable, Sendable, Equatable {
         let lastMessage: String
         let lastAt: Date
         let fromUser: Bool
-        let thinking: Bool
+        let processing: Bool
         let working: Bool
         /// The agent's messages Ankur has not read.
         let unread: Int

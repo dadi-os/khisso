@@ -1,21 +1,21 @@
 import SwiftUI
 
 /// What the app calls each lane wherever a lane is named, as in thaali: the
-/// conversation lane is the agent thinking with you, the reasoning lane is it
-/// working in the background.
+/// process lane is the agent reading what arrived and answering it, the work
+/// lane is it doing the job in the background.
 extension Lane {
     var label: String {
         switch self {
-        case .conversation: "thinking"
-        case .reasoning: "working"
+        case .process: "processing"
+        case .work: "working"
         }
     }
 }
 
-/// Thaali's thinking mark: three dots flowing left to right, each swelling in
+/// Thaali's processing mark: three dots flowing left to right, each swelling in
 /// at the left, drifting right, then dipping and fading off the end to come
 /// back at the start. Reduced motion holds them still mid-flow.
-struct ThinkingMark: View {
+struct ProcessingMark: View {
     /// How much larger than thaali's 22 × 12 mark to draw it.
     var scale: CGFloat = 1
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -107,7 +107,7 @@ extension View {
 }
 
 /// Thaali's lane pill: soft glass floating above the composer while a lane is
-/// busy, the one place a thread shows what its agent is doing. Thinking plays
+/// busy, the one place a thread shows what its agent is doing. Processing plays
 /// the flowing dots inside the pill, working runs the sheen on the pill
 /// itself, and both play together when both lanes run.
 struct LaneChip: View {
@@ -122,10 +122,10 @@ struct LaneChip: View {
     var body: some View {
         ZStack {
             if let label {
-                let thinking = lanes.contains(.conversation)
+                let processing = lanes.contains(.process)
                 HStack(spacing: 10) {
-                    if thinking {
-                        ThinkingMark(scale: 1.35)
+                    if processing {
+                        ProcessingMark(scale: 1.35)
                             .transition(.opacity.combined(with: .scale(scale: 0.2, anchor: .leading)))
                     }
                     Text(label)
@@ -138,11 +138,11 @@ struct LaneChip: View {
                             removal: .opacity.combined(with: .offset(y: -3))
                         ))
                 }
-                .padding(.leading, thinking ? 13 : 17)
+                .padding(.leading, processing ? 13 : 17)
                 .padding(.trailing, 17)
                 .frame(height: Self.height)
                 .overlay(Capsule().strokeBorder(Color.sageLine.opacity(0.48), lineWidth: 1))
-                .laneSheen(lanes.contains(.reasoning), in: Capsule())
+                .laneSheen(lanes.contains(.work), in: Capsule())
                 .glassEffect(.regular.tint(Color.bone.opacity(0.6)), in: .capsule)
                 .glassEffectID("lane", in: glass)
                 .shadow(color: .black.opacity(0.08), radius: 10, y: 3)
@@ -155,9 +155,9 @@ struct LaneChip: View {
         .allowsHitTesting(false)
     }
 
-    /// "thinking", "working", or "thinking + working".
+    /// "processing", "working", or "processing + working".
     private var label: String? {
-        let named = [Lane.conversation, .reasoning].filter(lanes.contains).map(\.label)
+        let named = [Lane.process, .work].filter(lanes.contains).map(\.label)
         return named.isEmpty ? nil : named.joined(separator: " + ")
     }
 }

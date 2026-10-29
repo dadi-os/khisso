@@ -59,13 +59,13 @@ struct HathEventTests {
         let got = try await events([
             ": connected",
             "",
-            #"data: {"type":"lane_started","agent_id":"finance-specialist","lane":"reasoning","at":"2026-10-21T16:00:00.000Z"}"#,
+            #"data: {"type":"lane_started","agent_id":"finance-specialist","lane":"work","at":"2026-10-21T16:00:00.000Z"}"#,
             #"data: {"type":"message","agent_id":"finance-specialist","from_agent_id":"finance-specialist","to_agent_id":null,"content":"$412 left","attachments":[],"seq":42,"at":"2026-10-21T16:00:01.250Z"}"#,
             #"data: {"type":"agent_spawned","agent_id":"x","parent_agent_id":null,"name":"x","at":"2026-10-21T16:00:02.000Z"}"#,
             ": ping",
         ])
         #expect(got.count == 3)
-        #expect(got[0] == .laneStarted(agentId: "finance-specialist", lane: .reasoning))
+        #expect(got[0] == .laneStarted(agentId: "finance-specialist", lane: .work))
         guard case .message(let agentId, let message) = got[1] else {
             Issue.record("second event is \(got[1])")
             return
@@ -235,15 +235,15 @@ struct NasStatusTests {
     }
 }
 
-/// Thaali's thinking mark: each dot swells in at the left and fades off the right.
+/// Thaali's processing mark: each dot swells in at the left and fades off the right.
 struct ThinkingMarkTests {
     @Test func dotsFlowLeftToRightAndFadeAtTheEnds() {
-        let start = ThinkingMark.pose(0, ms: 0)
-        let middle = ThinkingMark.pose(0, ms: 750)
+        let start = ProcessingMark.pose(0, ms: 0)
+        let middle = ProcessingMark.pose(0, ms: 750)
         #expect(start.opacity < 0.01)
         #expect(abs(middle.opacity - 1) < 0.01)
         #expect(middle.center.x > start.center.x)
-        #expect(ThinkingMark.pose(0, ms: 1400).center.y > middle.center.y)
+        #expect(ProcessingMark.pose(0, ms: 1400).center.y > middle.center.y)
     }
 }
 
@@ -510,13 +510,13 @@ struct ActivityTests {
 
     private let rows = #"""
     [
-      {"id":"1","agent_id":"a","lane":"conversation","event":"message","wake_id":"w1","created_at":"2026-10-23T10:00:00.000Z",
+      {"id":"1","agent_id":"a","lane":"process","event":"message","wake_id":"w1","created_at":"2026-10-23T10:00:00.000Z",
        "payload":{"direction":"receive","from_agent_id":null,"content":"hi"}},
-      {"id":"2","agent_id":"a","lane":"conversation","event":"response","wake_id":"w1","created_at":"2026-10-23T10:00:01.000Z",
+      {"id":"2","agent_id":"a","lane":"process","event":"response","wake_id":"w1","created_at":"2026-10-23T10:00:01.000Z",
        "payload":{"stop_reason":"tool_use","content":[{"type":"thinking","thinking":"**Plan**\nlook it up"},{"type":"tool_use","id":"t1","name":"search","input":{"to_agent_id":"b"}}]}},
-      {"id":"3","agent_id":"a","lane":"conversation","event":"tool_result","wake_id":"w1","created_at":"2026-10-23T10:00:02.000Z",
+      {"id":"3","agent_id":"a","lane":"process","event":"tool_result","wake_id":"w1","created_at":"2026-10-23T10:00:02.000Z",
        "payload":{"tool_use_id":"t1","content":"boom","is_error":true}},
-      {"id":"4","agent_id":"a","lane":"reasoning","event":"response","wake_id":"w2","created_at":"2026-10-23T11:00:00.000Z",
+      {"id":"4","agent_id":"a","lane":"work","event":"response","wake_id":"w2","created_at":"2026-10-23T11:00:00.000Z",
        "payload":{"stop_reason":"end_turn","content":[{"type":"text","text":"done"}]}}
     ]
     """#

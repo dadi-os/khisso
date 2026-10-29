@@ -112,11 +112,11 @@ struct MessageRequest: Encodable, Sendable {
     var attachments: [OutboundAttachment]?
 }
 
-/// An agent's two lanes: conversation is it thinking toward a reply to
-/// Ankur, reasoning is it working in the background.
+/// An agent's two lanes: process is it reading what arrived and answering
+/// it, work is it doing the job in the background.
 enum Lane: String, Decodable, Sendable, Hashable {
-    case conversation
-    case reasoning
+    case process
+    case work
 }
 
 /// One event from Hath's GET /events stream. Event types this app does not act
@@ -185,10 +185,10 @@ enum HathEvent: Decodable, Sendable, Equatable {
 /// One agent from GET /agents: the flat roster, each naming the agent that
 /// made it.
 struct AgentRecord: Decodable, Sendable, Hashable, Identifiable {
-    /// What an agent is doing: thinking through work, or in a conversation.
+    /// Which of an agent's lanes are running: work, process, or both.
     struct Running: Decodable, Sendable, Hashable {
-        let reasoning: Bool
-        let conversation: Bool
+        let work: Bool
+        let process: Bool
     }
 
     /// The browsers and terminals an agent holds open.
@@ -214,10 +214,10 @@ struct AgentRecord: Decodable, Sendable, Hashable, Identifiable {
     let createdAt: Date
     let updatedAt: Date
 
-    var isRunning: Bool { running.reasoning || running.conversation }
+    var isRunning: Bool { running.work || running.process }
 
     /// The lanes running now.
     var lanes: Set<Lane> {
-        Set([running.conversation ? Lane.conversation : nil, running.reasoning ? Lane.reasoning : nil].compactMap { $0 })
+        Set([running.process ? Lane.process : nil, running.work ? Lane.work : nil].compactMap { $0 })
     }
 }

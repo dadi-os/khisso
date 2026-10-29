@@ -102,12 +102,12 @@ struct AgentSheet: View {
         .task(id: lanes) { await followActivity() }
     }
 
-    /// The agent's state in a pill: thinking plays the flowing dots, working
+    /// The agent's state in a pill: processing plays the flowing dots, working
     /// runs the sheen, and an idle or retired agent sits quiet.
     private var header: some View {
         HStack(spacing: 8) {
-            if lanes.contains(.conversation) {
-                ThinkingMark()
+            if lanes.contains(.process) {
+                ProcessingMark()
             } else {
                 Circle()
                     .fill(!lanes.isEmpty ? Color.sageDeep : isActive ? .sage : .inkFaint)
@@ -120,7 +120,7 @@ struct AgentSheet: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 7)
         .background(lanes.isEmpty ? Color.ink.opacity(0.05) : .sage.opacity(0.14), in: .capsule)
-        .laneSheen(lanes.contains(.reasoning), in: Capsule())
+        .laneSheen(lanes.contains(.work), in: Capsule())
         .animation(Motion.settle, value: lanes)
     }
 
@@ -129,7 +129,7 @@ struct AgentSheet: View {
     private var status: String {
         if !isActive { return "Retired" }
         if lanes.isEmpty { return "Idle" }
-        return [Lane.conversation, .reasoning].filter(lanes.contains).map(\.label).joined(separator: " + ").capitalized
+        return [Lane.process, .work].filter(lanes.contains).map(\.label).joined(separator: " + ").capitalized
     }
 
     private var facts: some View {

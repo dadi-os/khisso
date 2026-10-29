@@ -74,7 +74,7 @@ struct AgentsDrawer: View {
                         .foregroundStyle(.ink)
                     if store.routing {
                         HStack(spacing: 6) {
-                            ThinkingMark()
+                            ProcessingMark()
                             Text("routing").font(.footnote).foregroundStyle(.sageText)
                         }
                         .transition(.opacity)
@@ -147,7 +147,7 @@ struct AgentsDrawer: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .background(selected ? Color.sage.opacity(0.14) : .clear, in: .rect(cornerRadius: 16))
-                .laneSheen(lanes.contains(.reasoning), in: .rect(cornerRadius: 16))
+                .laneSheen(lanes.contains(.work), in: .rect(cornerRadius: 16))
                 .contentShape(.rect(cornerRadius: 16))
         }
         .buttonStyle(.plain)

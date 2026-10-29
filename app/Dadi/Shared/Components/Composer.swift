@@ -52,8 +52,8 @@ struct Composer: View {
     private let merge: CGFloat = 6
 
     private var rim: Color {
-        if lanes.contains(.conversation) { return .sageLine.opacity(0.28) }
-        if lanes.contains(.reasoning) { return .sage.opacity(0.36) }
+        if lanes.contains(.process) { return .sageLine.opacity(0.28) }
+        if lanes.contains(.work) { return .sage.opacity(0.36) }
         return .sageLine.opacity(0.42)
     }
 

@@ -91,8 +91,8 @@ struct ThreadRow: View {
                         .font(.caption2)
                         .foregroundStyle(unread > 0 ? Color.sageText : .inkFaint)
                 }
-                if lanes.contains(.conversation) {
-                    ThinkingMark()
+                if lanes.contains(.process) {
+                    ProcessingMark()
                         .frame(height: 18)
                         .transition(.opacity)
                 } else {

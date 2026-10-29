@@ -137,9 +137,9 @@ enum Activity {
 
     /// Tools that handed work to the other lane in rows without a wake id.
     private static let handoff: [String: Lane] = [
-        "steer_reasoning": .reasoning,
-        "send_message": .conversation,
-        "hand_off": .conversation,
+        "steer_work": .work,
+        "send_message": .process,
+        "hand_off": .process,
     ]
 
     /// `logs` (any order) as wakes, newest first, each with its steps oldest
@@ -302,7 +302,7 @@ enum Activity {
     /// the same wake.
     private static func guessWakes(_ chronological: [LogRecord], _ results: [String: ToolOutcome]) -> [ActivityWake] {
         var wakes: [ActivityWake] = []
-        var busy: [Lane: Bool] = [.conversation: false, .reasoning: false]
+        var busy: [Lane: Bool] = [.process: false, .work: false]
         var pending = busy
         var lastAt: Date?
 
@@ -311,7 +311,7 @@ enum Activity {
             let idle = busy.values.allSatisfy { !$0 }
             if wakes.isEmpty || log.createdAt.timeIntervalSince(lastAt ?? log.createdAt) > wakeGap || (opens && idle) {
                 wakes.append(ActivityWake(key: log.id, startedAt: log.createdAt, at: log.createdAt))
-                busy = [.conversation: false, .reasoning: false]
+                busy = [.process: false, .work: false]
                 pending = busy
             }
             lastAt = log.createdAt
@@ -319,9 +319,9 @@ enum Activity {
 
             if log.event == .message {
                 let step = addMessage(&wakes[last], log)
-                if log.payload["direction"]?.string == "receive" { busy[.conversation] = true }
+                if log.payload["direction"]?.string == "receive" { busy[.process] = true }
                 if step?.wakeStopped == true {
-                    busy = [.conversation: false, .reasoning: false]
+                    busy = [.process: false, .work: false]
                     pending = busy
                 }
                 continue

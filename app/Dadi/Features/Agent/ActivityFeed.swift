@@ -13,14 +13,14 @@ struct ActivityFeed: View {
 
     private enum Filter: String, CaseIterable {
         case all
-        case conversation = "thinking"
-        case reasoning = "working"
+        case process = "processing"
+        case work = "working"
 
         var lane: Lane? {
             switch self {
             case .all: nil
-            case .conversation: .conversation
-            case .reasoning: .reasoning
+            case .process: .process
+            case .work: .work
             }
         }
     }
@@ -77,15 +77,15 @@ struct ActivityFeed: View {
     }
 }
 
-/// A lane's mark: a filled dot for thinking, a ring for working.
+/// A lane's mark: a filled dot for processing, a ring for working.
 private struct LaneDot: View {
     let lane: Lane
     var size: CGFloat = 8
 
     var body: some View {
         Circle()
-            .fill(lane == .conversation ? Color.sage : .bone)
-            .overlay(Circle().strokeBorder(Color.sageDeep.opacity(lane == .conversation ? 0 : 0.7), lineWidth: 1.2))
+            .fill(lane == .process ? Color.sage : .bone)
+            .overlay(Circle().strokeBorder(Color.sageDeep.opacity(lane == .process ? 0 : 0.7), lineWidth: 1.2))
             .frame(width: size, height: size)
     }
 }

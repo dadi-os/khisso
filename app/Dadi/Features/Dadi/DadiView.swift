@@ -120,7 +120,7 @@ struct DadiView: View {
                     .opacity(arrived ? 1 : 0)
                     .transition(.opacity.combined(with: .offset(y: 12)))
             }
-            Composer(text: $draft, photos: $photos, placeholder: "Message Dadi…", busy: stage != .idle, lanes: stage == .idle ? [] : [.conversation], focusOnAppear: focusComposer, send: handOff)
+            Composer(text: $draft, photos: $photos, placeholder: "Message Dadi…", busy: stage != .idle, lanes: stage == .idle ? [] : [.process], focusOnAppear: focusComposer, send: handOff)
                 .padding(.horizontal, 16)
                 .composerInset()
                 .opacity(arrived ? 1 : 0)
@@ -158,7 +158,7 @@ struct DadiView: View {
     private var workingChip: some View {
         Button(action: openDrawer) {
             HStack(spacing: 8) {
-                ThinkingMark()
+                ProcessingMark()
                 Text(working.count == 1 ? "\(working[0].agentName) is working" : "\(working.count) agents working")
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(.sageText)
@@ -192,7 +192,7 @@ struct DadiView: View {
                             ThreadRow(thread: thread, lanes: lanes(thread.agentId), unread: thread.unread)
                                 .padding(.horizontal, 16)
                                 .padding(.vertical, 11)
-                                .laneSheen(lanes(thread.agentId).contains(.reasoning), in: .rect(cornerRadius: 20, style: .continuous))
+                                .laneSheen(lanes(thread.agentId).contains(.work), in: .rect(cornerRadius: 20, style: .continuous))
                                 .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 20, style: .continuous))
                         }
                         .buttonStyle(.plain)
