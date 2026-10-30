@@ -578,3 +578,47 @@ struct ChaaviNewItemTests {
         #expect((login["uris"] as? [[String: String]])?.first?["uri"] == "github.com")
     }
 }
+
+/// The status block Hath sends on an agent: decoded as it comes (times without fractions stay
+/// text) and put into the lines the agent sheet shows.
+struct AgentStatusTests {
+    private let body = #"""
+    {"id":"a","name":"Planner","system_prompt":"","parent_agent_id":null,"active":true,
+     "running":{"work":true,"process":false,
+       "waiting_on":{"targets":["task/browser/3"],"since":"2026-10-29T10:20:00.000Z","wakes_by":"2026-10-29T10:50:00.000Z"},
+       "status":{"job":{"from":null,"at":"2026-10-29T09:05:00Z","content":"book the flight"},
+         "work":{"state":"waiting","since":"2026-10-29T10:20:00Z","waiting_on":["task/browser/3"]},
+         "step":"web_fetch https://x.test",
+         "recent":[{"name":"read_file","arg":"/a.txt","ok":true},{"name":"web_fetch","arg":"","ok":false},{"name":"wait","arg":"","ok":null}],
+         "tasks":[{"id":"task/browser/3","status":"working","current":"on x.test"}],
+         "tasks_unreadable":null,
+         "pending":[{"id":7,"to":"planner","expects_reply":true,"preview":"which date?"}]}},
+     "sessions":{"tasks":[{"id":"task/browser/3"}]},
+     "created_at":"2026-10-01T00:00:00.000Z","updated_at":"2026-10-29T10:00:00.000Z"}
+    """#
+
+    @Test func decodesTheStatusAndWhatWorkWaitsOn() throws {
+        let agent = try ServiceJSON.decoder.decode(AgentRecord.self, from: Data(body.utf8))
+        #expect(agent.running.waitingOn?.targets == ["task/browser/3"])
+        #expect(agent.running.status?.work.state == .waiting)
+        #expect(agent.running.status?.pending.first?.expectsReply == true)
+    }
+
+    @Test func putsTheStatusIntoLines() throws {
+        let agent = try ServiceJSON.decoder.decode(AgentRecord.self, from: Data(body.utf8))
+        let status = try #require(agent.running.status)
+        let view = AgentStatusView.make(status, nameOf: { $0 == "planner" ? "Planner" : $0 }, timeZone: TimeZone(identifier: "UTC")!)
+        #expect(view.job == "Ankur asked at 09:05: book the flight")
+        #expect(view.work == "Waiting on task/browser/3 since 10:20")
+        #expect(view.recent.map(\.text) == ["read_file /a.txt", "web_fetch", "wait"])
+        #expect(view.recent.map(\.mark) == [.ok, .error, .running])
+        #expect(view.tasks == ["task/browser/3 · working · on x.test"])
+        #expect(view.pending == ["To Planner (expects a reply): which date?"])
+    }
+
+    @Test func statesPlainlyThatTasksCouldNotBeRead() throws {
+        let agent = try ServiceJSON.decoder.decode(AgentRecord.self, from: Data(body.replacingOccurrences(of: #""tasks_unreadable":null"#, with: #""tasks_unreadable":"nas is down""#).utf8))
+        let view = AgentStatusView.make(try #require(agent.running.status), nameOf: { $0 }, timeZone: TimeZone(identifier: "UTC")!)
+        #expect(view.tasksUnreadable == "Helper tasks could not be read: nas is down")
+    }
+}
