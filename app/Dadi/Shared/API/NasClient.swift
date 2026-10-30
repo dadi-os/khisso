@@ -30,14 +30,17 @@ struct NasClient: Sendable {
         return response.entries
     }
 
-    /// GET /browsers: the headed browsers running now.
-    func browsers() async throws -> [NasBrowser] {
-        try await client.get("/browsers")
+    /// GET /tasks: every browser and terminal helper task.
+    func tasks() async throws -> [NasTask] {
+        try await client.get("/tasks")
     }
 
-    /// GET /terminals: the host terminal panes running now.
-    func terminals() async throws -> [NasTerminal] {
-        try await client.get("/terminals")
+    /// GET /terminals/:id/capture: the last `lines` lines of the terminal's pane as plain text.
+    func terminalCapture(_ id: String, lines: Int) async throws -> String {
+        struct Response: Decodable { let output: String }
+        let path = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
+        let response: Response = try await client.get("/terminals/\(path)/capture", query: [URLQueryItem(name: "lines", value: String(lines))])
+        return response.output
     }
 
     /// How a view wants a browser's stream: Nas's watch-only defaults, cheap

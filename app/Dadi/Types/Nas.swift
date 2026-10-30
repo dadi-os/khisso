@@ -61,15 +61,21 @@ struct NasLogEntry: Decodable, Sendable, Hashable {
     let raw: String
 }
 
-/// A live headed browser on the box, from GET /browsers.
-struct NasBrowser: Decodable, Sendable, Hashable, Identifiable {
-    let id: Int
-    let healthy: Bool
-}
+/// A browser or terminal helper task, from GET /tasks.
+struct NasTask: Decodable, Sendable, Hashable, Identifiable {
+    /// The task's address, such as `task/browser/3`.
+    let task: String
+    let kind: String
+    /// The agent that owns it.
+    let owner: String
+    let purpose: String
+    /// working, idle, asking or asleep.
+    let status: String
+    /// The browser slot or terminal id it holds; nil while it sleeps.
+    let resource: String?
+    /// The helper's state summary: its current step, or what it was doing when it slept.
+    let state: String
+    let lastActivity: Date
 
-/// A live host terminal pane on the box, from GET /terminals.
-struct NasTerminal: Decodable, Sendable, Hashable, Identifiable {
-    let id: String
-    let cwd: String
-    let busy: Bool
+    var id: String { task }
 }

@@ -187,19 +187,85 @@ enum HathEvent: Decodable, Sendable, Equatable {
 struct AgentRecord: Decodable, Sendable, Hashable, Identifiable {
     /// Which of an agent's lanes are running: work, process, or both.
     struct Running: Decodable, Sendable, Hashable {
-        let work: Bool
-        let process: Bool
-    }
-
-    /// The browsers and terminals an agent holds open.
-    struct Sessions: Decodable, Sendable, Hashable {
-        struct Terminal: Decodable, Sendable, Hashable {
-            let id: String
-            let lastCommand: String?
+        /// What the work lane waits on and since when.
+        struct Waiting: Decodable, Sendable, Hashable {
+            let targets: [String]
+            let since: Date
+            let wakesBy: Date
         }
 
-        let browsers: [Int]
-        let terminals: [Terminal]
+        /// Where the agent's work stands, rendered by Hath with no model call. Its times are
+        /// ISO strings without fractions, which the shared date decoder does not read, so they
+        /// stay text and `AgentStatusView` formats them.
+        struct Status: Decodable, Sendable, Hashable {
+            struct Job: Decodable, Sendable, Hashable {
+                /// The agent that gave the job; nil for Ankur.
+                let from: String?
+                let at: String
+                let content: String
+            }
+
+            struct Work: Decodable, Sendable, Hashable {
+                enum State: String, Decodable, Sendable, Hashable {
+                    case running, waiting, idle
+                }
+
+                let state: State
+                /// When it began waiting, or its last step while running; nil while idle.
+                let since: String?
+                let waitingOn: [String]
+            }
+
+            /// One of the work lane's last tool calls; `ok` is nil while it has no result.
+            struct Call: Decodable, Sendable, Hashable {
+                let name: String
+                let arg: String
+                let ok: Bool?
+            }
+
+            /// A helper task in flight.
+            struct InFlight: Decodable, Sendable, Hashable {
+                let id: String
+                let status: String
+                let current: String
+            }
+
+            /// A message work queued that the process lane has not sent.
+            struct Pending: Decodable, Sendable, Hashable {
+                let id: Int
+                /// The recipient; nil for Ankur.
+                let to: String?
+                let expectsReply: Bool
+                let preview: String
+            }
+
+            let job: Job?
+            let work: Work
+            /// The work lane's last tool call with a short argument; nil before it has acted.
+            let step: String?
+            /// The last five tool calls, oldest first.
+            let recent: [Call]
+            let tasks: [InFlight]
+            /// Why Nas could not be read for the tasks; nil when it could.
+            let tasksUnreadable: String?
+            let pending: [Pending]
+        }
+
+        let work: Bool
+        let process: Bool
+        let waitingOn: Waiting?
+        /// Nil when no lane runs and work is not waiting.
+        let status: Status?
+    }
+
+    /// The browser and terminal tasks an agent owns or last steered, most recently active first.
+    struct Sessions: Decodable, Sendable, Hashable {
+        struct Task: Decodable, Sendable, Hashable {
+            /// The task's address, such as `task/browser/3`.
+            let id: String
+        }
+
+        let tasks: [Task]
     }
 
     let id: String

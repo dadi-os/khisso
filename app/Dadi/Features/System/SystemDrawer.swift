@@ -75,6 +75,7 @@ struct SystemDrawer: View {
         case .overview: "gauge.with.dots.needle.50percent"
         case .services: "square.stack.3d.up"
         case .drives: "internaldrive"
+        case .tasks: "rectangle.stack"
         case .devices: "iphone.gen3"
         case .errors: "exclamationmark.bubble"
         }
@@ -91,6 +92,9 @@ struct SystemDrawer: View {
             return down == 0 ? "All healthy" : "\(down) down"
         case .drives:
             return "\(Int(status.disk.usedPercent.rounded()))% used"
+        case .tasks:
+            let working = store.tasks.filter { $0.status == "working" }.count
+            return store.tasks.isEmpty ? "None" : "\(working) working"
         case .devices:
             return "\(store.devices.filter(\.online).count) online"
         case .errors:

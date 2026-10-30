@@ -6,7 +6,6 @@ import Foundation
 struct AgentTool: Decodable, Sendable, Hashable {
     let name: String
     let description: String
-    let usage: String
 }
 
 /// GET /agents/:id: the agent and the tools it is granted.

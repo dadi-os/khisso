@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// What opens from an agent's name above its thread, as thaali's agent
-/// popover does: its status, its live browser, when it was made and last
+/// popover does: its status block (job, work, last calls, tasks, queued
+/// messages), its live browser, when it was made and last
 /// active, its scheduled messages, system prompt, tools, and its activity by
 /// wake. Activity follows the agent's lanes: it reloads when they change and
 /// every two seconds while one runs.
@@ -39,6 +40,12 @@ struct AgentSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     header
+                    if let waiting = detail?.agent.running.waitingOn, detail?.agent.running.status == nil {
+                        Text(AgentStatusView.waitingLabel(waiting)).font(.footnote).foregroundStyle(.inkMuted)
+                    }
+                    if let status = detail?.agent.running.status {
+                        section("STATUS") { AgentStatusBlock(view: AgentStatusView.make(status, nameOf: nameOf)) }
+                    }
                     if let liveBrowser {
                         VStack(alignment: .leading, spacing: 8) {
                             if let terminalCaption {
@@ -199,7 +206,7 @@ struct AgentSheet: View {
                 ForEach(tools, id: \.name) { tool in
                     VStack(alignment: .leading, spacing: 2) {
                         Text(tool.name).font(.footnote.weight(.semibold)).foregroundStyle(.ink)
-                        Text(InlineMarkdown.attributed(tool.usage)).font(.caption).foregroundStyle(.inkMuted)
+                        Text(InlineMarkdown.attributed(tool.description)).font(.caption).foregroundStyle(.inkMuted)
                     }
                 }
             }
@@ -228,15 +235,14 @@ struct AgentSheet: View {
         }
     }
 
-    /// Finds the agent's newest browser still alive on Nas, and its newest live terminal's command.
+    /// Finds the agent's newest task holding a live browser on Nas, and the purpose of its newest live terminal task.
     private func loadHost() async {
         guard let sessions = detail?.agent.sessions else { return }
         do {
-            let browsers = Set(try await services.nas.browsers().map(\.id))
-            let terminals = Set(try await services.nas.terminals().map(\.id))
-            liveBrowser = sessions.browsers.last(where: browsers.contains)
-            let terminal = sessions.terminals.last { terminals.contains($0.id) }
-            terminalCaption = terminal.map { $0.lastCommand?.split(whereSeparator: \.isWhitespace).joined(separator: " ").nilIfEmpty ?? $0.id }
+            let nasTasks = try await services.nas.tasks()
+            let live = sessions.tasks.compactMap { row in nasTasks.first { $0.task == row.id && $0.resource != nil } }
+            liveBrowser = live.first { $0.kind == "browser" }?.resource.flatMap(Int.init)
+            terminalCaption = live.first { $0.kind == "terminal" }?.purpose
             hostError = nil
         } catch is CancellationError {
             return
@@ -248,6 +254,7 @@ struct AgentSheet: View {
     /// Reads the activity now and while a lane runs, until the sheet closes or the lanes change.
     private func followActivity() async {
         repeat {
+            await loadDetail()
             await loadActivity()
             if lanes.isEmpty { return }
             do { try await Task.sleep(for: Self.poll) } catch { return }
@@ -266,9 +273,4 @@ struct AgentSheet: View {
             logsError = error.localizedDescription
         }
     }
-}
-
-private extension String {
-    /// The string, or nil when it is empty.
-    var nilIfEmpty: String? { isEmpty ? nil : self }
 }
