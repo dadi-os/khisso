@@ -2,22 +2,12 @@ import Foundation
 
 // What the iPhone's agent sheet reads from Hath beyond the threads and roster in Hath.swift, which the watch also compiles.
 
-/// A tool an agent is granted, from GET /agents/:id.
-struct AgentTool: Decodable, Sendable, Hashable {
-    let name: String
-    let description: String
-}
-
-/// GET /agents/:id: the agent and the tools it is granted.
+/// GET /agents/:id: the agent.
 struct AgentDetail: Decodable, Sendable {
     let agent: AgentRecord
-    let tools: [AgentTool]
-
-    private enum Keys: String, CodingKey { case tools }
 
     init(from decoder: Decoder) throws {
         agent = try AgentRecord(from: decoder)
-        tools = try decoder.container(keyedBy: Keys.self).decode([AgentTool].self, forKey: .tools)
     }
 }
 

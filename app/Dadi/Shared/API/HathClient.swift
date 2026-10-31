@@ -53,7 +53,7 @@ struct HathClient: Sendable {
         return response.agents
     }
 
-    /// GET /agents/:id: one agent with the tools it is granted.
+    /// GET /agents/:id: one agent.
     func agent(_ id: String) async throws -> AgentDetail {
         try await client.get("/agents/\(id)")
     }

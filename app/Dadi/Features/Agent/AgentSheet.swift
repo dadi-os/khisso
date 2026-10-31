@@ -3,7 +3,7 @@ import SwiftUI
 /// What opens from an agent's name above its thread, as thaali's agent
 /// popover does: its status block (job, work, last calls, tasks, queued
 /// messages), its live browser, when it was made and last
-/// active, its scheduled messages, system prompt, tools, and its activity by
+/// active, its scheduled messages, system prompt, and its activity by
 /// wake. Activity follows the agent's lanes: it reloads when they change and
 /// every two seconds while one runs.
 struct AgentSheet: View {
@@ -73,7 +73,6 @@ struct AgentSheet: View {
                     }
                     if let detail {
                         section("SYSTEM PROMPT") { prompt(detail.agent.systemPrompt) }
-                        section("TOOLS") { tools(detail.tools) }
                     }
                     section("ACTIVITY") {
                         if let logsError {
@@ -193,22 +192,6 @@ struct AgentSheet: View {
                 Button(promptOpen ? "Collapse" : "Expand") { withAnimation(Motion.settle) { promptOpen.toggle() } }
                     .font(.footnote)
                     .foregroundStyle(.sageDeep)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func tools(_ tools: [AgentTool]) -> some View {
-        if tools.isEmpty {
-            Text("No granted tools.").font(.footnote).foregroundStyle(.inkMuted)
-        } else {
-            VStack(alignment: .leading, spacing: 10) {
-                ForEach(tools, id: \.name) { tool in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(tool.name).font(.footnote.weight(.semibold)).foregroundStyle(.ink)
-                        Text(InlineMarkdown.attributed(tool.description)).font(.caption).foregroundStyle(.inkMuted)
-                    }
-                }
             }
         }
     }
