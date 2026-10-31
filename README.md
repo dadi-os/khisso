@@ -38,7 +38,7 @@ There is no environment configuration.
 
 The auth key is used only for the first login. A saved node restarts with its own key, so an expired setup code never breaks a restart.
 
-## Local run + CI/CD
+## Local run
 
 The app (iPhone and the watch it carries) joins dadi with the in-app node, so it needs no paid Apple account: a free Personal Team signs it. Setup codes carry the control URL `https://<relay hostname>`, so a device joins from any network.
 
@@ -54,6 +54,8 @@ go test ./...
 ./scripts/build-xcframework.sh          # build/Dadi.xcframework
 (cd apple && xcodebuild -scheme DadiTunnel -destination 'generic/platform=iOS' build)   # DadiTunnel against the local xcframework
 ```
+
+## CI / CD
 
 | Workflow | When | What |
 | --- | --- | --- |
