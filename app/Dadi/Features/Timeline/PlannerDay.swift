@@ -161,6 +161,7 @@ struct PlannerDay: View {
             VStack(spacing: 14) {
                 header
                 weekStrip
+                ZoneNotes(day: day, blocks: blocks)
                 if Calendar.current.isDateInToday(day) {
                     NowNext(segments: segments)
                 }
@@ -290,6 +291,12 @@ private struct BlockView: View {
                     Text("\(start.formatted(date: .omitted, time: .shortened)) – \(end.formatted(date: .omitted, time: .shortened))")
                         .font(.caption2.monospacedDigit())
                         .foregroundStyle(.inkMuted)
+                    if height >= 84, let planned = block.plannedElsewhere, let zone = TimeZone(identifier: planned) {
+                        Text("In \(planned.split(separator: "/").last.map { $0.replacingOccurrences(of: "_", with: " ") } ?? planned): \(start.formatted(Date.FormatStyle(date: .omitted, time: .shortened, timeZone: zone))) – \(end.formatted(Date.FormatStyle(date: .omitted, time: .shortened, timeZone: zone))) \(zone.abbreviation(for: start) ?? "")")
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(.inkMuted)
+                            .lineLimit(2)
+                    }
                 }
             }
             Spacer(minLength: 0)
@@ -459,4 +466,46 @@ private struct NowLine: View {
 private struct Reload: Hashable {
     let day: Date
     let change: Int
+}
+
+/// What the day's clock needs said under the week strip: the device's zone when it is away from the
+/// zone the day's sessions were planned in, and the clock change on a 23- or 25-hour day.
+private struct ZoneNotes: View {
+    let day: Date
+    let blocks: [TimelineItem]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(notes, id: \.symbol) { note in
+                Label(note.text, systemImage: note.symbol)
+                    .font(.footnote)
+                    .foregroundStyle(.inkMuted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding(.horizontal, 6)
+    }
+
+    private var notes: [(symbol: String, text: String)] {
+        let calendar = Calendar.current
+        let device = calendar.timeZone
+        guard let noon = calendar.date(bySettingHour: 12, minute: 0, second: 0, of: day) else { return [] }
+        var notes: [(symbol: String, text: String)] = []
+        if let planned = blocks.compactMap(\.plannedElsewhere).first, let home = TimeZone(identifier: planned) {
+            let hours = (device.secondsFromGMT(for: noon) - home.secondsFromGMT(for: noon)) / 3600
+            if hours != 0 {
+                notes.append(("globe", "\(device.abbreviation(for: noon) ?? device.identifier) \u{00B7} \(abs(hours)) h \(hours < 0 ? "behind" : "ahead of") home"))
+            }
+        }
+        let start = calendar.startOfDay(for: day)
+        if let next = calendar.date(byAdding: .day, value: 1, to: start) {
+            let length = Int((next.timeIntervalSince(start) / 3600).rounded())
+            if length != 24, let before = calendar.date(byAdding: .minute, value: 30, to: start) {
+                let from = device.abbreviation(for: before) ?? ""
+                let to = device.abbreviation(for: noon) ?? ""
+                notes.append(("clock.arrow.circlepath", length == 25 ? "Clocks go back at 2:00 AM (\(from) \u{2192} \(to)): this day has 25 hours." : "Clocks go forward at 2:00 AM (\(from) \u{2192} \(to)): this day has 23 hours."))
+            }
+        }
+        return notes
+    }
 }

@@ -11,7 +11,8 @@ enum PlannerLayout {
     /// Hours the axis shows on a day with no blocks.
     static let emptyHours = 7..<22
 
-    /// One block's part of one day, in minutes after local midnight, with its lane.
+    /// One block's part of one day, in wall-clock minutes after local midnight (7:30 AM is 450 on a
+    /// 23-, 24- or 25-hour day alike), with its lane.
     struct Segment: Hashable, Identifiable {
         let block: TimelineItem
         let startMin: Int
@@ -35,7 +36,12 @@ enum PlannerLayout {
     static func segments(_ blocks: [TimelineItem], on day: Date, calendar: Calendar = .current) -> [Segment] {
         let dayStart = calendar.startOfDay(for: day)
         guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else { return [] }
-        func minutes(_ date: Date) -> Int { Int((date.timeIntervalSince(dayStart) / 60).rounded()) }
+        func minutes(_ date: Date) -> Int {
+            if date <= dayStart { return 0 }
+            if date >= dayEnd { return 1440 }
+            let clock = calendar.dateComponents([.hour, .minute], from: date)
+            return (clock.hour ?? 0) * 60 + (clock.minute ?? 0)
+        }
         var segments = blocks
             .compactMap { block -> Segment? in
                 guard let start = block.startAt, let end = block.endAt, start < dayEnd, end > dayStart else { return nil }

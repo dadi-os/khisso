@@ -85,6 +85,8 @@ struct TimelineItem: Decodable, Sendable, Hashable, Identifiable {
     let dueAt: Date?
     let opensAt: Date?
     let allDay: Bool
+    /// The IANA zone the session was planned in; nil when the plan carries none.
+    let timeZone: String?
     let hideFromPlanner: Bool
     /// scheduled, moved or cancelled.
     let state: String
@@ -97,6 +99,12 @@ struct TimelineItem: Decodable, Sendable, Hashable, Identifiable {
     /// The agent that keeps it, or `manual` / `ingest` when no agent does.
     let owner: String
     let notes: [SessionNote]
+
+    /// The zone it was planned in when that is not this device's, else nil.
+    var plannedElsewhere: String? {
+        guard let timeZone, timeZone != Calendar.current.timeZone.identifier else { return nil }
+        return timeZone
+    }
 
     /// A session is named by its plan and its date.
     var id: String { "\(planId):\(occurrenceDate ?? "undated")" }
@@ -113,7 +121,7 @@ struct TimelineItem: Decodable, Sendable, Hashable, Identifiable {
 
     private enum CodingKeys: String, CodingKey {
         case planId = "id"
-        case occurrenceDate, title, body, kind, status, startAt, endAt, dueAt, opensAt, allDay, hideFromPlanner
+        case occurrenceDate, title, body, kind, status, startAt, endAt, dueAt, opensAt, allDay, timeZone, hideFromPlanner
         case state, outcome, recurrence, series, place, owner, notes
     }
 
@@ -121,7 +129,7 @@ struct TimelineItem: Decodable, Sendable, Hashable, Identifiable {
     func marked(completed: Bool) -> TimelineItem {
         TimelineItem(
             planId: planId, occurrenceDate: occurrenceDate, title: title, body: body, kind: kind, status: status,
-            startAt: startAt, endAt: endAt, dueAt: dueAt, opensAt: opensAt, allDay: allDay, hideFromPlanner: hideFromPlanner,
+            startAt: startAt, endAt: endAt, dueAt: dueAt, opensAt: opensAt, allDay: allDay, timeZone: timeZone, hideFromPlanner: hideFromPlanner,
             state: state, outcome: completed ? "done" : nil, recurrence: recurrence, series: series, place: place,
             owner: owner, notes: notes
         )

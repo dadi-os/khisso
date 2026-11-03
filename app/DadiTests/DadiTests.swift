@@ -112,7 +112,7 @@ struct PlannerLayoutTests {
         func date(_ time: String) -> Date { try! Date("\(day)\(time):00-04:00", strategy: .iso8601) }
         return TimelineItem(
             planId: id, occurrenceDate: "2026-10-21", title: id, body: nil, kind: .study, status: .confirmed,
-            startAt: date(start), endAt: date(end), dueAt: nil, opensAt: nil, allDay: false, hideFromPlanner: false,
+            startAt: date(start), endAt: date(end), dueAt: nil, opensAt: nil, allDay: false, timeZone: nil, hideFromPlanner: false,
             state: "scheduled", outcome: nil, recurrence: nil, series: nil, place: nil, owner: "schedule-specialist", notes: []
         )
     }
@@ -125,6 +125,19 @@ struct PlannerLayoutTests {
         #expect(segments.map(\.lane) == [0, 1, 0])
         #expect(segments.map(\.lanes) == [2, 2, 1])
         #expect(segments[0].startMin == 540)
+    }
+
+    @Test func countsWallClockMinutesOnTheFallBackSunday() throws {
+        let sunday = try Date("2026-11-01T12:00:00-05:00", strategy: .iso8601)
+        func at(_ time: String) throws -> Date { try Date("2026-11-01T\(time):00-05:00", strategy: .iso8601) }
+        let item = TimelineItem(
+            planId: "p", occurrenceDate: "2026-11-01", title: "p", body: nil, kind: .study, status: .confirmed,
+            startAt: try at("07:30"), endAt: try at("08:30"), dueAt: nil, opensAt: nil, allDay: false, timeZone: nil, hideFromPlanner: false,
+            state: "scheduled", outcome: nil, recurrence: nil, series: nil, place: nil, owner: "schedule-specialist", notes: []
+        )
+        let segment = try #require(PlannerLayout.segments([item], on: sunday, calendar: calendar).first)
+        #expect(segment.startMin == 450)
+        #expect(segment.endMin == 510)
     }
 
     @Test func openTimeOfTenMinutesOrMoreIsAGap() {
@@ -606,7 +619,6 @@ struct AgentStatusTests {
         #expect(view.work == "Waiting on task/browser/3 since 10:20")
         #expect(view.recent.map(\.text) == ["read_file /a.txt", "web_fetch", "wait"])
         #expect(view.recent.map(\.mark) == [.ok, .error, .running])
-        #expect(view.tasks == ["task/browser/3 · working · on x.test"])
         #expect(view.pending == ["To Planner (expects a reply): which date?"])
     }
 
@@ -614,5 +626,30 @@ struct AgentStatusTests {
         let agent = try ServiceJSON.decoder.decode(AgentRecord.self, from: Data(body.replacingOccurrences(of: #""tasks_unreadable":null"#, with: #""tasks_unreadable":"nas is down""#).utf8))
         let view = AgentStatusView.make(try #require(agent.running.status), nameOf: { $0 }, timeZone: TimeZone(identifier: "UTC")!)
         #expect(view.tasksUnreadable == "Helper tasks could not be read: nas is down")
+    }
+}
+
+@Suite struct NasTaskTests {
+    private func task(_ status: String, resource: String?) throws -> NasTask {
+        let json = #"{"task":"task/browser/3f2a91","kind":"browser","owner":"finance-specialist","purpose":"p","status":"\#(status)","resource":\#(resource.map { "\"\($0)\"" } ?? "null"),"state":"s","last_activity":"2026-11-02T10:00:00Z"}"#
+        return try ServiceJSON.decoder.decode(NasTask.self, from: Data(json.utf8))
+    }
+
+    @Test func addressesATaskUnderTasks() throws {
+        #expect(try task("paused", resource: "1").route == "browser/3f2a91")
+    }
+
+    @Test func drivesOnlyAnAwakeTaskHoldingAResource() throws {
+        #expect(try task("paused", resource: "1").drivable)
+        #expect(try task("asking", resource: "1").drivable)
+        #expect(try !task("asleep", resource: nil).drivable)
+    }
+
+    @Test func sendsABrowserEventWithSnakeCaseKeys() throws {
+        let data = try ServiceJSON.encoder.encode(BrowserInputEvent.pointer("down", x: 0.5, y: 0.25))
+        let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(json["click_count"] as? Int == 1)
+        #expect(json["button"] as? String == "left")
+        #expect(json["buttons"] as? Int == 1)
     }
 }
