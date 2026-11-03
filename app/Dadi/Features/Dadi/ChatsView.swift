@@ -1,14 +1,12 @@
 import SwiftUI
 
 /// Chats: every conversation as a glass card, in groups where the first match
-/// wins: NEEDS YOU (an agent whose helper is asking), WORKING NOW, UNREAD and
-/// EARLIER, under a search field. Talking to Dadi is the dock, not this page.
+/// wins: WORKING NOW, UNREAD and EARLIER,
+/// under a search field. Talking to Dadi is the dock, not this page.
 struct ChatsView: View {
     let threads: [ThreadSummary]
     /// Each agent's running lanes.
     let lanes: (String) -> Set<Lane>
-    /// The helper tasks asking their agent, by owner.
-    let asking: [String: NasTask]
     /// Why the threads could not be read, if they could not.
     let error: String?
     /// True until the first answer.
@@ -57,7 +55,7 @@ struct ChatsView: View {
                             Text(group.title)
                                 .font(.caption2.weight(.semibold))
                                 .tracking(1.4)
-                                .foregroundStyle(group.title == "NEEDS YOU" ? Color.clay : .inkFaint)
+                                .foregroundStyle(.inkFaint)
                                 .padding(.horizontal, 6)
                                 .padding(.top, 6)
                             GlassEffectContainer(spacing: 8) {
@@ -99,32 +97,19 @@ struct ChatsView: View {
     private var groups: [Group] {
         let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
         let shown = threads.filter { needle.isEmpty || $0.agentName.lowercased().contains(needle) }
-        let needs = shown.filter { asking[$0.agentId] != nil }
-        let rest = shown.filter { asking[$0.agentId] == nil }
         return [
-            Group(title: "NEEDS YOU", threads: needs),
-            Group(title: "WORKING NOW", threads: rest.filter { !lanes($0.agentId).isEmpty }),
-            Group(title: "UNREAD", threads: rest.filter { lanes($0.agentId).isEmpty && $0.unread > 0 }),
-            Group(title: "EARLIER", threads: rest.filter { lanes($0.agentId).isEmpty && $0.unread == 0 }),
+            Group(title: "WORKING NOW", threads: shown.filter { !lanes($0.agentId).isEmpty }),
+            Group(title: "UNREAD", threads: shown.filter { lanes($0.agentId).isEmpty && $0.unread > 0 }),
+            Group(title: "EARLIER", threads: shown.filter { lanes($0.agentId).isEmpty && $0.unread == 0 }),
         ].filter { !$0.threads.isEmpty }
     }
 
     private func card(_ thread: ThreadSummary) -> some View {
         let running = lanes(thread.agentId)
-        let task = asking[thread.agentId]
         return Button { open(thread.agentId) } label: {
-            VStack(alignment: .leading, spacing: 6) {
-                ThreadRow(thread: thread, lanes: running, unread: thread.unread)
-                if let task {
-                    Label(task.state, systemImage: "exclamationmark.circle")
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(.clay)
-                        .lineLimit(2)
-                }
-            }
+            ThreadRow(thread: thread, lanes: running, unread: thread.unread)
             .padding(.horizontal, 16)
             .padding(.vertical, 11)
-            .background(task == nil ? Color.clear : Color.clay.opacity(0.1), in: .rect(cornerRadius: 20, style: .continuous))
             .laneSheen(running.contains(.work), in: .rect(cornerRadius: 20, style: .continuous))
             .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 20, style: .continuous))
         }

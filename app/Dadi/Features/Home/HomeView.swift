@@ -64,7 +64,6 @@ struct HomeView: View {
         .task { await store.load(services.hath) }
         .task(id: stream) { await store.follow(services.hath) }
         .task(id: stream) { await live.follow(services) }
-        .task(id: live.nas) { await store.loadAsking(services.nas) }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { stream += 1 }
         }
@@ -143,15 +142,13 @@ final class HomeStore {
     private(set) var routerRuns: Set<String> = []
     /// The newest router failure, so a device that did not send the words can say so.
     private(set) var routerFailure: RouterFailure?
-    /// Helper tasks waiting on their agent, by owner, for the Chats list.
-    private(set) var asking: [String: NasTask] = [:]
     /// The newest message from the event stream, for the open thread to pick up.
     private(set) var live: HathEvent?
     /// Bumped each time the event stream connects. The stream does not replay
     /// what happened while it was down, so the open thread reloads on it.
     private(set) var connections = 0
     private(set) var error: String?
-    /// Why the router's runs or the asking helpers could not be read; shown as a toast, not as the chats' error.
+    /// Why the router's runs could not be read; shown as a toast, not as the chats' error.
     private(set) var sideProblem: String?
     /// True once the threads have been read at least once.
     private(set) var loaded = false
@@ -167,16 +164,6 @@ final class HomeStore {
             routerRuns = Set(try await hath.routerRuns().map(\.runId))
         } catch {
             sideProblem = "Couldn't read the router: \(error.localizedDescription)"
-        }
-    }
-
-    /// Loads the helper tasks that are asking their agent.
-    func loadAsking(_ nas: NasClient) async {
-        do {
-            let tasks = try await nas.tasks()
-            asking = Dictionary(tasks.filter { $0.status == "asking" }.map { ($0.owner, $0) }, uniquingKeysWith: { first, _ in first })
-        } catch {
-            sideProblem = "Couldn't read helper tasks: \(error.localizedDescription)"
         }
     }
 

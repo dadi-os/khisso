@@ -169,7 +169,7 @@ struct PhoneHome: View {
             toaster.show(Toast(key: "side-problem", title: "Chats may be out of date", detail: problem, symbol: "exclamationmark.triangle.fill", failure: true))
         }
         .onChange(of: store.routerFailure) { _, failure in
-            guard let failure, router.stage == .idle else { return }
+            guard let failure, !router.sending else { return }
             toaster.show(Toast(key: "router-failed", title: "Dadi could not route a message", detail: failure.message, symbol: "exclamationmark.triangle.fill", failure: true))
         }
     }
@@ -206,8 +206,8 @@ struct PhoneHome: View {
             }
         }
         .tabBarMinimizeBehavior(.onScrollDown)
-        .tabViewBottomAccessory(isEnabled: !page.isThread) {
-            RouterDockBar(dock: router, active: store.routing, online: online, name: store.name(of:))
+        .routerAccessory(hidden: page.isThread) {
+            RouterDockBar(dock: router, active: store.routing, online: online)
         }
         .tint(.sageDeep)
     }
@@ -225,7 +225,7 @@ struct PhoneHome: View {
                     .id(agentId)
                     .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .opacity))
             default:
-                ChatsView(threads: store.threads, lanes: store.lanes(of:), asking: store.asking, error: store.error, loading: !store.loaded, retry: { Task { await store.load(services.hath) } }) { agentId in
+                ChatsView(threads: store.threads, lanes: store.lanes(of:), error: store.error, loading: !store.loaded, retry: { Task { await store.load(services.hath) } }) { agentId in
                     show(.thread(agentId))
                 } details: { agentId in
                     agentSheet = agentId
@@ -235,18 +235,20 @@ struct PhoneHome: View {
         }
     }
 
-    /// The Chats tab's badge: the agents whose helpers ask for Ankur, else his unread replies.
-    private var chatsBadge: Int {
-        let needing = store.threads.filter { store.asking[$0.agentId] != nil }.count
-        return needing > 0 ? needing : store.threads.reduce(0) { $0 + $1.unread }
-    }
+    /// The Chats tab's badge: Ankur's unread replies.
+    private var chatsBadge: Int { store.threads.reduce(0) { $0 + $1.unread } }
 
-    /// Hands the composer's words to the router and toasts where they went.
+    /// Hands the composer's words to the router and toasts where they went. A
+    /// failed run keeps the draft, copies it to the clipboard and toasts the
+    /// router's own words; tapping the toast reopens the composer.
     private func sendToRouter() {
         router.send(services.hath) { messages in
             guard let first = messages.first else { return }
             let agent = first.toAgentId
             toaster.show(Toast(key: "routed", title: "Sent to \(store.name(of: agent))", detail: first.content, symbol: "checkmark.circle.fill") { show(.thread(agent)) })
+        } failed: { message in
+            UIPasteboard.general.string = router.draft
+            toaster.show(Toast(key: "router-send-failed", title: "Not sent, copied to your clipboard", detail: message, symbol: "exclamationmark.triangle.fill", failure: true) { router.compose() })
         }
     }
 
@@ -464,6 +466,19 @@ struct NameBubble: View {
                 .accessibilityHint("Shows details and activity")
         } else {
             label
+        }
+    }
+}
+
+private extension View {
+    /// The bottom accessory, off while `hidden`. `isEnabled` exists from iOS 26.1;
+    /// on 26.0 the accessory stays and its content is not shown in a thread.
+    @ViewBuilder
+    func routerAccessory<Dock: View>(hidden: Bool, @ViewBuilder dock: () -> Dock) -> some View {
+        if #available(iOS 26.1, *) {
+            tabViewBottomAccessory(isEnabled: !hidden, content: dock)
+        } else {
+            tabViewBottomAccessory { if !hidden { dock() } }
         }
     }
 }

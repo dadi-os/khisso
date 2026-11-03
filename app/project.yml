@@ -2,7 +2,7 @@ name: Khisso
 options:
   bundleIdPrefix: com.dadi
   deploymentTarget:
-    iOS: "26.1"
+    iOS: "26.0"
     watchOS: "26.0"
   createIntermediateGroups: true
 packages:
