@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Home: dadi's pages in the dock, with Talk to Dadi and every agent thread
+/// Home: dadi's pages in the dock, with Chats and every agent thread
 /// live from Hath, and the drawer beside them (PhoneHome). Home owns the event
 /// stream that keeps threads, running lanes and the open thread current.
 struct HomeView: View {
@@ -47,6 +47,8 @@ struct HomeView: View {
 
     let services: Services
     let wordmark: Namespace.ID
+    /// False while dadi is out of reach and Home shows what it last reported.
+    let online: Bool
 
     @State private var store = HomeStore()
     @State private var live = LiveData()
@@ -57,11 +59,12 @@ struct HomeView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        PhoneHome(services: services, wordmark: wordmark, store: store, page: $page)
+        PhoneHome(services: services, wordmark: wordmark, store: store, online: online, page: $page)
         .environment(live)
         .task { await store.load(services.hath) }
         .task(id: stream) { await store.follow(services.hath) }
         .task(id: stream) { await live.follow(services) }
+        .task(id: live.nas) { await store.loadAsking(services.nas) }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { stream += 1 }
         }
@@ -120,6 +123,12 @@ struct ThreadRow: View {
     }
 }
 
+/// A router run that failed, with its own message.
+struct RouterFailure: Identifiable, Equatable {
+    let id = UUID()
+    let message: String
+}
+
 /// Threads, running lanes and live messages for Home, fed by GET /threads,
 /// GET /agents for the lanes already running, and Hath's event stream.
 @MainActor
@@ -130,21 +139,52 @@ final class HomeStore {
     private(set) var lanes: [String: Set<Lane>] = [:]
     /// The agents not retired, which can still be messaged.
     private(set) var active: Set<String> = []
-    /// True while the router is choosing whom Ankur's words go to.
-    private(set) var routing = false
+    /// The router runs in flight, by id: runs overlap, so the router is active while any is.
+    private(set) var routerRuns: Set<String> = []
+    /// The newest router failure, so a device that did not send the words can say so.
+    private(set) var routerFailure: RouterFailure?
+    /// Helper tasks waiting on their agent, by owner, for the Chats list.
+    private(set) var asking: [String: NasTask] = [:]
     /// The newest message from the event stream, for the open thread to pick up.
     private(set) var live: HathEvent?
     /// Bumped each time the event stream connects. The stream does not replay
     /// what happened while it was down, so the open thread reloads on it.
     private(set) var connections = 0
     private(set) var error: String?
+    /// Why the router's runs or the asking helpers could not be read; shown as a toast, not as the chats' error.
+    private(set) var sideProblem: String?
+    /// True once the threads have been read at least once.
+    private(set) var loaded = false
     /// Why live updates stopped; cleared when the stream delivers again.
     private(set) var liveError: String?
+
+    /// True while the router is choosing whom Ankur's words go to.
+    var routing: Bool { !routerRuns.isEmpty }
+
+    /// Loads the router runs already in flight, for a connection that opens mid-run.
+    func loadRouter(_ hath: HathClient) async {
+        do {
+            routerRuns = Set(try await hath.routerRuns().map(\.runId))
+        } catch {
+            sideProblem = "Couldn't read the router: \(error.localizedDescription)"
+        }
+    }
+
+    /// Loads the helper tasks that are asking their agent.
+    func loadAsking(_ nas: NasClient) async {
+        do {
+            let tasks = try await nas.tasks()
+            asking = Dictionary(tasks.filter { $0.status == "asking" }.map { ($0.owner, $0) }, uniquingKeysWith: { first, _ in first })
+        } catch {
+            sideProblem = "Couldn't read helper tasks: \(error.localizedDescription)"
+        }
+    }
 
     /// Loads every thread.
     func load(_ hath: HathClient) async {
         do {
             threads = try await hath.threads()
+            loaded = true
             error = nil
         } catch {
             self.error = error.localizedDescription
@@ -164,6 +204,7 @@ final class HomeStore {
                 lanes = Dictionary(uniqueKeysWithValues: agents.map { ($0.id, $0.lanes) }).filter { !$0.value.isEmpty }
                 active = Set(agents.filter(\.active).map(\.id))
                 await load(hath)
+                await loadRouter(hath)
                 connections += 1
                 for try await event in events {
                     delay = .seconds(1)
@@ -230,10 +271,13 @@ final class HomeStore {
         case .laneFinished(let agentId, let lane), .laneFailed(let agentId, let lane, _):
             lanes[agentId]?.remove(lane)
             if lanes[agentId]?.isEmpty == true { lanes[agentId] = nil }
-        case .routerStarted:
-            routing = true
-        case .routerFinished, .routerFailed:
-            routing = false
+        case .routerStarted(let runId):
+            routerRuns.insert(runId)
+        case .routerFinished(let runId):
+            routerRuns.remove(runId)
+        case .routerFailed(let runId, let message):
+            routerRuns.remove(runId)
+            routerFailure = RouterFailure(message: message)
         case .unhandled:
             break
         }

@@ -11,6 +11,11 @@ struct NasClient: Sendable {
         client = ServiceClient(session: session, baseURL: Self.baseURL)
     }
 
+    /// GET /events: one element per change to the helper tasks, terminals and browsers.
+    func changes() async throws -> AsyncThrowingStream<Void, Error> {
+        try await client.changes("/events")
+    }
+
     /// GET /status.
     func status() async throws -> NasStatus {
         try await client.get("/status")

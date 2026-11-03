@@ -27,7 +27,7 @@ struct DadiApp: App {
                         .transition(.opacity)
                 case .connecting, .failed:
                     if let services = connection.services, let since = connection.offlineSince {
-                        HomeView(services: services, wordmark: wordmark)
+                        HomeView(services: services, wordmark: wordmark, online: false)
                             .saturation(0.5)
                             .overlay(alignment: .top) {
                                 OfflinePill(since: since)
@@ -40,7 +40,7 @@ struct DadiApp: App {
                     }
                 case .online:
                     if let services = connection.services {
-                        HomeView(services: services, wordmark: wordmark)
+                        HomeView(services: services, wordmark: wordmark, online: true)
                             .transition(.opacity)
                     }
                 }

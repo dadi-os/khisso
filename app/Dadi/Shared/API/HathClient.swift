@@ -88,6 +88,12 @@ struct HathClient: Sendable {
         try await client.post("/agents/\(agentId)/read", body: ThreadReadRequest(seq: seq))
     }
 
+    /// GET /router: the router runs in flight, for a device that connects mid-run.
+    func routerRuns() async throws -> [RouterRuns.Run] {
+        let response: RouterRuns = try await client.get("/router")
+        return response.running
+    }
+
     /// POST /router: hand words to the router, which sends them on as Ankur.
     func route(_ content: String, attachments: [OutboundAttachment] = []) async throws -> PostRouterResponse {
         try await client.post("/router", body: RouterRequest(content: content, attachments: attachments.isEmpty ? nil : attachments), timeout: Self.routerTimeout)

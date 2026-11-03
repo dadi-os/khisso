@@ -5,14 +5,15 @@ import Observation
 /// when there is something new instead of polling. Yaad (plans, memories and
 /// the planner), Chaavi and Ghar announce every write; each count moves on
 /// every announcement and on every (re)connect, since the streams do not
-/// replay what happened while they were down. Nas's readings stay polled by
-/// the System page, as on the desktop.
+/// replay what happened while they were down. Nas announces its task changes; its
+/// other readings stay polled by the System page, as on the desktop.
 @MainActor
 @Observable
 final class LiveData {
     private(set) var yaad = 0
     private(set) var chaavi = 0
     private(set) var ghar = 0
+    private(set) var nas = 0
     /// Why a stream last stopped; cleared once it connects again.
     private(set) var problem: String?
 
@@ -21,6 +22,7 @@ final class LiveData {
         case yaad = "Yaad"
         case chaavi = "Chaavi"
         case ghar = "Ghar"
+        case nas = "Nas"
     }
 
     /// Follows every stream until cancelled.
@@ -28,7 +30,8 @@ final class LiveData {
         async let yaad: Void = follow(.yaad, open: services.yaad.changes)
         async let chaavi: Void = follow(.chaavi, open: services.chaavi.changes)
         async let ghar: Void = follow(.ghar, open: services.ghar.changes)
-        _ = await (yaad, chaavi, ghar)
+        async let nas: Void = follow(.nas, open: services.nas.changes)
+        _ = await (yaad, chaavi, ghar, nas)
     }
 
     /// Follows one stream, reopening a dropped one after a delay that doubles
@@ -60,6 +63,7 @@ final class LiveData {
         case .yaad: yaad += 1
         case .chaavi: chaavi += 1
         case .ghar: ghar += 1
+        case .nas: nas += 1
         }
     }
 }

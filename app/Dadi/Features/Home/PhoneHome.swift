@@ -16,12 +16,13 @@ struct PhoneHome: View {
     let services: Services
     let wordmark: Namespace.ID
     let store: HomeStore
+    let online: Bool
     @Binding var page: HomeView.Page
 
     @State private var open = false
     @State private var drag: CGFloat = 0
     @State private var opened = 0
-    /// What the Dadi tab shows: Talk to Dadi or a thread, kept while another
+    /// What the Chats tab shows: the list or a thread, kept while another
     /// tab is open.
     @State private var dadiPage: HomeView.Page = .dadi
     /// False until Home has settled in from Connecting, so the bar fades in
@@ -32,9 +33,10 @@ struct PhoneHome: View {
     @State private var swiping = false
     /// The agent whose sheet is up.
     @State private var agentSheet: String?
-    /// Talk to Dadi over the page, from the bar's new message button or a
-    /// session told to Dadi; it starts with these words.
-    @State private var composing: Compose?
+    /// The router dock: the draft, the composer over the page and the last send.
+    @State private var router = RouterDock()
+    /// The toasts over the page.
+    @State private var toaster = Toaster()
     @Namespace private var sheetWordmark
     /// The Timeline's view, set from its name bubble or its drawer.
     @State private var timelineMode = TimelineMode.day
@@ -50,17 +52,17 @@ struct PhoneHome: View {
     @State private var system: SystemStore
     /// The System section the drawer asked the page to scroll to.
     @State private var systemFocus: SystemPage.Section?
-    @State private var dadiIcon = DadiGlyph.render()
 
     /// The strip along the left edge that opens the drawer. It sits over the
     /// page, so a swipe that starts in it always pulls the drawer instead of
     /// moving the page, as the Timeline's day swipe would.
     private let edge: CGFloat = 36
 
-    init(services: Services, wordmark: Namespace.ID, store: HomeStore, page: Binding<HomeView.Page>) {
+    init(services: Services, wordmark: Namespace.ID, store: HomeStore, online: Bool, page: Binding<HomeView.Page>) {
         self.services = services
         self.wordmark = wordmark
         self.store = store
+        self.online = online
         _page = page
         _ghar = State(initialValue: GharStore(ghar: services.ghar))
         _chaavi = State(initialValue: ChaaviStore(chaavi: services.chaavi))
@@ -145,38 +147,30 @@ struct PhoneHome: View {
                     .presentationBackground(.boneRaised)
             }
         }
-        .sheet(item: $composing) { compose in
-            DadiView(
-                hath: services.hath,
-                threads: store.threads,
-                lanes: store.lanes(of:),
-                name: store.name(of:),
-                wordmark: sheetWordmark,
-                open: { agentId in
-                    composing = nil
-                    show(.thread(agentId))
-                },
-                details: { agentId in
-                    composing = nil
-                    agentSheet = agentId
-                },
-                openDrawer: {
-                    composing = nil
-                    set(open: true)
-                },
-                opening: compose.draft,
-                focusComposer: true
-            )
-            .padding(.top, 24)
-            .background { FieldBloom() }
-            .presentationDetents([.large])
-            .presentationCornerRadius(34)
-        }
         .sensoryFeedback(.selection, trigger: opened)
         .sensoryFeedback(.selection, trigger: page.tab)
         .onAppear { withAnimation(Motion.settle.delay(0.35)) { arrived = true } }
         .onChange(of: page, initial: true) {
             if page.tab == .dadi { dadiPage = page }
+        }
+        .overlay {
+            if router.composing {
+                RouterCompose(dock: router, active: store.routing, send: sendToRouter)
+            }
+        }
+        .overlay(alignment: .top) {
+            ToastStack(toaster: toaster)
+                .padding(.top, 64)
+        }
+        .animation(Motion.snap, value: router.composing)
+        .sensoryFeedback(.success, trigger: router.handedOff)
+        .onChange(of: store.sideProblem) { _, problem in
+            guard let problem else { return }
+            toaster.show(Toast(key: "side-problem", title: "Chats may be out of date", detail: problem, symbol: "exclamationmark.triangle.fill", failure: true))
+        }
+        .onChange(of: store.routerFailure) { _, failure in
+            guard let failure, router.stage == .idle else { return }
+            toaster.show(Toast(key: "router-failed", title: "Dadi could not route a message", detail: failure.message, symbol: "exclamationmark.triangle.fill", failure: true))
         }
     }
 
@@ -186,14 +180,15 @@ struct PhoneHome: View {
             Tab(value: HomeView.Tab.dadi) {
                 chrome(dadiContent, tab: .dadi)
             } label: {
-                Label { Text("Dadi") } icon: { Image(uiImage: dadiIcon) }
+                Label("Chats", systemImage: "bubble.left.and.bubble.right")
             }
+            .badge(chatsBadge)
             Tab("Yaad", systemImage: "calendar", value: HomeView.Tab.timeline) {
                 chrome(
                     TimelinePage(yaad: services.yaad, mode: $timelineMode) { agentId in
                         show(.thread(agentId))
                     } tellDadi: { item in
-                        composing = Compose(draft: "About \u{201C}\(item.title)\u{201D} (\(sessionWhen(item))): ")
+                        router.compose("About \u{201C}\(item.title)\u{201D} (\(sessionWhen(item))): ")
                     } reachable: { agentId in
                         store.isActive(agentId)
                     },
@@ -210,11 +205,14 @@ struct PhoneHome: View {
                 chrome(SystemPage(store: system, focus: $systemFocus, nameOf: store.name(of:)), tab: .system)
             }
         }
-        .tabBarMinimizeBehavior(page.tab == .dadi ? .never : .onScrollDown)
+        .tabBarMinimizeBehavior(.onScrollDown)
+        .tabViewBottomAccessory(isEnabled: !page.isThread) {
+            RouterDockBar(dock: router, active: store.routing, online: online, name: store.name(of:))
+        }
         .tint(.sageDeep)
     }
 
-    /// Talk to Dadi, or the thread the Dadi tab has open.
+    /// Chats, or the thread the Chats tab has open.
     private var dadiContent: some View {
         ZStack {
             switch dadiPage {
@@ -227,15 +225,28 @@ struct PhoneHome: View {
                     .id(agentId)
                     .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .opacity))
             default:
-                DadiView(hath: services.hath, threads: store.threads, lanes: store.lanes(of:), name: store.name(of:), wordmark: wordmark) { agentId in
+                ChatsView(threads: store.threads, lanes: store.lanes(of:), asking: store.asking, error: store.error, loading: !store.loaded, retry: { Task { await store.load(services.hath) } }) { agentId in
                     show(.thread(agentId))
                 } details: { agentId in
                     agentSheet = agentId
-                } openDrawer: {
-                    set(open: true)
                 }
                 .transition(.opacity)
             }
+        }
+    }
+
+    /// The Chats tab's badge: the agents whose helpers ask for Ankur, else his unread replies.
+    private var chatsBadge: Int {
+        let needing = store.threads.filter { store.asking[$0.agentId] != nil }.count
+        return needing > 0 ? needing : store.threads.reduce(0) { $0 + $1.unread }
+    }
+
+    /// Hands the composer's words to the router and toasts where they went.
+    private func sendToRouter() {
+        router.send(services.hath) { messages in
+            guard let first = messages.first else { return }
+            let agent = first.toAgentId
+            toaster.show(Toast(key: "routed", title: "Sent to \(store.name(of: agent))", detail: first.content, symbol: "checkmark.circle.fill") { show(.thread(agent)) })
         }
     }
 
@@ -289,6 +300,7 @@ struct PhoneHome: View {
             } else if let title = title(of: shown) {
                 NameBubble(title: title, details: shown.isThread ? { if case .thread(let agentId) = shown { agentSheet = agentId } } : nil)
                     .id(title)
+                    .matchedGeometryEffect(id: "wordmark", in: wordmark, isSource: shown == .dadi)
                     .transition(.opacity.combined(with: .scale(scale: 0.92)))
             }
             Spacer()
@@ -301,17 +313,12 @@ struct PhoneHome: View {
                 .buttonStyle(.glass)
                 .buttonBorderShape(.circle)
                 .accessibilityLabel("New login or note")
+            } else if shown.isThread {
+                RouterMark(active: store.routing)
+                    .frame(width: 52, height: 52)
+                    .opacity(store.routing ? 1 : 0)
             } else {
-                Button { composing = Compose(draft: "") } label: {
-                    Image(systemName: "square.and.pencil")
-                        .font(.body.weight(.semibold))
-                        .frame(width: 22, height: 22)
-                }
-                .buttonStyle(.glass)
-                .buttonBorderShape(.circle)
-                .opacity(shown == .dadi ? 0 : 1)
-                .disabled(shown == .dadi)
-                .accessibilityLabel("Talk to Dadi")
+                Color.clear.frame(width: 52, height: 52)
             }
         }
         .controlSize(.large)
@@ -322,10 +329,10 @@ struct PhoneHome: View {
         .animation(Motion.snap, value: shown)
     }
 
-    /// The page's name for its bubble; Talk to Dadi has none.
+    /// The page's name for its bubble; Chats is the wordmark.
     private func title(of page: HomeView.Page) -> String? {
         switch page {
-        case .dadi: nil
+        case .dadi: "દાદી"
         case .thread(let agentId): store.name(of: agentId)
         case .timeline: "Timeline"
         case .ghar: "Ghar"
@@ -386,29 +393,6 @@ struct PhoneHome: View {
                     swiping = false
                 }
             }
-    }
-}
-
-/// Talk to Dadi opened over the page, with the words it starts with.
-private struct Compose: Identifiable {
-    let id = UUID()
-    let draft: String
-}
-
-/// The Dadi tab's icon: દ, the wordmark's first letter, drawn as a template
-/// image, since a tab's icon has to be an image.
-private enum DadiGlyph {
-    /// The icon's side in points, a system tab icon's size.
-    static let side: CGFloat = 28
-
-    @MainActor
-    static func render() -> UIImage {
-        let renderer = ImageRenderer(content: Text("દ")
-            .font(.wordmark(25, weight: .semibold))
-            .inkCentered(.letter, size: 25)
-            .frame(width: side, height: side))
-        renderer.scale = 3
-        return renderer.uiImage!.withRenderingMode(.alwaysTemplate)
     }
 }
 

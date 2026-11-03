@@ -6,6 +6,9 @@ struct ConnectingView: View {
     let connection: Connection
     let wordmark: Namespace.ID
 
+    /// The wordmark's size, which Home's Chats bubble takes over from.
+    private static let wordmarkSize: CGFloat = 84
+
     @State private var glow = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -27,8 +30,8 @@ struct ConnectingView: View {
         VStack(spacing: 28) {
             Spacer()
             Text("દાદી")
-                .font(.wordmark(DadiView.wordmarkSize))
-                .inkCentered(.word, size: DadiView.wordmarkSize)
+                .font(.wordmark(Self.wordmarkSize))
+                .inkCentered(.word, size: Self.wordmarkSize)
                 .foregroundStyle(.sageDeep)
                 .shadow(color: .sage.opacity(glow ? 0.55 : 0.05), radius: glow ? 28 : 6)
                 .scaleEffect(glow ? 1.02 : 0.98)

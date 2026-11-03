@@ -83,6 +83,16 @@ struct PostRouterResponse: Decodable, Sendable {
     let messages: [RoutedMessage]
 }
 
+/// GET /router: the router runs in flight, none when it is idle.
+struct RouterRuns: Decodable, Sendable {
+    struct Run: Decodable, Sendable, Hashable {
+        let runId: String
+        let at: Date
+    }
+
+    let running: [Run]
+}
+
 /// POST /messages: the delivered message.
 struct PostMessageResponse: Decodable, Sendable {
     let toAgentId: String
@@ -127,15 +137,16 @@ enum HathEvent: Decodable, Sendable, Equatable {
     case laneStarted(agentId: String, lane: Lane)
     case laneFinished(agentId: String, lane: Lane)
     case laneFailed(agentId: String, lane: Lane, message: String)
-    case routerStarted
-    case routerFinished
-    case routerFailed(message: String)
+    /// A router run began; its `runId` ties it to its finish or failure, and runs can overlap.
+    case routerStarted(runId: String)
+    case routerFinished(runId: String)
+    case routerFailed(runId: String, message: String)
     /// Ankur read an agent's thread through `readSeq`, on this device or another.
     case threadRead(agentId: String, readSeq: Int, unread: Int)
     case unhandled(type: String)
 
     private enum Keys: String, CodingKey {
-        case type, agentId, fromAgentId, toAgentId, content, attachments, seq, kind, at, message, lane, readSeq, unread
+        case type, agentId, fromAgentId, toAgentId, content, attachments, seq, kind, at, message, lane, readSeq, unread, runId
     }
 
     init(from decoder: Decoder) throws {
@@ -165,11 +176,11 @@ enum HathEvent: Decodable, Sendable, Equatable {
                 message: try c.decode(String.self, forKey: .message)
             )
         case "router_started":
-            self = .routerStarted
+            self = .routerStarted(runId: try c.decode(String.self, forKey: .runId))
         case "router_finished":
-            self = .routerFinished
+            self = .routerFinished(runId: try c.decode(String.self, forKey: .runId))
         case "router_failed":
-            self = .routerFailed(message: try c.decode(String.self, forKey: .message))
+            self = .routerFailed(runId: try c.decode(String.self, forKey: .runId), message: try c.decode(String.self, forKey: .message))
         case "thread_read":
             self = .threadRead(
                 agentId: try c.decode(String.self, forKey: .agentId),
