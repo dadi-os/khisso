@@ -19,7 +19,6 @@ struct AgentStatusView: Equatable {
     let work: String
     let step: String?
     let recent: [Call]
-    let tasks: [String]
     /// Plain words when Nas could not be read for the tasks; nil otherwise.
     let tasksUnreadable: String?
     /// Messages work queued and process has not sent.
@@ -45,7 +44,6 @@ struct AgentStatusView: Equatable {
             recent: status.recent.enumerated().map { index, call in
                 Call(id: index, text: call.arg.isEmpty ? call.name : "\(call.name) \(call.arg)", mark: call.ok.map { $0 ? .ok : .error } ?? .running)
             },
-            tasks: status.tasks.map { "\($0.id) · \($0.status) · \($0.current)" },
             tasksUnreadable: status.tasksUnreadable.map { "Helper tasks could not be read: \($0)" },
             pending: status.pending.map { "To \(who($0.to))\($0.expectsReply ? " (expects a reply)" : ""): \($0.preview)" }
         )
@@ -75,23 +73,29 @@ struct AgentStatusView: Equatable {
     }
 }
 
-/// The status block on the agent sheet: job, work, last calls, tasks and queued messages.
+/// The status block on the agent sheet: a Right now card with the job, the work and its step, then
+/// the last calls and the queued messages, each folded until opened.
 struct AgentStatusBlock: View {
     let view: AgentStatusView
 
+    @State private var callsOpen = false
+    @State private var queuedOpen = false
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            group("JOB") {
-                Text(view.job ?? "No open job").font(.footnote).foregroundStyle(.ink).lineLimit(3)
-            }
-            group("WORK") {
-                Text(view.work).font(.footnote).foregroundStyle(.ink)
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("RIGHT NOW").font(.caption2.weight(.semibold)).tracking(1.4).foregroundStyle(.inkFaint)
+                Text(view.work).font(.subheadline.weight(.semibold)).foregroundStyle(.ink)
                 if let step = view.step {
                     Text(step).font(.system(.caption, design: .monospaced)).foregroundStyle(.inkMuted).lineLimit(1)
                 }
+                Text(view.job ?? "No open job").font(.footnote).foregroundStyle(.inkMuted).lineLimit(3)
             }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.ink.opacity(0.04), in: .rect(cornerRadius: 16, style: .continuous))
             if !view.recent.isEmpty {
-                group("LAST CALLS") {
+                disclosure("Last calls", count: view.recent.count, isOpen: $callsOpen) {
                     ForEach(view.recent) { call in
                         HStack(spacing: 8) {
                             Text(call.text).font(.system(.caption, design: .monospaced)).foregroundStyle(.inkMuted).lineLimit(1)
@@ -101,19 +105,8 @@ struct AgentStatusBlock: View {
                     }
                 }
             }
-            group("TASKS") {
-                if let unreadable = view.tasksUnreadable {
-                    Text(unreadable).font(.footnote).foregroundStyle(.danger)
-                } else if view.tasks.isEmpty {
-                    Text("None in flight").font(.footnote).foregroundStyle(.inkMuted)
-                } else {
-                    ForEach(view.tasks, id: \.self) { line in
-                        Text(line).font(.system(.caption, design: .monospaced)).foregroundStyle(.inkMuted).lineLimit(1)
-                    }
-                }
-            }
             if !view.pending.isEmpty {
-                group("QUEUED TO SEND") {
+                disclosure("Queued to send", count: view.pending.count, isOpen: $queuedOpen) {
                     ForEach(view.pending, id: \.self) { line in
                         Text(line).font(.footnote).foregroundStyle(.inkMuted).lineLimit(2)
                     }
@@ -130,10 +123,22 @@ struct AgentStatusBlock: View {
         }
     }
 
-    private func group(_ title: String, @ViewBuilder content: () -> some View) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(title).font(.caption2.weight(.semibold)).tracking(1.4).foregroundStyle(.inkFaint)
-            content()
+    private func disclosure(_ title: String, count: Int, isOpen: Binding<Bool>, @ViewBuilder content: () -> some View) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button { withAnimation(Motion.settle) { isOpen.wrappedValue.toggle() } } label: {
+                HStack {
+                    Text("\(title) · \(count)").font(.footnote.weight(.semibold)).foregroundStyle(.ink)
+                    Spacer()
+                    Image(systemName: "chevron.right").font(.caption2.weight(.bold)).foregroundStyle(.inkFaint).rotationEffect(.degrees(isOpen.wrappedValue ? 90 : 0))
+                }
+                .frame(minHeight: 44)
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            if isOpen.wrappedValue { VStack(alignment: .leading, spacing: 4, content: content) }
         }
+        .padding(.horizontal, 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.ink.opacity(0.04), in: .rect(cornerRadius: 16, style: .continuous))
     }
 }

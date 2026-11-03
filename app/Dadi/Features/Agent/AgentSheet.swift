@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// What opens from an agent's name above its thread, as thaali's agent
-/// popover does: its status block (job, work, last calls, tasks, queued
-/// messages), its live browser, when it was made and last
+/// popover does: its status block (job, work, last calls, queued
+/// messages), its helper tasks, when it was made and last
 /// active, its scheduled messages, system prompt, and its activity by
 /// wake. Activity follows the agent's lanes: it reloads when they change and
 /// every two seconds while one runs.
@@ -27,8 +27,9 @@ struct AgentSheet: View {
     @State private var detailError: String?
     @State private var schedules: [ScheduledMessage]?
     @State private var scheduleError: String?
-    @State private var liveBrowser: Int?
-    @State private var terminalCaption: String?
+    @State private var tasks: [NasTask] = []
+    @State private var openTask: String?
+    @Environment(LiveData.self) private var live: LiveData?
     @State private var hostError: String?
     @State private var wakes: [ActivityWake]?
     @State private var lastLogAt: Date?
@@ -46,19 +47,23 @@ struct AgentSheet: View {
                     if let status = detail?.agent.running.status {
                         section("STATUS") { AgentStatusBlock(view: AgentStatusView.make(status, nameOf: nameOf)) }
                     }
-                    if let liveBrowser {
-                        VStack(alignment: .leading, spacing: 8) {
-                            if let terminalCaption {
-                                Text(terminalCaption)
-                                    .font(.system(.caption, design: .monospaced))
-                                    .foregroundStyle(.inkMuted)
-                                    .lineLimit(1)
+                    if !tasks.isEmpty {
+                        section("TASKS") {
+                            VStack(spacing: 0) {
+                                ForEach(tasks) { task in
+                                    TaskRow(nas: services.nas, task: task, owner: name, opened: $openTask) { await loadHost() }
+                                    if task.id != tasks.last?.id { Rectangle().fill(.rule).frame(height: 1) }
+                                }
                             }
-                            BrowserView(nas: services.nas, browserId: liveBrowser)
+                            .padding(.horizontal, 14)
+                            .background(Color.ink.opacity(0.04), in: .rect(cornerRadius: 16, style: .continuous))
                         }
                     }
+                    if let status = detail?.agent.running.status, let unreadable = AgentStatusView.make(status, nameOf: nameOf).tasksUnreadable {
+                        problem(unreadable)
+                    }
                     if let hostError {
-                        problem("Couldn't check the agent's browser: \(hostError)")
+                        problem("Couldn't read the agent's tasks: \(hostError)")
                     }
                     facts
                     if let scheduleError {
@@ -102,10 +107,10 @@ struct AgentSheet: View {
         .task(id: connections) {
             async let schedules: Void = loadSchedules()
             await loadDetail()
-            async let host: Void = loadHost()
-            _ = await (schedules, host)
+            _ = await schedules
         }
         .task(id: lanes) { await followActivity() }
+        .task(id: live?.nas) { await loadHost() }
     }
 
     /// The agent's state in a pill: processing plays the flowing dots, working
@@ -218,14 +223,10 @@ struct AgentSheet: View {
         }
     }
 
-    /// Finds the agent's newest task holding a live browser on Nas, and the purpose of its newest live terminal task.
+    /// Reads the helper tasks this agent owns, newest activity first.
     private func loadHost() async {
-        guard let sessions = detail?.agent.sessions else { return }
         do {
-            let nasTasks = try await services.nas.tasks()
-            let live = sessions.tasks.compactMap { row in nasTasks.first { $0.task == row.id && $0.resource != nil } }
-            liveBrowser = live.first { $0.kind == "browser" }?.resource.flatMap(Int.init)
-            terminalCaption = live.first { $0.kind == "terminal" }?.purpose
+            tasks = try await services.nas.tasks().filter { $0.owner == agentId }.sorted { $0.lastActivity > $1.lastActivity }
             hostError = nil
         } catch is CancellationError {
             return

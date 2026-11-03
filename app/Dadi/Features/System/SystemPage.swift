@@ -3,7 +3,7 @@ import SwiftUI
 /// System: the box at a glance. Rings for its processor, memory and disk, how
 /// long it has been up, each module's health, every device on dadi but the
 /// box, every browser and terminal helper task (opening one shows its live
-/// screen, or its summary while it sleeps), and the latest errors in the logs. The meters and devices refresh
+/// screen, and tapping that opens the sheet to act in it; a sleeping one shows its summary), and the latest errors in the logs. The meters and devices refresh
 /// every two seconds while open, as in thaali; the slower log read keeps its
 /// own pace so it never holds them up. The drawer jumps to a section; holding
 /// a module shows its errors or copies its status, holding a device copies
@@ -31,6 +31,7 @@ struct SystemPage: View {
     @State private var copies = 0
     /// The task whose live screen is open; only one holds a capture at a time.
     @State private var openTask: String?
+    @Environment(LiveData.self) private var live: LiveData?
 
     private let refresh: Duration = .seconds(2)
     private let logRefresh: Duration = .seconds(10)
@@ -81,13 +82,15 @@ struct SystemPage: View {
                             }
                         }
                     } else if store.problem == nil {
-                        ProgressView().frame(maxWidth: .infinity).padding(.top, 60)
+                        RoundedRectangle(cornerRadius: 28, style: .continuous).fill(Color.sageLine.opacity(0.28)).frame(height: 190)
+                        section(.services) { SkeletonRows(count: 3, height: 48) }
+                        section(.drives) { SkeletonRows(count: 2, height: 82) }
                     }
                     if !store.tasks.isEmpty {
-                        section(.tasks) {
+                        section(.tasks, detail: "\(store.tasks.filter { $0.status == "working" }.count) working") {
                             VStack(spacing: 0) {
                                 ForEach(store.tasks) { task in
-                                    taskRow(task)
+                                    TaskRow(nas: store.nas, task: task, owner: nameOf(task.owner), showsOwner: true, opened: $openTask) { await store.load() }
                                     if task.id != store.tasks.last?.id { Rectangle().fill(.rule).frame(height: 1) }
                                 }
                             }
@@ -166,6 +169,7 @@ struct SystemPage: View {
                 .presentationBackground(.thinMaterial)
         }
         .navigationTitle("System")
+        .task(id: live?.nas) { await store.load() }
         .task {
             while !Task.isCancelled {
                 await store.load()
@@ -227,45 +231,6 @@ struct SystemPage: View {
         .contentShape(.rect)
     }
 
-    /// A task's kind and id, owner, current step, status, slot and time since it last did anything;
-    /// tapping it opens its live screen, or its summary while it sleeps.
-    private func taskRow(_ task: NasTask) -> some View {
-        let open = openTask == task.id
-        return VStack(alignment: .leading, spacing: 8) {
-            Button { withAnimation(Motion.settle) { openTask = open ? nil : task.id } } label: {
-                HStack(alignment: .top, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(spacing: 8) {
-                            Text(task.task).font(.subheadline.monospaced().weight(.semibold)).foregroundStyle(.ink).lineLimit(1)
-                            Text(nameOf(task.owner)).font(.caption).foregroundStyle(.inkFaint)
-                        }
-                        Text(task.state).font(.footnote).foregroundStyle(.inkMuted).lineLimit(2).multilineTextAlignment(.leading)
-                        Text(task.resource.map { task.kind == "browser" ? "slot \($0)" : $0 } ?? "—")
-                            .font(.caption2.monospaced())
-                            .foregroundStyle(.inkFaint)
-                    }
-                    Spacer()
-                    VStack(alignment: .trailing, spacing: 4) {
-                        Text(task.status)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(task.status == "working" || task.status == "asking" ? Color.sageText : .inkFaint)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 4)
-                            .background((task.status == "working" || task.status == "asking" ? Color.sage : .inkFaint).opacity(0.14), in: .capsule)
-                        Text(task.lastActivity, style: .relative).font(.caption2).foregroundStyle(.inkFaint)
-                    }
-                }
-                .contentShape(.rect)
-            }
-            .buttonStyle(.plain)
-            .accessibilityHint(open ? "Closes its live view" : "Opens its live view")
-            if open {
-                TaskLive(nas: store.nas, task: task)
-            }
-        }
-        .padding(.vertical, 10)
-    }
-
     private func errorRow(_ entry: NasLogEntry) -> some View {
         Button { opened = entry } label: {
             VStack(alignment: .leading, spacing: 4) {
@@ -319,12 +284,16 @@ struct SystemPage: View {
         Duration.seconds(seconds).formatted(.units(allowed: [.days, .hours, .minutes], width: .wide, maximumUnitCount: 2))
     }
 
-    private func section<Content: View>(_ section: Section, @ViewBuilder content: () -> Content) -> some View {
+    private func section<Content: View>(_ section: Section, detail: String? = nil, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(section.rawValue.uppercased())
-                .font(.caption2.weight(.semibold))
-                .tracking(1.4)
-                .foregroundStyle(.inkFaint)
+            HStack {
+                Text(section.rawValue.uppercased())
+                    .font(.caption2.weight(.semibold))
+                    .tracking(1.4)
+                    .foregroundStyle(.inkFaint)
+                Spacer()
+                if let detail { Text(detail).font(.caption).foregroundStyle(.inkMuted) }
+            }
             content()
         }
         .id(section)

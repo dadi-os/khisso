@@ -40,11 +40,45 @@ struct NasClient: Sendable {
         try await client.get("/tasks")
     }
 
+    /// POST /browsers/:id/input: pointer and key events, in order. The first one pauses the helper holding the browser.
+    func browserInput(_ id: Int, events: [BrowserInputEvent]) async throws {
+        struct Body: Encodable { let events: [BrowserInputEvent] }
+        try await client.send("/browsers/\(id)/input", body: Body(events: events))
+    }
+
+    /// POST /browsers/:id/navigate: `back` or `reload`. Pauses the helper like input does.
+    func browserNavigate(_ id: Int, action: String) async throws {
+        struct Body: Encodable { let action: String }
+        try await client.send("/browsers/\(id)/navigate", body: Body(action: action))
+    }
+
+    /// POST /terminals/:id/keys: tmux send-keys. `literal` types the text as-is; otherwise each is a key name such as Enter or C-c.
+    func terminalKeys(_ id: String, keys: [String], literal: Bool) async throws {
+        struct Body: Encodable { let keys: [String]; let literal: Bool }
+        struct Sent: Decodable { let sent: Bool }
+        let _: Sent = try await client.post("/terminals/\(Self.escaped(id))/keys", body: Body(keys: keys, literal: literal))
+    }
+
+    /// POST /tasks/:kind/:id/resume: hands a paused task back, with Ankur's `note` when he left one.
+    func resume(_ task: NasTask, note: String?) async throws -> NasTask {
+        struct Body: Encodable { let note: String? }
+        return try await client.post("/tasks/\(task.route)/resume", body: Body(note: note))
+    }
+
+    /// POST /tasks/:kind/:id/stop: ends a paused task and tells its agent.
+    func stop(_ task: NasTask) async throws -> NasTask {
+        struct Body: Encodable {}
+        return try await client.post("/tasks/\(task.route)/stop", body: Body())
+    }
+
+    private static func escaped(_ id: String) -> String {
+        id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
+    }
+
     /// GET /terminals/:id/capture: the last `lines` lines of the terminal's pane as plain text.
     func terminalCapture(_ id: String, lines: Int) async throws -> String {
         struct Response: Decodable { let output: String }
-        let path = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
-        let response: Response = try await client.get("/terminals/\(path)/capture", query: [URLQueryItem(name: "lines", value: String(lines))])
+        let response: Response = try await client.get("/terminals/\(Self.escaped(id))/capture", query: [URLQueryItem(name: "lines", value: String(lines))])
         return response.output
     }
 
