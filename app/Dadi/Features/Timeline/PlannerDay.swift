@@ -259,45 +259,7 @@ struct PlannerDay: View {
     }
 }
 
-/// How strongly a session stands out: commitments (and a session of no kind)
-/// solid, the gym warm, other routines quiet, as in thaali.
-private enum Tone {
-    case solid, warm, quiet
-
-    init(kind: PlanKind?) {
-        switch kind {
-        case .gym: self = .warm
-        case .some(let kind) where kind.isRoutine: self = .quiet
-        default: self = .solid
-        }
-    }
-
-    var fill: Color {
-        switch self {
-        case .solid: .sage.opacity(0.24)
-        case .warm: .clay.opacity(0.16)
-        case .quiet: .boneRaised
-        }
-    }
-
-    var edge: Color {
-        switch self {
-        case .solid: .sageLine
-        case .warm: .clay.opacity(0.5)
-        case .quiet: .rule
-        }
-    }
-
-    var ink: Color {
-        switch self {
-        case .solid: .sageDeep
-        case .warm: .clay
-        case .quiet: .inkMuted
-        }
-    }
-}
-
-/// One session on the axis: its title and time, toned by kind, faded once it
+/// One session on the axis as an opaque sheet: its kind's dot, title and time, faded once it
 /// is settled, struck through when cancelled or completed, with a pin that
 /// opens directions when its place has an address and a circle that marks it
 /// Completed: a check once it is, dashed once it has ended without a mark.
@@ -312,9 +274,12 @@ private struct BlockView: View {
 
     var body: some View {
         let block = segment.block
-        let tone = Tone(kind: block.kind)
         let settled = PlannerLayout.isSettled(block, now: .now)
         HStack(alignment: .top, spacing: 8) {
+            Circle()
+                .fill(block.tone)
+                .frame(width: 7, height: 7)
+                .padding(.top, 5)
             VStack(alignment: .leading, spacing: 1) {
                 Text(block.title)
                     .font(.footnote.weight(.semibold))
@@ -332,7 +297,7 @@ private struct BlockView: View {
                 Button { openURL(url) } label: {
                     Image(systemName: "mappin.and.ellipse")
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(tone.ink)
+                        .foregroundStyle(.sageDeep)
                         .frame(width: 26, height: 26)
                         .contentShape(.rect)
                 }
@@ -340,7 +305,7 @@ private struct BlockView: View {
                 .accessibilityLabel("Directions to \(block.place?.title ?? block.title)")
             }
             if let toggle {
-                Button(action: toggle) { mark(block, tone: tone) }
+                Button(action: toggle) { mark(block) }
                     .buttonStyle(.plain)
                     .accessibilityLabel(block.completed ? "Completed. Take the mark back" : "Mark \(block.title) completed")
             }
@@ -356,11 +321,11 @@ private struct BlockView: View {
                     if total > 0, gone > 0, gone < total {
                         GeometryReader { proxy in
                             Capsule()
-                                .fill(tone.ink.opacity(0.75))
+                                .fill(Color.sageDeep.opacity(0.75))
                                 .frame(width: proxy.size.width * gone / total)
                         }
                         .frame(height: 3)
-                        .background(tone.ink.opacity(0.12), in: .capsule)
+                        .background(Color.sageDeep.opacity(0.12), in: .capsule)
                         .padding(.horizontal, 10)
                         .padding(.bottom, 6)
                         .transition(.opacity)
@@ -368,8 +333,7 @@ private struct BlockView: View {
                 }
             }
         }
-        .background(tone.fill, in: .rect(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(tone.edge, lineWidth: 1))
+        .sessionSheet(radius: 12)
         .opacity(settled ? 0.55 : 1)
         .scaleEffect(block.completed ? 0.985 : 1)
         .animation(Motion.settle, value: block.completed)
@@ -378,17 +342,17 @@ private struct BlockView: View {
 
     /// The Completed circle: a filled check once completed, a dashed ring once
     /// the session has ended unmarked, a plain ring before that.
-    private func mark(_ block: TimelineItem, tone: Tone) -> some View {
+    private func mark(_ block: TimelineItem) -> some View {
         let ended = block.endAt.map { $0 <= .now } == true
         return ZStack {
             if block.completed {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(tone.ink)
+                    .foregroundStyle(.sageDeep)
                     .transition(.scale(scale: 0.4).combined(with: .opacity))
             } else {
                 Circle()
-                    .strokeBorder(tone.ink.opacity(ended ? 0.7 : 0.45), style: StrokeStyle(lineWidth: 1.5, dash: ended ? [2.5, 2.5] : []))
+                    .strokeBorder(Color.sageDeep.opacity(ended ? 0.7 : 0.45), style: StrokeStyle(lineWidth: 1.5, dash: ended ? [2.5, 2.5] : []))
                     .frame(width: 17, height: 17)
                     .transition(.opacity)
             }
@@ -426,7 +390,7 @@ private struct DueRow: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-        .background(.clay.opacity(0.1), in: .rect(cornerRadius: 16, style: .continuous))
+        .sessionSheet(radius: 16)
         .opacity(item.completed ? 0.6 : 1)
     }
 }

@@ -499,3 +499,23 @@ struct SessionSheet: View {
         .animation(Motion.settle, value: item)
     }
 }
+
+extension TimelineItem {
+    /// The dot a session carries by kind, as in thaali: clay for a deadline,
+    /// tide for a class, lab or exam, sage for the rest.
+    var tone: Color {
+        if startAt == nil { return .clay }
+        switch kind {
+        case .class, .lab, .exam: return .tide
+        default: return .sage
+        }
+    }
+}
+
+extension View {
+    /// The timeline's opaque session sheet: raised bone under a hairline, as in thaali.
+    func sessionSheet(radius: CGFloat) -> some View {
+        background(Color.boneRaised, in: .rect(cornerRadius: radius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).strokeBorder(Color.rule, lineWidth: 1))
+    }
+}

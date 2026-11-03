@@ -107,7 +107,7 @@ private struct SomedaySection: View {
                             .foregroundStyle(item.status == .idea ? Color.inkMuted : .clay)
                     }
                     .padding(14)
-                    .background(.boneRaised.opacity(0.75), in: .rect(cornerRadius: 16, style: .continuous))
+                    .sessionSheet(radius: 16)
                     .sessionGestures(item, actions: actions, radius: 16)
                 }
             }
@@ -206,6 +206,10 @@ private struct SessionRow: View {
             .lineLimit(1)
             .fixedSize()
             .frame(width: 66, alignment: .trailing)
+            Circle()
+                .fill(item.tone)
+                .frame(width: 7, height: 7)
+                .alignmentGuide(.firstTextBaseline) { $0[.bottom] + 1 }
             Text(item.title)
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(.ink)
@@ -224,7 +228,7 @@ private struct SessionRow: View {
                 .foregroundStyle(item.missed || (item.startAt == nil && !item.completed) ? Color.clay : .inkMuted)
         }
         .padding(14)
-        .background(item.startAt == nil ? Color.clay.opacity(0.08) : Color.boneRaised.opacity(0.75), in: .rect(cornerRadius: 16, style: .continuous))
+        .sessionSheet(radius: 16)
         .opacity(item.completed || item.cancelled ? 0.55 : 1)
     }
 

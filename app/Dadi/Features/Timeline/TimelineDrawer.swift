@@ -119,7 +119,7 @@ struct TimelineDrawer: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
-        .background(.bone.opacity(0.4), in: .rect(cornerRadius: 14, style: .continuous))
+        .sessionSheet(radius: 14)
         .contentShape(.rect(cornerRadius: 14))
     }
 
