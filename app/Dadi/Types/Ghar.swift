@@ -26,14 +26,15 @@ enum JSONValue: Decodable, Sendable, Hashable {
     var object: [String: JSONValue]? { if case .object(let v) = self { v } else { nil } }
 }
 
-/// A room from GET /rooms.
-struct GharRoom: Decodable, Sendable, Hashable, Identifiable {
+/// A tag as Ghar answers a write to it: GET /tags, POST /tags and the rest.
+struct GharTag: Decodable, Sendable, Hashable, Identifiable {
     let id: String
     let name: String
+    let deviceCount: Int
 }
 
-/// A device from GET /devices: what it is, where it is, what it can do, and
-/// its live state.
+/// A device from GET /devices: what it is, what it is tagged, what it can do,
+/// and its live state.
 struct GharDevice: Decodable, Sendable, Hashable, Identifiable {
     /// One capability and its config (color modes, ranges, choices).
     struct Capability: Decodable, Sendable, Hashable {
@@ -46,8 +47,9 @@ struct GharDevice: Decodable, Sendable, Hashable, Identifiable {
         let value: JSONValue
     }
 
-    /// A Ghar tag on the device; the app calls tags groups.
-    struct Tag: Decodable, Sendable, Hashable {
+    /// A Ghar tag on the device. Tags are the only grouping: a device carries
+    /// any number of them and appears under each.
+    struct Tag: Decodable, Sendable, Hashable, Identifiable {
         let id: String
         let name: String
     }
@@ -57,7 +59,6 @@ struct GharDevice: Decodable, Sendable, Hashable, Identifiable {
     /// What it is, from its Matter device type: light, plug, sensor kinds, …
     let kind: String
     let productName: String?
-    let room: GharRoom
     let tags: [Tag]
     let capabilities: [Capability]
     let online: Bool
@@ -75,8 +76,8 @@ struct GharDevice: Decodable, Sendable, Hashable, Identifiable {
     /// The color modes its color capability supports: `hue_sat`, `color_temp`.
     var colorModes: [String] { config("color")?["modes"]?.array?.compactMap(\.string) ?? [] }
 
-    /// The names of its groups.
-    var groups: [String] { tags.map(\.name) }
+    /// The names of its tags.
+    var tagNames: [String] { tags.map(\.name) }
 
     /// This device with `key` set to `value`.
     func with(_ key: String, _ value: JSONValue) -> GharDevice {
@@ -89,9 +90,19 @@ struct GharDevice: Decodable, Sendable, Hashable, Identifiable {
 /// Body of PATCH /devices/:id: only the fields given change.
 struct GharDevicePatch: Encodable, Sendable {
     var name: String?
-    var room: String?
     /// The device's whole tag list, replacing what it had.
     var tags: [String]?
+}
+
+/// Body of POST /tags: a new tag and the devices it holds.
+struct GharTagCreate: Encodable, Sendable {
+    let name: String
+    let deviceIds: [String]
+}
+
+/// Body of POST /tags/:id/devices.
+struct GharTagDevices: Encodable, Sendable {
+    let deviceIds: [String]
 }
 
 /// Body of POST /devices/:id/command.

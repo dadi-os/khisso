@@ -1,15 +1,14 @@
 import SwiftUI
 
-/// Ghar's devices and rooms for the Ghar pages, and every change made to them.
+/// Ghar's devices and their tags for the Ghar pages, and every change made to them.
 /// A command changes what the pages show at once and is put back, with Ghar's
-/// reason, if Ghar refuses it; a move, rename or regroup waits for Ghar's
+/// reason, if Ghar refuses it; a rename or retag waits for Ghar's
 /// answer.
 @Observable @MainActor
 final class GharStore {
     let ghar: GharClient
 
     private(set) var devices: [GharDevice] = []
-    private(set) var rooms: [GharRoom] = []
     private(set) var loaded = false
     /// Why the last read of Ghar failed.
     private(set) var error: String?
@@ -26,17 +25,23 @@ final class GharStore {
 
     func device(_ id: String) -> GharDevice? { devices.first { $0.id == id } }
 
-    func room(_ id: String) -> GharRoom? { rooms.first { $0.id == id } }
+    /// The tag with this id, while any device carries it. Ghar drops a tag
+    /// that no device has.
+    func tag(_ id: String) -> GharDevice.Tag? {
+        devices.lazy.flatMap(\.tags).first { $0.id == id }
+    }
 
-    /// Reads every device and room from Ghar.
+    /// The devices that carry the tag `id`, by name.
+    func devices(tagged id: String) -> [GharDevice] {
+        GharLayout.tags(devices).first { $0.id == id }?.devices ?? []
+    }
+
+    /// Reads every device and its tags from Ghar.
     func load() async {
         do {
-            async let fetchedDevices = ghar.devices()
-            async let fetchedRooms = ghar.rooms()
-            let (nextDevices, nextRooms) = try await (fetchedDevices, fetchedRooms)
+            let nextDevices = try await ghar.devices()
             let local = Dictionary(uniqueKeysWithValues: devices.filter { inFlight[$0.id] != nil }.map { ($0.id, $0) })
             devices = nextDevices.map { local[$0.id] ?? $0 }
-            rooms = nextRooms
             error = nil
         } catch {
             self.error = error.localizedDescription
@@ -100,31 +105,27 @@ final class GharStore {
         }
     }
 
-    /// Moves `targets` into `room`, stopping at the first one Ghar refuses.
+    /// Gives `device` exactly the tags named in `names`.
     @discardableResult
-    func move(_ targets: [GharDevice], to room: GharRoom) async -> Bool {
-        await edit("Couldn't move to \(GharLayout.name(of: room))") {
-            for target in targets {
-                replace(try await ghar.update(target.id, GharDevicePatch(room: room.id)))
-            }
-        }
-    }
-
-    /// Gives `device` exactly the groups in `groups`.
-    @discardableResult
-    func setGroups(_ groups: [String], on device: GharDevice) async -> Bool {
+    func setTags(_ names: [String], on device: GharDevice) async -> Bool {
         await edit(device.name) {
-            replace(try await ghar.update(device.id, GharDevicePatch(tags: groups)))
+            replace(try await ghar.update(device.id, GharDevicePatch(tags: names)))
         }
     }
 
-    /// Adds `group` to every device in `targets`.
+    /// Puts `targets` under the tag named `name`, making the tag when no
+    /// device has it yet.
     @discardableResult
-    func addGroup(_ group: String, to targets: [GharDevice]) async -> Bool {
-        await edit("Couldn't make \(group)") {
-            for target in targets where !target.groups.contains(group) {
-                replace(try await ghar.update(target.id, GharDevicePatch(tags: target.groups + [group])))
+    func addTag(_ name: String, to targets: [GharDevice]) async -> Bool {
+        await edit("Couldn't tag \(name)") {
+            let ids = targets.filter { !$0.tagNames.contains(name) }.map(\.id)
+            guard !ids.isEmpty else { return }
+            if let existing = devices.lazy.flatMap(\.tags).first(where: { $0.name == name }) {
+                _ = try await ghar.add(ids, toTag: existing.id)
+            } else {
+                _ = try await ghar.createTag(named: name, devices: ids)
             }
+            await load()
         }
     }
 
@@ -136,30 +137,21 @@ final class GharStore {
         }
     }
 
-    /// Makes a room named `name`.
+    /// Renames the tag everywhere it is used.
     @discardableResult
-    func createRoom(named name: String) async -> Bool {
-        await edit("Couldn't make \(name)") {
-            rooms.append(try await ghar.createRoom(named: name))
-        }
-    }
-
-    /// Renames `room`.
-    @discardableResult
-    func rename(_ room: GharRoom, to name: String) async -> Bool {
-        await edit(room.name) {
-            let renamed = try await ghar.renameRoom(room.id, to: name)
-            rooms = rooms.map { $0.id == renamed.id ? renamed : $0 }
+    func rename(_ tag: GharDevice.Tag, to name: String) async -> Bool {
+        await edit(tag.name) {
+            _ = try await ghar.renameTag(tag.id, to: name)
             await load()
         }
     }
 
-    /// Deletes `room`. Ghar refuses a room that still has devices.
+    /// Takes `tag` off every device that has it. The devices stay.
     @discardableResult
-    func delete(_ room: GharRoom) async -> Bool {
-        await edit("Couldn't delete \(room.name)") {
-            try await ghar.deleteRoom(room.id)
-            rooms.removeAll { $0.id == room.id }
+    func delete(_ tag: GharDevice.Tag) async -> Bool {
+        await edit("Couldn't delete \(tag.name)") {
+            try await ghar.deleteTag(tag.id)
+            await load()
         }
     }
 

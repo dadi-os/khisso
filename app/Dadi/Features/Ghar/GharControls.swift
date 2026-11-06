@@ -98,7 +98,7 @@ struct GharSwitch: View {
     }
 }
 
-/// A room's or group's brightness as a bar on the field, filled in its mixed
+/// A tag's brightness as a bar on the field, filled in its mixed
 /// light. Dragging sets every light at once; the bar follows the finger and
 /// sends the level when let go.
 struct LevelBar: View {
@@ -206,8 +206,8 @@ struct GharButtonStyle: ButtonStyle {
     }
 }
 
-/// A sheet for choosing devices: lights to move into a room, or the lights
-/// of a new group with its name. It stays open with Ghar's reason when Ghar
+/// A sheet for choosing devices: lights to add to a tag, or the lights of a
+/// new tag with its name. It stays open with Ghar's reason when Ghar
 /// refuses.
 struct DevicePicker: View {
     let store: GharStore
@@ -258,7 +258,7 @@ struct DevicePicker: View {
                                     .background(Color.boneDeep, in: .circle)
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(device.name).font(.system(size: 15, weight: .semibold)).foregroundStyle(.ink)
-                                    Text(GharLayout.name(of: device.room)).font(.system(size: 13)).foregroundStyle(.inkMuted)
+                                    Text(device.tagNames.isEmpty ? "Untagged" : device.tagNames.joined(separator: ", ")).lineLimit(1).font(.system(size: 13)).foregroundStyle(.inkMuted)
                                 }
                                 Spacer()
                                 Image(systemName: picked ? "checkmark.circle.fill" : "circle")

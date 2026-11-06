@@ -38,7 +38,7 @@ struct PhoneHome: View {
     @Namespace private var sheetWordmark
     /// The Timeline's view, set from its name bubble or its drawer.
     @State private var timelineMode = TimelineMode.day
-    /// Ghar's devices and rooms, which its page and its drawer share.
+    /// Ghar's devices and tags, which its page and its drawer share.
     @State private var ghar: GharStore
     /// What the Ghar page is narrowed to, set from its chips or its drawer.
     @State private var gharFilter = GharPage.Filter.everywhere

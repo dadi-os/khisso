@@ -1,36 +1,35 @@
 import SwiftUI
 
-/// One room: a brightness slab for the whole room with its switch, its lights,
-/// the groups among them, and renaming the room or moving lights into it.
-/// The "…" menu also deletes the room; Ghar refuses while devices are still
-/// in it, and the page says so.
-struct RoomPage: View {
+/// One tag: a brightness slab for every light carrying it with its switch,
+/// those lights, the other tags among them, and renaming the tag or adding
+/// lights to it. The "…" menu also deletes the tag, which only takes the tag
+/// off its lights; they stay.
+struct TagPage: View {
     let store: GharStore
-    let roomId: String
+    let tagId: String
 
     @Environment(\.dismiss) private var dismiss
     @State private var focused: GharDevice?
     @State private var filling = false
-    @State private var grouping = false
     @State private var renaming = false
     @State private var deleting = false
+    @State private var making = false
     @State private var name = ""
     @State private var switched = 0
 
     var body: some View {
-        let room = store.room(roomId)
-        let devices = room.map { room in GharLayout.sections(store.devices, rooms: [room]).first?.devices ?? [] } ?? []
-        let placed = room.map { $0.name != GharLayout.unassigned } ?? false
+        let tag = store.tag(tagId)
+        let devices = store.devices(tagged: tagId)
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 if !devices.isEmpty {
-                    RoomSlab(devices: devices) { on in
+                    TagSlab(devices: devices) { on in
                         store.setOn(on, devices)
                     } commit: { level in
                         store.setLevel(level, devices)
                     }
                     .padding(.top, 14)
-                    Text("Drag up or down to set every light in the room at once.")
+                    Text("Drag up or down to set every light in this tag at once.")
                         .font(.system(size: 12))
                         .foregroundStyle(.inkMuted)
                         .padding(.horizontal, 4)
@@ -53,7 +52,7 @@ struct RoomPage: View {
                 heading("Lights")
                     .padding(.top, 22)
                 if devices.isEmpty {
-                    Text("No lights here yet. Move some in.")
+                    Text("No lights carry this tag.")
                         .font(.system(size: 15))
                         .foregroundStyle(.inkMuted)
                 }
@@ -76,15 +75,15 @@ struct RoomPage: View {
                 }
                 .animation(Motion.settle, value: devices.map(\.id))
                 if !devices.isEmpty {
-                    heading("Groups here")
+                    heading("Also tagged")
                         .padding(.top, 24)
                     ScrollView(.horizontal) {
                         HStack(spacing: 8) {
-                            ForEach(GharLayout.groups(devices)) { group in
-                                groupChip(group)
+                            ForEach(GharLayout.tags(devices).filter { $0.id != tagId }) { set in
+                                tagChip(set)
                             }
-                            Button { grouping = true } label: {
-                                GharChip(title: "New group", dashed: true, height: 38)
+                            Button { making = true } label: {
+                                GharChip(title: "New tag", dashed: true, height: 38)
                             }
                             .buttonStyle(.plain)
                         }
@@ -99,16 +98,16 @@ struct RoomPage: View {
             .padding(.bottom, 28)
         }
         .background { FieldBloom() }
-        .safeAreaBar(edge: .top) { topBar(room: room, placed: placed) }
+        .safeAreaBar(edge: .top) { topBar(tag: tag) }
         .safeAreaBar(edge: .bottom) {
-            if let room, placed {
+            if let tag {
                 HStack(spacing: 10) {
-                    Button { name = room.name; renaming = true } label: {
-                        Text("Rename room").frame(maxWidth: .infinity)
+                    Button { name = tag.name; renaming = true } label: {
+                        Text("Rename tag").frame(maxWidth: .infinity)
                     }
                     .buttonStyle(GharButtonStyle(height: 46))
                     Button { filling = true } label: {
-                        Text("Move lights here").frame(maxWidth: .infinity)
+                        Text("Add lights").frame(maxWidth: .infinity)
                     }
                     .buttonStyle(GharButtonStyle(prominent: true, height: 46))
                 }
@@ -124,44 +123,44 @@ struct RoomPage: View {
                 .presentationCornerRadius(34)
         }
         .sheet(isPresented: $filling) {
-            if let room {
-                DevicePicker(store: store, title: "Move lights here", action: "Move here", devices: store.devices.filter { $0.room.id != room.id }) { _, chosen in
-                    await store.move(chosen, to: room)
+            if let tag {
+                DevicePicker(store: store, title: "Add lights to \(tag.name)", action: "Add", devices: store.devices.filter { !$0.tags.contains(tag) }) { _, chosen in
+                    await store.addTag(tag.name, to: chosen)
                 }
                 .fittedSheet()
                 .presentationBackground(Color.boneRaised)
             }
         }
-        .sheet(isPresented: $grouping) {
-            DevicePicker(store: store, title: "New group", action: "Make group", devices: devices, naming: "Group name, like Nightstands") { name, chosen in
-                await store.addGroup(name, to: chosen)
+        .sheet(isPresented: $making) {
+            DevicePicker(store: store, title: "New tag", action: "Make tag", devices: devices, naming: "Tag name, like Nightstands") { name, chosen in
+                await store.addTag(name, to: chosen)
             }
             .fittedSheet()
             .presentationBackground(Color.boneRaised)
         }
-        .alert("Rename room", isPresented: $renaming) {
-            TextField("Room name", text: $name)
+        .alert("Rename tag", isPresented: $renaming) {
+            TextField("Tag name", text: $name)
             Button("Cancel", role: .cancel) {}
             Button("Rename") {
                 let next = name.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard let room, !next.isEmpty, next != room.name else { return }
-                Task { await store.rename(room, to: next) }
+                guard let tag, !next.isEmpty, next != tag.name else { return }
+                Task { await store.rename(tag, to: next) }
             }
         }
-        .confirmationDialog("Delete \(room?.name ?? "")?", isPresented: $deleting, titleVisibility: .visible) {
-            Button("Delete room", role: .destructive) {
-                guard let room else { return }
-                Task { await store.delete(room) }
+        .confirmationDialog("Delete \(tag?.name ?? "")?", isPresented: $deleting, titleVisibility: .visible) {
+            Button("Delete tag", role: .destructive) {
+                guard let tag else { return }
+                Task { await store.delete(tag) }
             }
         } message: {
-            Text(devices.isEmpty ? "The room has no devices." : "Ghar only deletes an empty room. Move its \(devices.count == 1 ? "device" : "\(devices.count) devices") out first.")
+            Text("The tag comes off its \(devices.count == 1 ? "device" : "\(devices.count) devices"). The devices stay.")
         }
-        .onChange(of: room == nil) { _, gone in
+        .onChange(of: tag == nil) { _, gone in
             if gone && store.loaded { dismiss() }
         }
     }
 
-    private func topBar(room: GharRoom?, placed: Bool) -> some View {
+    private func topBar(tag: GharDevice.Tag?) -> some View {
         HStack {
             Button { dismiss() } label: {
                 Image(systemName: "chevron.left")
@@ -172,18 +171,18 @@ struct RoomPage: View {
             .buttonBorderShape(.circle)
             .accessibilityLabel("Back to Ghar")
             Spacer()
-            if let room {
-                NameBubble(title: GharLayout.name(of: room))
+            if let tag {
+                NameBubble(title: tag.name)
             }
             Spacer()
             Menu {
-                Button("Rename room", systemImage: "pencil") {
-                    name = room?.name ?? ""
+                Button("Rename tag", systemImage: "pencil") {
+                    name = tag?.name ?? ""
                     renaming = true
                 }
-                Button("Move lights here", systemImage: "arrow.down.to.line") { filling = true }
+                Button("Add lights", systemImage: "plus") { filling = true }
                 Divider()
-                Button("Delete room", systemImage: "trash", role: .destructive) { deleting = true }
+                Button("Delete tag", systemImage: "trash", role: .destructive) { deleting = true }
             } label: {
                 Image(systemName: "ellipsis")
                     .font(.body.weight(.semibold))
@@ -191,9 +190,7 @@ struct RoomPage: View {
             }
             .buttonStyle(.glass)
             .buttonBorderShape(.circle)
-            .opacity(placed ? 1 : 0)
-            .disabled(!placed)
-            .accessibilityLabel("Room options")
+            .accessibilityLabel("Tag options")
         }
         .controlSize(.large)
         .padding(.horizontal, 16)
@@ -209,20 +206,20 @@ struct RoomPage: View {
             .padding(.bottom, 10)
     }
 
-    /// A group's chip: its name and how many of its lights are here. Tapping
-    /// it switches those lights, and its mark glows in their light while any
-    /// is on.
-    private func groupChip(_ group: GharGroup) -> some View {
-        let summary = GharLayout.summary(group.devices)
+    /// Another tag among these lights: its name and how many of them carry
+    /// it. Tapping it switches those lights, and its mark glows in their
+    /// light while any is on.
+    private func tagChip(_ set: GharTagSet) -> some View {
+        let summary = GharLayout.summary(set.devices)
         return Button {
             switched += 1
-            store.setOn(summary.on == 0, group.devices)
+            store.setOn(summary.on == 0, set.devices)
         } label: {
             HStack(spacing: 8) {
-                Image(systemName: "circle.grid.2x1")
+                Image(systemName: "tag")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(summary.color.map { AnyShapeStyle($0.color) } ?? AnyShapeStyle(Color.sageDeep))
-                Text("\(group.name) · \(group.devices.count)")
+                Text("\(set.name) · \(set.devices.count)")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(.sageDeep)
             }
@@ -234,16 +231,16 @@ struct RoomPage: View {
         }
         .buttonStyle(.plain)
         .accessibilityValue(GharLayout.status(summary))
-        .accessibilityHint("Switches the group's lights in this room")
+        .accessibilityHint("Switches the lights that carry this tag here")
     }
 }
 
-/// The room's brightness as a tall slab that fills from the bottom in the
-/// room's mixed light. Dragging up or down sets every light; it follows the
+/// The tag's brightness as a tall slab that fills from the bottom in the
+/// lights' mixed light. Dragging up or down sets every light; it follows the
 /// finger and sends the level when let go.
-private struct RoomSlab: View {
+private struct TagSlab: View {
     let devices: [GharDevice]
-    let switchRoom: (Bool) -> Void
+    let switchTag: (Bool) -> Void
     let commit: (Int) -> Void
 
     @Environment(\.colorScheme) private var scheme
@@ -277,7 +274,7 @@ private struct RoomSlab: View {
                         }
                         Spacer()
                         if summary.total > 0 {
-                            GharSwitch(isOn: summary.on > 0, label: "Switch the whole room") { switchRoom(summary.on == 0) }
+                            GharSwitch(isOn: summary.on > 0, label: "Switch the whole tag") { switchTag(summary.on == 0) }
                         }
                     }
                     Spacer()
@@ -311,7 +308,7 @@ private struct RoomSlab: View {
         .frame(height: 176)
         .sensoryFeedback(.selection, trigger: Int(level / 10))
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Room brightness")
+        .accessibilityLabel("Tag brightness")
         .accessibilityValue(summary.on > 0 ? "\(Int(level)) percent" : "Off")
         .accessibilityAdjustableAction { direction in
             commit(Int(min(100, max(1, level + (direction == .increment ? 10 : -10)))))

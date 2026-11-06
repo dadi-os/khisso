@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// One light's sheet: its switch, a tall brightness pill, warmth and color
-/// sliders, preset swatches, and which room and groups it is in. Tap the name
+/// sliders, preset swatches, and which tags it carries. Tap the name
 /// to rename it.
 struct LightSheet: View {
     let store: GharStore
@@ -10,7 +10,7 @@ struct LightSheet: View {
     @State private var renaming = false
     @State private var naming = false
     @State private var name = ""
-    @State private var group = ""
+    @State private var tagName = ""
 
     var body: some View {
         if let device = store.device(deviceId) {
@@ -36,7 +36,7 @@ struct LightSheet: View {
                         Text(device.name)
                             .font(.system(size: 22, weight: .bold))
                             .foregroundStyle(.ink)
-                        Text([GharLayout.name(of: device.room), device.productName].compactMap { $0 }.joined(separator: " · "))
+                        Text(device.productName ?? "")
                             .font(.system(size: 13))
                             .foregroundStyle(.inkMuted)
                     }
@@ -119,9 +119,7 @@ struct LightSheet: View {
 
             VStack(spacing: 0) {
                 Divider().overlay(Color.rule)
-                roomRow(device)
-                Divider().overlay(Color.rule)
-                groupsRow(device)
+                tagsRow(device)
             }
             .padding(.top, 26)
         }
@@ -137,51 +135,34 @@ struct LightSheet: View {
                 Task { await store.rename(device, to: next) }
             }
         }
-        .alert("New group", isPresented: $naming) {
-            TextField("Group name, like Nightstands", text: $group)
-            Button("Cancel", role: .cancel) { group = "" }
+        .alert("New tag", isPresented: $naming) {
+            TextField("Tag name, like Ankur's bed lights", text: $tagName)
+            Button("Cancel", role: .cancel) { tagName = "" }
             Button("Add") {
-                let next = group.trimmingCharacters(in: .whitespacesAndNewlines)
-                group = ""
-                guard !next.isEmpty, !device.groups.contains(next) else { return }
-                Task { await store.setGroups(device.groups + [next], on: device) }
+                let next = tagName.trimmingCharacters(in: .whitespacesAndNewlines)
+                tagName = ""
+                guard !next.isEmpty, !device.tagNames.contains(next) else { return }
+                Task { await store.addTag(next, to: [device]) }
             }
         } message: {
-            Text("\(device.name) joins the new group.")
+            Text("\(device.name) joins the new tag.")
         }
     }
 
-    /// The Room row: a menu of every room that moves the light there.
-    private func roomRow(_ device: GharDevice) -> some View {
-        let rooms = store.rooms.sorted { ($0.name == GharLayout.unassigned ? 1 : 0, $0.name) < ($1.name == GharLayout.unassigned ? 1 : 0, $1.name) }
-        return Menu {
-            Picker("Room", selection: Binding(get: { device.room.id }, set: { id in
-                guard let room = store.room(id), id != device.room.id else { return }
-                Task { await store.move([device], to: room) }
-            })) {
-                ForEach(rooms) { room in
-                    Text(GharLayout.name(of: room)).tag(room.id)
-                }
-            }
-        } label: {
-            row("Room", value: GharLayout.name(of: device.room))
-        }
-    }
-
-    /// The Groups row: a menu that adds the light to a group or takes it out,
-    /// or makes a new group with it.
-    private func groupsRow(_ device: GharDevice) -> some View {
+    /// The Tags row: a menu that adds the light to a tag or takes it off, or
+    /// makes a new tag with it.
+    private func tagsRow(_ device: GharDevice) -> some View {
         Menu {
-            ForEach(GharLayout.groups(store.devices)) { candidate in
-                Toggle(candidate.name, isOn: Binding(get: { device.groups.contains(candidate.name) }, set: { joined in
-                    let next = joined ? device.groups + [candidate.name] : device.groups.filter { $0 != candidate.name }
-                    Task { await store.setGroups(next, on: device) }
+            ForEach(GharLayout.tags(store.devices)) { candidate in
+                Toggle(candidate.name, isOn: Binding(get: { device.tagNames.contains(candidate.name) }, set: { joined in
+                    let next = joined ? device.tagNames + [candidate.name] : device.tagNames.filter { $0 != candidate.name }
+                    Task { await store.setTags(next, on: device) }
                 }))
             }
             Divider()
-            Button("New group…", systemImage: "plus") { naming = true }
+            Button("New tag…", systemImage: "plus") { naming = true }
         } label: {
-            row("Groups", value: device.groups.isEmpty ? "None" : device.groups.joined(separator: ", "))
+            row("Tags", value: device.tagNames.isEmpty ? "None" : device.tagNames.joined(separator: ", "))
         }
     }
 

@@ -60,22 +60,13 @@ struct LightColor: Hashable, Sendable {
     static let sage = LightColor(red: 0.561, green: 0.639, blue: 0.510)
 }
 
-/// A room on the Ghar page and its devices, by name.
-struct GharSection: Identifiable, Hashable {
-    let room: GharRoom
-    let devices: [GharDevice]
-
-    var id: String { room.id }
-    /// False for Ghar's `unassigned` room: devices not in a room.
-    var placed: Bool { room.name != GharLayout.unassigned }
-}
-
 /// A Ghar tag and the devices that carry it.
-struct GharGroup: Identifiable, Hashable {
-    let name: String
+struct GharTagSet: Identifiable, Hashable {
+    let tag: GharDevice.Tag
     let devices: [GharDevice]
 
-    var id: String { name }
+    var id: String { tag.id }
+    var name: String { tag.name }
 }
 
 /// How many of a set of devices are on, their brightness and their light.
@@ -132,12 +123,9 @@ struct LightPreset: Identifiable {
     ]
 }
 
-/// The Ghar page's arrangement: rooms and groups, what is on, and how a
-/// device's light and state read.
+/// The Ghar page's arrangement: tags, what is on, and how a device's light
+/// and state read.
 enum GharLayout {
-    /// Ghar's room for devices that are not in a room.
-    static let unassigned = "unassigned"
-
     /// Evening: every light at this brightness in warm white.
     static let eveningLevel = 40
     /// 2700 K.
@@ -146,27 +134,20 @@ enum GharLayout {
     /// The coolest and warmest whites the warmth slider offers, in kelvin.
     static let warmthRange: ClosedRange<Double> = 2000...6500
 
-    /// Every room by name, empty ones too, each with its devices by name, then
-    /// the devices that are not in a room when there are any.
-    static func sections(_ devices: [GharDevice], rooms: [GharRoom]) -> [GharSection] {
-        let byRoom = Dictionary(grouping: devices, by: \.room.id)
-        let sorted = rooms.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-        let placed = sorted.filter { $0.name != unassigned }.map { room in
-            GharSection(room: room, devices: byName(byRoom[room.id] ?? []))
+    /// Every tag on any device, by name, each with its devices by name. A
+    /// device appears under every tag it carries.
+    static func tags(_ devices: [GharDevice]) -> [GharTagSet] {
+        var found: [String: GharDevice.Tag] = [:]
+        for tag in devices.flatMap(\.tags) { found[tag.id] = tag }
+        let sorted = found.values.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        return sorted.map { tag in
+            GharTagSet(tag: tag, devices: byName(devices.filter { $0.tags.contains(tag) }))
         }
-        let loose = sorted.filter { $0.name == unassigned }.compactMap { room -> GharSection? in
-            let inside = byRoom[room.id] ?? []
-            return inside.isEmpty ? nil : GharSection(room: room, devices: byName(inside))
-        }
-        return placed + loose
     }
 
-    /// Every tag on any device, by name, each with its devices by name.
-    static func groups(_ devices: [GharDevice]) -> [GharGroup] {
-        let names = Set(devices.flatMap(\.groups))
-        return names.sorted { $0.localizedStandardCompare($1) == .orderedAscending }.map { name in
-            GharGroup(name: name, devices: byName(devices.filter { $0.groups.contains(name) }))
-        }
+    /// The devices that carry no tag, by name.
+    static func untagged(_ devices: [GharDevice]) -> [GharDevice] {
+        byName(devices.filter { $0.tags.isEmpty })
     }
 
     /// What is on among `devices`, how bright and in what light.
@@ -189,30 +170,23 @@ enum GharLayout {
         return "\(summary.on) of \(summary.total) \(summary.total == 1 ? "light" : "lights") on"
     }
 
-    /// "2 of 3 on", "All off", or "Nothing here yet" for a room or group.
+    /// "2 of 3 on", "All off", or "Nothing here yet" for a tag or a set of devices.
     static func status(_ summary: GharSummary) -> String {
         guard summary.total > 0 else { return "Nothing here yet" }
         return summary.on == 0 ? "All off" : "\(summary.on) of \(summary.total) on"
     }
 
-    /// Where the devices are: "3 lights in Ankur's room", "5 lights in 2
-    /// rooms, 1 not in a room".
-    static func whereabouts(_ sections: [GharSection]) -> String {
-        let devices = sections.flatMap(\.devices)
+    /// How the devices are tagged: "3 lights in 1 tag", "5 lights in 3 tags,
+    /// 1 untagged", "5 lights, none tagged".
+    static func whereabouts(_ devices: [GharDevice]) -> String {
         guard !devices.isEmpty else { return "Add a light from the box's Ghar page" }
         let noun = devices.allSatisfy { $0.kind == "light" } ? "light" : "device"
         func count(_ n: Int) -> String { "\(n) \(noun)\(n == 1 ? "" : "s")" }
-        let rooms = sections.filter { $0.placed && !$0.devices.isEmpty }
-        let loose = sections.filter { !$0.placed }.flatMap(\.devices).count
-        let inRooms = rooms.reduce(0) { $0 + $1.devices.count }
-        if rooms.isEmpty { return "\(count(loose)), none in a room" }
-        let place = rooms.count == 1 ? "in \(rooms[0].room.name)" : "in \(rooms.count) rooms"
-        return loose == 0 ? "\(count(inRooms)) \(place)" : "\(count(inRooms)) \(place), \(loose) not in a room"
-    }
-
-    /// A room's name as the page shows it.
-    static func name(of room: GharRoom) -> String {
-        room.name == unassigned ? "Not in a room" : room.name
+        let tagCount = tags(devices).count
+        let loose = untagged(devices).count
+        if tagCount == 0 { return "\(count(devices.count)), none tagged" }
+        let place = "in \(tagCount) \(tagCount == 1 ? "tag" : "tags")"
+        return loose == 0 ? "\(count(devices.count)) \(place)" : "\(count(devices.count)) \(place), \(loose) untagged"
     }
 
     /// The light `device` gives: its hue or white for a light, sage for

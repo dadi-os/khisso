@@ -1,17 +1,19 @@
 import SwiftUI
 
-/// Ghar: what is on at a glance, All off and Evening, chips to narrow to a
-/// room or a group (the drawer narrows it too), then each room on the field
-/// with its switch, its brightness and its lights as tiles. Tap a tile to
-/// switch it, hold it for the light sheet, tap a room's name for the room
-/// page. The page reads Ghar again whenever Ghar announces a change, so
-/// changes made elsewhere show up at once.
+/// Ghar: what is on at a glance, All off and Evening, chips to narrow to a tag
+/// (the drawer narrows it too), then the chosen tag on the field with its
+/// switch, its brightness and its lights as tiles. A device carries any number
+/// of tags and shows under each. Tap a tile to switch it, hold it for the
+/// light sheet, tap a tag's name for the tag page. The page reads Ghar again
+/// whenever Ghar announces a change, so changes made elsewhere show up at
+/// once.
 struct GharPage: View {
-    /// What the chips narrow the page to.
+    /// What the chips narrow the page to. A tag is held by its id, which
+    /// survives a rename.
     enum Filter: Hashable {
         case everywhere
-        case room(String)
-        case group(String)
+        case tag(String)
+        case untagged
     }
 
     let store: GharStore
@@ -20,17 +22,16 @@ struct GharPage: View {
 
     @Environment(LiveData.self) private var live
     @State private var focused: GharDevice?
-    @State private var opened: GharRoom?
-    @State private var filling: GharRoom?
+    @State private var opened: GharDevice.Tag?
+    @State private var filling: GharDevice.Tag?
     @State private var naming = false
-    @State private var roomName = ""
     @State private var switched = 0
     @Namespace private var zoom
     @Namespace private var chip
 
     var body: some View {
-        let sections = GharLayout.sections(store.devices, rooms: store.rooms)
-        let groups = GharLayout.groups(store.devices)
+        let tags = GharLayout.tags(store.devices)
+        let loose = GharLayout.untagged(store.devices)
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -39,7 +40,7 @@ struct GharPage: View {
                         .tracking(-0.5)
                         .foregroundStyle(.ink)
                         .contentTransition(.numericText())
-                    Text(GharLayout.whereabouts(sections))
+                    Text(GharLayout.whereabouts(store.devices))
                         .font(.system(size: 15))
                         .foregroundStyle(.inkMuted)
                 }
@@ -67,7 +68,7 @@ struct GharPage: View {
                 .padding(.top, 14)
                 .padding(.bottom, 4)
 
-                chips(sections: sections, groups: groups)
+                chips(tags: tags, hasUntagged: !loose.isEmpty)
                     .padding(.top, 16)
 
                 if let error = store.error {
@@ -78,20 +79,20 @@ struct GharPage: View {
                 }
 
                 switch filter {
-                case .group(let name):
-                    if let group = groups.first(where: { $0.name == name }) {
-                        groupSection(group)
+                case .tag(let id):
+                    if let set = tags.first(where: { $0.id == id }) {
+                        field(title: set.name, devices: set.devices, tag: set.tag)
                     }
-                case .room(let id):
-                    ForEach(sections.filter { $0.id == id }) { roomSection($0) }
+                case .untagged:
+                    field(title: "Untagged", devices: loose, tag: nil)
                 case .everywhere:
-                    ForEach(sections) { roomSection($0) }
+                    field(title: "Everywhere", devices: store.devices, tag: nil)
                 }
 
                 if !store.loaded && store.error == nil {
                     SkeletonRows(count: 4, height: 132)
                 }
-                if store.loaded && sections.isEmpty && store.error == nil {
+                if store.loaded && store.devices.isEmpty && store.error == nil {
                     EmptyState(title: "No devices yet", detail: "Add devices from the Ghar page on your Mac or the box.")
                         .padding(.top, 40)
                 }
@@ -109,54 +110,53 @@ struct GharPage: View {
                 .presentationBackground(Color.boneRaised)
                 .presentationCornerRadius(34)
         }
-        .sheet(item: $filling) { room in
-            DevicePicker(store: store, title: "Move lights to \(room.name)", action: "Move here", devices: store.devices.filter { $0.room.id != room.id }) { _, chosen in
-                await store.move(chosen, to: room)
+        .sheet(item: $filling) { tag in
+            DevicePicker(store: store, title: "Add lights to \(tag.name)", action: "Add", devices: store.devices.filter { !$0.tags.contains(tag) }) { _, chosen in
+                await store.addTag(tag.name, to: chosen)
             }
             .fittedSheet()
             .presentationBackground(Color.boneRaised)
         }
-        .fullScreenCover(item: $opened) { room in
-            RoomPage(store: store, roomId: room.id)
-                .navigationTransition(.zoom(sourceID: room.id, in: zoom))
-        }
-        .alert("New room", isPresented: $naming) {
-            TextField("Room name", text: $roomName)
-            Button("Cancel", role: .cancel) { roomName = "" }
-            Button("Make room") {
-                let name = roomName.trimmingCharacters(in: .whitespacesAndNewlines)
-                roomName = ""
-                guard !name.isEmpty else { return }
-                Task { await store.createRoom(named: name) }
+        .sheet(isPresented: $naming) {
+            DevicePicker(store: store, title: "New tag", action: "Make tag", devices: store.devices, naming: "Tag name, like Ankur's bed lights") { name, chosen in
+                await store.addTag(name, to: chosen)
             }
+            .fittedSheet()
+            .presentationBackground(Color.boneRaised)
         }
-        .onChange(of: store.rooms) {
-            if case .room(let id) = filter, store.room(id) == nil { filter = .everywhere }
+        .fullScreenCover(item: $opened) { tag in
+            TagPage(store: store, tagId: tag.id)
+                .navigationTransition(.zoom(sourceID: tag.id, in: zoom))
+        }
+        .onChange(of: store.devices) {
+            switch filter {
+            case .tag(let id): if store.tag(id) == nil { filter = .everywhere }
+            case .untagged: if GharLayout.untagged(store.devices).isEmpty { filter = .everywhere }
+            case .everywhere: break
+            }
         }
         .task(id: live.ghar) { await store.load() }
     }
 
-    private func chips(sections: [GharSection], groups: [GharGroup]) -> some View {
+    private func chips(tags: [GharTagSet], hasUntagged: Bool) -> some View {
         ScrollView(.horizontal) {
             HStack(spacing: 8) {
                 chipButton(.everywhere, title: "Everywhere")
-                ForEach(sections) { section in
-                    chipButton(.room(section.id), title: GharLayout.name(of: section.room))
+                ForEach(tags) { set in
+                    chipButton(.tag(set.id), title: set.name, symbol: "tag")
                         .contextMenu {
-                            Button("Open room", systemImage: "arrow.up.left.and.arrow.down.right") { opened = section.room }
+                            Button("Open tag", systemImage: "arrow.up.left.and.arrow.down.right") { opened = set.tag }
+                            Button("Turn on", systemImage: "lightbulb.fill") { switched += 1; store.setOn(true, set.devices) }
+                            Button("Turn off", systemImage: "lightbulb") { switched += 1; store.setOn(false, set.devices) }
                         }
                 }
-                ForEach(groups) { group in
-                    chipButton(.group(group.name), title: group.name, symbol: "circle.grid.2x1")
-                        .contextMenu {
-                            Button("Turn on", systemImage: "lightbulb.fill") { switched += 1; store.setOn(true, group.devices) }
-                            Button("Turn off", systemImage: "lightbulb") { switched += 1; store.setOn(false, group.devices) }
-                        }
+                if hasUntagged && !tags.isEmpty {
+                    chipButton(.untagged, title: "Untagged")
                 }
                 Button {
                     naming = true
                 } label: {
-                    GharChip(title: "New room", symbol: "plus", dashed: true)
+                    GharChip(title: "New tag", symbol: "plus", dashed: true)
                 }
                 .buttonStyle(.plain)
             }
@@ -181,90 +181,64 @@ struct GharPage: View {
         .sensoryFeedback(.selection, trigger: selected)
     }
 
-    /// A room on the field: its name (which opens the room page), what is on,
-    /// its switch, its brightness and its tiles, ending with a tile that
-    /// moves lights in.
-    private func roomSection(_ section: GharSection) -> some View {
-        let summary = GharLayout.summary(section.devices)
+    /// What the chips chose, on the field: its name (a tag's opens the tag
+    /// page), what is on, its switch, its brightness and its tiles. A tag ends
+    /// with a tile that adds lights to it.
+    private func field(title: String, devices: [GharDevice], tag: GharDevice.Tag?) -> some View {
+        let summary = GharLayout.summary(devices)
         return VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Button { opened = section.room } label: {
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(spacing: 6) {
-                            Text(GharLayout.name(of: section.room))
-                                .font(.system(size: 19, weight: .bold))
-                                .foregroundStyle(.ink)
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundStyle(.inkFaint)
-                        }
-                        Text(GharLayout.status(summary))
-                            .font(.system(size: 13))
-                            .foregroundStyle(.inkMuted)
-                            .contentTransition(.numericText())
-                    }
-                    .contentShape(.rect)
+                if let tag {
+                    Button { opened = tag } label: { heading(title, status: summary, chevron: true) }
+                        .buttonStyle(.plain)
+                        .matchedTransitionSource(id: tag.id, in: zoom)
+                        .accessibilityHint("Opens the tag")
+                } else {
+                    heading(title, status: summary, chevron: false)
                 }
-                .buttonStyle(.plain)
-                .matchedTransitionSource(id: section.id, in: zoom)
-                .accessibilityHint("Opens the room")
                 Spacer()
                 if summary.total > 0 {
-                    GharSwitch(isOn: summary.on > 0, label: "Switch \(GharLayout.name(of: section.room))") {
-                        store.setOn(summary.on == 0, section.devices)
+                    GharSwitch(isOn: summary.on > 0, label: "Switch \(title)") {
+                        store.setOn(summary.on == 0, devices)
                     }
                 }
             }
             .padding(.top, 26)
             .padding(.bottom, 10)
-            if section.devices.contains(where: { $0.has("level") }) {
-                LevelBar(summary: summary) { store.setLevel($0, section.devices) }
+            if devices.contains(where: { $0.has("level") }) {
+                LevelBar(summary: summary) { store.setLevel($0, devices) }
                     .padding(.bottom, 14)
             }
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
-                ForEach(section.devices) { tile($0) }
-                if section.placed {
-                    Button { filling = section.room } label: { addTile }
+                ForEach(devices) { tile($0) }
+                if let tag {
+                    Button { filling = tag } label: { addTile }
                         .buttonStyle(.plain)
-                        .accessibilityLabel("Add a device to \(section.room.name)")
+                        .accessibilityLabel("Add a device to \(tag.name)")
                 }
             }
-            .animation(Motion.settle, value: section.devices.map(\.id))
+            .animation(Motion.settle, value: devices.map(\.id))
         }
     }
 
-    /// A group on the field when its chip is chosen: its lights from every
-    /// room, with a switch and brightness for all of them.
-    private func groupSection(_ group: GharGroup) -> some View {
-        let summary = GharLayout.summary(group.devices)
-        return VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(group.name)
-                        .font(.system(size: 19, weight: .bold))
-                        .foregroundStyle(.ink)
-                    Text(GharLayout.status(summary))
-                        .font(.system(size: 13))
-                        .foregroundStyle(.inkMuted)
-                        .contentTransition(.numericText())
-                }
-                Spacer()
-                if summary.total > 0 {
-                    GharSwitch(isOn: summary.on > 0, label: "Switch \(group.name)") {
-                        store.setOn(summary.on == 0, group.devices)
-                    }
+    private func heading(_ title: String, status summary: GharSummary, chevron: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                Text(title)
+                    .font(.system(size: 19, weight: .bold))
+                    .foregroundStyle(.ink)
+                if chevron {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(.inkFaint)
                 }
             }
-            .padding(.top, 26)
-            .padding(.bottom, 10)
-            if group.devices.contains(where: { $0.has("level") }) {
-                LevelBar(summary: summary) { store.setLevel($0, group.devices) }
-                    .padding(.bottom, 14)
-            }
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
-                ForEach(group.devices) { tile($0) }
-            }
+            Text(GharLayout.status(summary))
+                .font(.system(size: 13))
+                .foregroundStyle(.inkMuted)
+                .contentTransition(.numericText())
         }
+        .contentShape(.rect)
     }
 
     private func tile(_ device: GharDevice) -> some View {

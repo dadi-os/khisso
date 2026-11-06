@@ -395,37 +395,36 @@ struct GharLayoutTests {
         return try ServiceJSON.decoder.decode(GharDevice.self, from: JSONSerialization.data(withJSONObject: json))
     }
 
-    @Test func roomsComeByNameWithLooseDevicesLast() throws {
+    @Test func tagsCollectEveryDeviceWithTheTagAndUntaggedComeApart() throws {
         let devices = [
-            try light("a", "Right Nightstand", room: bedroom, on: false),
-            try light("b", "Desk Lamp", room: bedroom, on: true),
-            try light("c", "Hall", room: loose, on: false),
+            try light("a", "Right Nightstand", on: false, tags: ["Nightstands"]),
+            try light("b", "Left Nightstand", on: true, tags: ["Nightstands", "Bedtime"]),
+            try light("c", "Desk Lamp", on: true),
         ]
-        let sections = GharLayout.sections(devices, rooms: [loose, kitchen, bedroom])
-        #expect(sections.map(\.room.name) == ["Ankur's room", "Kitchen", "unassigned"])
-        #expect(sections[0].devices.map(\.name) == ["Desk Lamp", "Right Nightstand"])
-        #expect(sections[1].devices.isEmpty)
-        #expect(sections.map(\.placed) == [true, true, false])
-        #expect(GharLayout.whereabouts(sections) == "2 lights in Ankur's room, 1 not in a room")
-        #expect(GharLayout.sections(Array(devices.prefix(2)), rooms: [loose, bedroom]).map(\.room.name) == ["Ankur's room"])
+        let tags = GharLayout.tags(devices)
+        #expect(tags.map(\.name) == ["Bedtime", "Nightstands"])
+        #expect(tags[1].devices.map(\.name) == ["Left Nightstand", "Right Nightstand"])
+        #expect(tags[0].devices.map(\.name) == ["Left Nightstand"])
+        #expect(GharLayout.untagged(devices).map(\.name) == ["Desk Lamp"])
+        #expect(GharLayout.whereabouts(devices) == "3 lights in 2 tags, 1 untagged")
+        #expect(GharLayout.whereabouts(Array(devices.prefix(2))) == "2 lights in 2 tags")
+        #expect(GharLayout.whereabouts([devices[2]]) == "1 light, none tagged")
     }
 
-    @Test func groupsCollectEveryDeviceWithTheTag() throws {
-        let devices = [
-            try light("a", "Right Nightstand", room: bedroom, on: false, tags: ["Nightstands"]),
-            try light("b", "Left Nightstand", room: kitchen, on: true, tags: ["Nightstands", "Bedtime"]),
-            try light("c", "Desk Lamp", room: bedroom, on: true),
-        ]
-        let groups = GharLayout.groups(devices)
-        #expect(groups.map(\.name) == ["Bedtime", "Nightstands"])
-        #expect(groups[1].devices.map(\.name) == ["Left Nightstand", "Right Nightstand"])
+    @Test func aLampWithManyTagsShowsUnderEachOne() throws {
+        let names = (1...10).map { "Tag \($0)" }
+        let lamp = try light("a", "Lamp", on: true, tags: names)
+        let tags = GharLayout.tags([lamp])
+        #expect(tags.count == 10)
+        #expect(tags.allSatisfy { $0.devices.map(\.id) == ["a"] })
+        #expect(lamp.tagNames == names)
     }
 
     @Test func summaryCountsWhatIsOnAndItsBrightness() throws {
         let devices = [
-            try light("a", "One", room: bedroom, on: true, brightness: 80),
-            try light("b", "Two", room: bedroom, on: true, brightness: 40),
-            try light("c", "Three", room: bedroom, on: false, brightness: 100),
+            try light("a", "One", on: true, brightness: 80),
+            try light("b", "Two", on: true, brightness: 40),
+            try light("c", "Three", on: false, brightness: 100),
         ]
         let summary = GharLayout.summary(devices)
         #expect(summary.on == 2 && summary.total == 3)
@@ -433,19 +432,19 @@ struct GharLayoutTests {
         #expect(summary.color != nil)
         #expect(GharLayout.headline(summary) == "2 of 3 lights on")
         #expect(GharLayout.status(summary) == "2 of 3 on")
-        let off = GharLayout.summary([try light("c", "Three", room: bedroom, on: false)])
+        let off = GharLayout.summary([try light("c", "Three", on: false)])
         #expect(off.level == nil && off.color == nil)
         #expect(GharLayout.status(off) == "All off")
     }
 
     @Test func colorComesFromTheLightsMode() throws {
-        let warm = try light("a", "Warm", room: bedroom, on: true, mode: "color_temp", mireds: 357)
+        let warm = try light("a", "Warm", on: true, mode: "color_temp", mireds: 357)
         let color = GharLayout.color(warm)
         #expect(color.red == 1 && color.green > color.blue && color.blue < 0.5)
         #expect(GharLayout.colorName(warm) == "Warm white")
         #expect(GharLayout.status(warm) == "80% · Warm white")
 
-        let peach = try light("b", "Peach", room: bedroom, on: true, mode: "hue_sat", hue: 13, saturation: 124)
+        let peach = try light("b", "Peach", on: true, mode: "hue_sat", hue: 13, saturation: 124)
         let tint = GharLayout.color(peach)
         #expect(tint.red == 1 && tint.green > tint.blue && tint.blue > 0.4)
         #expect(GharLayout.colorName(peach) == "Peach")
