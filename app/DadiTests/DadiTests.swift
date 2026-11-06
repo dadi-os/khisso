@@ -369,17 +369,12 @@ struct MathDelimiterTests {
     }
 }
 
-/// Ghar's page arranges devices by room and tag, sums up what is on, and
-/// reads each light's color from its state.
+/// Ghar's page arranges devices by tag, sums up what is on, and reads each
+/// light's color from its state.
 struct GharLayoutTests {
-    private let bedroom = GharRoom(id: "r1", name: "Ankur's room")
-    private let kitchen = GharRoom(id: "r2", name: "Kitchen")
-    private let loose = GharRoom(id: "r0", name: "unassigned")
-
-    private func light(_ id: String, _ name: String, room: GharRoom, on: Bool, brightness: Int = 80, mode: String = "color_temp", mireds: Int = 357, hue: Int = 0, saturation: Int = 0, tags: [String] = []) throws -> GharDevice {
+    private func light(_ id: String, _ name: String, on: Bool, brightness: Int = 80, mode: String = "color_temp", mireds: Int = 357, hue: Int = 0, saturation: Int = 0, tags: [String] = []) throws -> GharDevice {
         let json: [String: Any] = [
             "id": id, "name": name, "kind": "light", "product_name": "Smart RGBTW Bulb",
-            "room": ["id": room.id, "name": room.name],
             "tags": tags.map { ["id": "t-\($0)", "name": $0] },
             "capabilities": [
                 ["capability": "on_off", "config": [String: Any]()],
