@@ -69,7 +69,7 @@ struct NasTask: Decodable, Sendable, Hashable, Identifiable {
     /// The agent that owns it.
     let owner: String
     let purpose: String
-    /// working, paused (Ankur has taken it over), idle, asking (it asked its agent) or asleep.
+    /// working, paused (Ankur has taken it over), idle, asking (it asked its agent), asleep or stopped (halted by Ankur or Hath).
     let status: String
     /// The browser slot or terminal id it holds; nil while it sleeps.
     let resource: String?
@@ -83,7 +83,10 @@ struct NasTask: Decodable, Sendable, Hashable, Identifiable {
     var route: String { task.replacingOccurrences(of: "task/", with: "", options: .anchored) }
 
     /// True while Ankur can act on its browser or terminal.
-    var drivable: Bool { resource != nil && status != "asleep" }
+    var drivable: Bool { resource != nil && status != "asleep" && status != "stopped" }
+
+    /// True while Hath can still halt it: it is working, paused, idle or asking.
+    var stoppable: Bool { ["working", "paused", "idle", "asking"].contains(status) }
 }
 
 /// One pointer or key event Ankur sends into a browser, as POST /browsers/:id/input takes it.

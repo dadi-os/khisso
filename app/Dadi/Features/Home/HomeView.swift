@@ -147,6 +147,8 @@ final class HomeStore {
     /// Bumped each time the event stream connects. The stream does not replay
     /// what happened while it was down, so the open thread reloads on it.
     private(set) var connections = 0
+    /// Per agent, bumped on each wake event, so an open agent sheet reads its wakes again.
+    private(set) var wakeChanges: [String: Int] = [:]
     private(set) var error: String?
     /// Why the router's runs could not be read; shown as a toast, not as the chats' error.
     private(set) var sideProblem: String?
@@ -258,6 +260,8 @@ final class HomeStore {
         case .laneFinished(let agentId, let lane), .laneFailed(let agentId, let lane, _):
             lanes[agentId]?.remove(lane)
             if lanes[agentId]?.isEmpty == true { lanes[agentId] = nil }
+        case .wakeChanged(let agentId, _):
+            wakeChanges[agentId, default: 0] += 1
         case .routerStarted(let runId):
             routerRuns.insert(runId)
         case .routerFinished(let runId):

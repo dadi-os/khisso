@@ -1,92 +1,67 @@
 import SwiftUI
 
-/// What opens from an agent's name above its thread, as thaali's agent
-/// popover does: its status block (job, work, last calls, queued
-/// messages), its helper tasks, when it was made and last
-/// active, its scheduled messages, system prompt, and its activity by
-/// wake. Activity follows the agent's lanes: it reloads when they change and
-/// every two seconds while one runs.
+/// What opens from an agent's name above its thread, as thaali's agent popover does: its name and one
+/// summary line over what is true of it now, its state strip, its helper tasks (with Stop), what it is doing
+/// and has done by wake, its scheduled messages and what it is. Wakes reload when the event stream
+/// reconnects or reports one changing.
 struct AgentSheet: View {
     let services: Services
     let agentId: String
     let name: String
     /// The agent's lanes running now.
     let lanes: Set<Lane>
+    /// Messages from the agent Ankur has not read.
+    let unread: Int
     /// Changes each time Home's event stream reconnects; the sheet reloads on it.
     let connections: Int
+    /// Wake events Home has seen for this agent; the wakes reload on it.
+    let wakeChanges: Int
     let nameOf: (String) -> String
-
-    /// Wakes the activity feed loads, every row of each.
-    private static let activityWakes = 10
-
-    /// How often a busy agent's activity is read again.
-    private static let poll: Duration = .seconds(2)
+    /// Closes the sheet and opens the agent's thread.
+    let openThread: () -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var detail: AgentDetail?
     @State private var detailError: String?
     @State private var schedules: [ScheduledMessage]?
     @State private var scheduleError: String?
+    @State private var schedulesOpen = false
     @State private var tasks: [NasTask] = []
     @State private var openTask: String?
     @Environment(LiveData.self) private var live: LiveData?
     @State private var hostError: String?
-    @State private var wakes: [ActivityWake]?
-    @State private var lastLogAt: Date?
-    @State private var logsError: String?
-    @State private var promptOpen = false
+
+    /// What makes the agent read again: its lanes, a reconnect, a wake event.
+    private struct Reload: Hashable {
+        let lanes: Set<Lane>
+        let connections: Int
+        let wakeChanges: Int
+    }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     header
-                    if let waiting = detail?.agent.running.waitingOn, detail?.agent.running.status == nil {
-                        Text(AgentStatusView.waitingLabel(waiting)).font(.footnote).foregroundStyle(.inkMuted)
+                    if let agent = detail?.agent {
+                        StateStrip(agent: agent, lanes: lanes, unread: unread, nameOf: nameOf)
                     }
-                    if let status = detail?.agent.running.status {
-                        section("STATUS") { AgentStatusBlock(view: AgentStatusView.make(status, nameOf: nameOf)) }
+                    if let status = detail?.agent.running.status, let unreadable = status.tasksUnreadable {
+                        problem("Helper tasks could not be read: \(unreadable)")
                     }
                     if !tasks.isEmpty {
-                        section("TASKS") {
-                            VStack(spacing: 0) {
-                                ForEach(tasks) { task in
-                                    TaskRow(nas: services.nas, task: task, owner: name, opened: $openTask) { await loadHost() }
-                                    if task.id != tasks.last?.id { Rectangle().fill(.rule).frame(height: 1) }
-                                }
-                            }
-                            .padding(.horizontal, 14)
-                            .background(Color.ink.opacity(0.04), in: .rect(cornerRadius: 16, style: .continuous))
-                        }
-                    }
-                    if let status = detail?.agent.running.status, let unreadable = AgentStatusView.make(status, nameOf: nameOf).tasksUnreadable {
-                        problem(unreadable)
+                        HelperTasks(hath: services.hath, nas: services.nas, agentId: agentId, owner: name, tasks: tasks, opened: $openTask) { await loadHost() }
                     }
                     if let hostError {
                         problem("Couldn't read the agent's tasks: \(hostError)")
                     }
-                    facts
-                    if let scheduleError {
-                        problem("Couldn't load schedules: \(scheduleError)")
-                    } else if let schedules, !schedules.isEmpty {
-                        section("SCHEDULED") {
-                            ScheduleSection(hath: services.hath, agentId: agentId, schedules: schedules, nameOf: nameOf, changed: loadSchedules)
-                        }
-                    }
+                    WakeTimeline(hath: services.hath, agentId: agentId, nameOf: nameOf, refresh: .init(connections: connections, wakeChanges: wakeChanges))
+                    schedulesSection
                     if let detailError {
                         problem("Couldn't load agent detail: \(detailError)")
                     }
-                    if let detail {
-                        section("SYSTEM PROMPT") { prompt(detail.agent.systemPrompt) }
-                    }
-                    section("ACTIVITY") {
-                        if let logsError {
-                            problem("Couldn't load activity: \(logsError)")
-                        } else if let wakes {
-                            ActivityFeed(wakes: wakes, lanes: lanes, nameOf: nameOf)
-                        } else {
-                            ProgressView().controlSize(.small)
-                        }
+                    if let agent = detail?.agent {
+                        AboutSection(agent: agent, nameOf: nameOf)
                     }
                 }
                 .padding(.horizontal, 18)
@@ -96,7 +71,6 @@ struct AgentSheet: View {
             }
             .scrollIndicators(.hidden)
             .background(Color.boneRaised.ignoresSafeArea())
-            .navigationTitle(name)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
@@ -104,101 +78,73 @@ struct AgentSheet: View {
                 }
             }
         }
-        .task(id: connections) {
-            async let schedules: Void = loadSchedules()
-            await loadDetail()
-            _ = await schedules
-        }
-        .task(id: lanes) { await followActivity() }
+        .task(id: connections) { await loadSchedules() }
+        .task(id: Reload(lanes: lanes, connections: connections, wakeChanges: wakeChanges)) { await loadDetail() }
         .task(id: live?.nas) { await loadHost() }
     }
 
-    /// The agent's state in a pill: processing plays the flowing dots, working
-    /// runs the sheen, and an idle or retired agent sits quiet.
+    /// The agent's name and one summary line, with the orb of its state: processing plays the flowing dots,
+    /// working is sage, and an idle or retired agent sits quiet. Open thread goes to its conversation.
     private var header: some View {
-        HStack(spacing: 8) {
-            if lanes.contains(.process) {
-                ProcessingMark()
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 12) {
+                orb.frame(width: 14, height: 24)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(name).font(.title3.weight(.semibold)).foregroundStyle(.ink).textSelection(.enabled)
+                    if let agent = detail?.agent {
+                        Text(AgentState.summary(agent, lanes: lanes, tasks: tasks.count)).font(.footnote).foregroundStyle(.inkMuted).lineLimit(2)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .laneSheen(lanes.contains(.work), in: .rect(cornerRadius: 12))
+            .animation(Motion.settle, value: lanes)
+            Button(action: openThread) {
+                Text("Open thread").font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 36)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.sageDeep)
+            .buttonBorderShape(.capsule)
+        }
+    }
+
+    @ViewBuilder
+    private var orb: some View {
+        if lanes.contains(.process) {
+            ProcessingMark()
+        } else {
+            Circle()
+                .fill(lanes.contains(.work) ? Color.sage : .inkFaint)
+                .frame(width: 10, height: 10)
+        }
+    }
+
+    /// The schedules behind a disclosure: their count, none, or that they could not be read.
+    private var schedulesSection: some View {
+        SheetDisclosure(title: "Schedules", summary: scheduleSummary, isOpen: $schedulesOpen) {
+            if let scheduleError {
+                problem("Couldn't load schedules: \(scheduleError)")
+            } else if let schedules, !schedules.isEmpty {
+                ScheduleSection(hath: services.hath, agentId: agentId, schedules: schedules, nameOf: nameOf, changed: loadSchedules)
+                    .padding(.bottom, 12)
+            } else if schedules != nil {
+                Text("Nothing scheduled.").font(.footnote).foregroundStyle(.inkMuted).padding(.bottom, 12)
             } else {
-                Circle()
-                    .fill(!lanes.isEmpty ? Color.sageDeep : isActive ? .sage : .inkFaint)
-                    .frame(width: 7, height: 7)
-            }
-            Text(status)
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(lanes.isEmpty ? Color.inkMuted : .sageText)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 7)
-        .background(lanes.isEmpty ? Color.ink.opacity(0.05) : .sage.opacity(0.14), in: .capsule)
-        .laneSheen(lanes.contains(.work), in: Capsule())
-        .animation(Motion.settle, value: lanes)
-    }
-
-    private var isActive: Bool { detail?.agent.active ?? true }
-
-    private var status: String {
-        if !isActive { return "Retired" }
-        if lanes.isEmpty { return "Idle" }
-        return [Lane.process, .work].filter(lanes.contains).map(\.label).joined(separator: " + ").capitalized
-    }
-
-    private var facts: some View {
-        Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 6) {
-            if let agent = detail?.agent {
-                GridRow {
-                    Text("Created").foregroundStyle(.inkFaint)
-                    Text(agent.createdAt, format: .relative(presentation: .named)).foregroundStyle(.inkMuted)
-                }
-                GridRow {
-                    Text("Last active").foregroundStyle(.inkFaint)
-                    if !lanes.isEmpty {
-                        Text("Now").foregroundStyle(.inkMuted)
-                    } else {
-                        Text(lastLogAt ?? agent.updatedAt, format: .relative(presentation: .named)).foregroundStyle(.inkMuted)
-                    }
-                }
-                if let parent = agent.parentAgentId {
-                    GridRow {
-                        Text("Parent").foregroundStyle(.inkFaint)
-                        Text(nameOf(parent)).foregroundStyle(.sageDeep)
-                    }
-                }
+                SkeletonRows(count: 1, height: 14).padding(.bottom, 12)
             }
         }
-        .font(.subheadline)
     }
 
-    private func section(_ title: String, @ViewBuilder content: () -> some View) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.caption2.weight(.semibold))
-                .tracking(1.4)
-                .foregroundStyle(.inkFaint)
-            content()
-        }
+    private var scheduleSummary: String {
+        if scheduleError != nil { return "Unavailable" }
+        guard let schedules else { return "" }
+        return schedules.isEmpty ? "None" : String(schedules.count)
     }
 
     private func problem(_ text: String) -> some View {
         Label(text, systemImage: "exclamationmark.triangle")
             .font(.footnote)
             .foregroundStyle(.danger)
-    }
-
-    private func prompt(_ text: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            AgentMarkdown(source: text, compact: true)
-                .frame(maxHeight: promptOpen ? nil : 130, alignment: .top)
-                .clipped()
-                .mask {
-                    LinearGradient(stops: [.init(color: .black, location: promptOpen ? 1 : 0.55), .init(color: promptOpen ? .black : .clear, location: 1)], startPoint: .top, endPoint: .bottom)
-                }
-            if text.count > 160 {
-                Button(promptOpen ? "Collapse" : "Expand") { withAnimation(Motion.settle) { promptOpen.toggle() } }
-                    .font(.footnote)
-                    .foregroundStyle(.sageDeep)
-            }
-        }
     }
 
     private func loadDetail() async {
@@ -232,29 +178,6 @@ struct AgentSheet: View {
             return
         } catch {
             hostError = error.localizedDescription
-        }
-    }
-
-    /// Reads the activity now and while a lane runs, until the sheet closes or the lanes change.
-    private func followActivity() async {
-        repeat {
-            await loadDetail()
-            await loadActivity()
-            if lanes.isEmpty { return }
-            do { try await Task.sleep(for: Self.poll) } catch { return }
-        } while !Task.isCancelled
-    }
-
-    private func loadActivity() async {
-        do {
-            let logs = try await services.hath.logs(agentId: agentId, wakes: Self.activityWakes)
-            wakes = Activity.carryKeys(from: wakes ?? [], to: Activity.wakes(from: logs))
-            lastLogAt = logs.first?.createdAt
-            logsError = nil
-        } catch is CancellationError {
-            return
-        } catch {
-            logsError = error.localizedDescription
         }
     }
 }

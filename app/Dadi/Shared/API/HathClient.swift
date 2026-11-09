@@ -10,8 +10,8 @@ struct HathClient: Sendable {
     /// The router runs every agent it hands work to before answering.
     static let routerTimeout: TimeInterval = 300
 
-    /// An agent's wake logs can run to megabytes.
-    static let logsTimeout: TimeInterval = 120
+    /// A raw log row can run to megabytes.
+    static let logTimeout: TimeInterval = 120
 
     /// A large attachment can take a while to come over the mesh.
     static let attachmentTimeout: TimeInterval = 120
@@ -58,12 +58,35 @@ struct HathClient: Sendable {
         try await client.get("/agents/\(id)")
     }
 
-    /// GET /agents/:id/logs: every row of the agent's newest `wakes` wakes,
-    /// newest first.
-    func logs(agentId: String, wakes: Int) async throws -> [LogRecord] {
-        struct Response: Decodable { let logs: [LogRecord] }
-        let response: Response = try await client.get("/agents/\(agentId)/logs", query: [URLQueryItem(name: "wakes", value: String(wakes))], timeout: Self.logsTimeout, decoder: ServiceJSON.verbatim)
-        return response.logs
+    /// GET /agents/:id/wakes: one page of the agent's wakes, newest first. Pass the previous
+    /// page's `nextBefore` as `before` for the page after it.
+    func wakes(agentId: String, limit: Int, before: WakeCursor? = nil) async throws -> WakePage {
+        var query = [URLQueryItem(name: "limit", value: String(limit))]
+        if let before {
+            query.append(URLQueryItem(name: "before_started_at", value: before.startedAt))
+            query.append(URLQueryItem(name: "before_id", value: before.id))
+        }
+        return try await client.get("/agents/\(agentId)/wakes", query: query, decoder: ServiceJSON.verbatim)
+    }
+
+    /// GET /agents/:id/wakes/:wake_id: one wake with its messages and model turns in order.
+    func wake(agentId: String, wakeId: String) async throws -> WakeDetail {
+        try await client.get("/agents/\(agentId)/wakes/\(wakeId)", decoder: ServiceJSON.verbatim)
+    }
+
+    /// GET /agents/:id/logs/:log_id: one raw log row, for a tool result a wake cut short.
+    func log(agentId: String, logId: String) async throws -> LogRecord {
+        let response: LogResponse = try await client.get("/agents/\(agentId)/logs/\(logId)", timeout: Self.logTimeout, decoder: ServiceJSON.verbatim)
+        return response.log
+    }
+
+    /// POST /agents/:id/sessions/:task_id/halt: stops a helper task. `taskId` is its full
+    /// `task/<kind>/<id>` address, escaped into one path segment.
+    func haltSession(agentId: String, taskId: String) async throws {
+        struct Halted: Decodable {}
+        struct Body: Encodable {}
+        let segment = taskId.addingPercentEncoding(withAllowedCharacters: .alphanumerics)!
+        let _: Halted = try await client.post("/agents/\(agentId)/sessions/\(segment)/halt", body: Body())
     }
 
     /// GET /agents/:id/schedules: what the agent sends or receives, next run first.

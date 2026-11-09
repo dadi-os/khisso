@@ -137,6 +137,8 @@ enum HathEvent: Decodable, Sendable, Equatable {
     case laneStarted(agentId: String, lane: Lane)
     case laneFinished(agentId: String, lane: Lane)
     case laneFailed(agentId: String, lane: Lane, message: String)
+    /// A wake began, ended or did more work; the agent's open wakes read again.
+    case wakeChanged(agentId: String, wakeId: String)
     /// A router run began; its `runId` ties it to its finish or failure, and runs can overlap.
     case routerStarted(runId: String)
     case routerFinished(runId: String)
@@ -146,7 +148,7 @@ enum HathEvent: Decodable, Sendable, Equatable {
     case unhandled(type: String)
 
     private enum Keys: String, CodingKey {
-        case type, agentId, fromAgentId, toAgentId, content, attachments, seq, kind, at, message, lane, readSeq, unread, runId
+        case type, agentId, fromAgentId, toAgentId, content, attachments, seq, kind, at, message, lane, readSeq, unread, runId, wakeId
     }
 
     init(from decoder: Decoder) throws {
@@ -175,6 +177,8 @@ enum HathEvent: Decodable, Sendable, Equatable {
                 lane: try c.decode(Lane.self, forKey: .lane),
                 message: try c.decode(String.self, forKey: .message)
             )
+        case "wake_started", "wake_ended", "wake_activity":
+            self = .wakeChanged(agentId: try c.decode(String.self, forKey: .agentId), wakeId: try c.decode(String.self, forKey: .wakeId))
         case "router_started":
             self = .routerStarted(runId: try c.decode(String.self, forKey: .runId))
         case "router_finished":

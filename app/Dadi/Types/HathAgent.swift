@@ -15,10 +15,9 @@ struct AgentDetail: Decodable, Sendable {
 enum LogEvent: String, Decodable, Sendable, Hashable {
     case response
     case toolResult = "tool_result"
-    case message
 }
 
-/// One durable log row from GET /agents/:id/logs. Decoded verbatim
+/// One durable log row from GET /agents/:id/logs/:log_id. Decoded verbatim
 /// (`ServiceJSON.verbatim`), since payload keys are the agent's own and must
 /// not be camel-cased.
 struct LogRecord: Decodable, Sendable, Hashable, Identifiable {

@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The agent's scheduled messages, both the ones it sends and the ones it
 /// receives, each with its next run, repeat and message, editable in place as
-/// in thaali. Absent when the agent has none.
+/// in thaali.
 struct ScheduleSection: View {
     let hath: HathClient
     let agentId: String

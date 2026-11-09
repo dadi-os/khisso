@@ -172,8 +172,13 @@ struct ServiceClient: Sendable {
         return bytes.lines
     }
 
+    /// What a request path may hold as written: path characters and the `%` of a segment the caller already escaped, such as the `%2F` of a task address.
+    private static let encodedPath = CharacterSet.urlPathAllowed.union(CharacterSet(charactersIn: "%"))
+
     private func request(_ method: String, _ path: String, query: [URLQueryItem] = [], timeout: TimeInterval) -> URLRequest {
-        var url = baseURL.appending(path: path)
+        var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)!
+        components.percentEncodedPath = path.addingPercentEncoding(withAllowedCharacters: Self.encodedPath)!
+        var url = components.url!
         if !query.isEmpty {
             url.append(queryItems: query)
         }

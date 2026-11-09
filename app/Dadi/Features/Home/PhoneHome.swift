@@ -142,7 +142,10 @@ struct PhoneHome: View {
         }
         .sheet(isPresented: Binding { agentSheet != nil } set: { if !$0 { agentSheet = nil } }) {
             if let agentId = agentSheet {
-                AgentSheet(services: services, agentId: agentId, name: store.name(of: agentId), lanes: store.lanes(of: agentId), connections: store.connections, nameOf: store.name(of:))
+                AgentSheet(services: services, agentId: agentId, name: store.name(of: agentId), lanes: store.lanes(of: agentId), unread: store.threads.first { $0.agentId == agentId }?.unread ?? 0, connections: store.connections, wakeChanges: store.wakeChanges[agentId, default: 0], nameOf: store.name(of:)) {
+                    agentSheet = nil
+                    show(.thread(agentId))
+                }
                     .presentationDetents([.medium, .large])
                     .presentationBackground(.boneRaised)
             }

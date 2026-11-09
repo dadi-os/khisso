@@ -536,52 +536,6 @@ struct H264SplitterTests {
     }
 }
 
-/// Log rows keep the agent's own payload keys, and group into wakes by the
-/// wake id Hath stamps on them.
-struct ActivityTests {
-    private func logs(_ json: String) throws -> [LogRecord] {
-        try ServiceJSON.verbatim.decode([LogRecord].self, from: Data(json.utf8))
-    }
-
-    private let rows = #"""
-    [
-      {"id":"1","agent_id":"a","lane":"process","event":"message","wake_id":"w1","created_at":"2026-10-23T10:00:00.000Z",
-       "payload":{"direction":"receive","from_agent_id":null,"content":"hi"}},
-      {"id":"2","agent_id":"a","lane":"process","event":"response","wake_id":"w1","created_at":"2026-10-23T10:00:01.000Z",
-       "payload":{"stop_reason":"tool_use","content":[{"type":"thinking","thinking":"**Plan**\nlook it up"},{"type":"tool_use","id":"t1","name":"search","input":{"to_agent_id":"b"}}]}},
-      {"id":"3","agent_id":"a","lane":"process","event":"tool_result","wake_id":"w1","created_at":"2026-10-23T10:00:02.000Z",
-       "payload":{"tool_use_id":"t1","content":"boom","is_error":true}},
-      {"id":"4","agent_id":"a","lane":"work","event":"response","wake_id":"w2","created_at":"2026-10-23T11:00:00.000Z",
-       "payload":{"stop_reason":"end_turn","content":[{"type":"text","text":"done"}]}}
-    ]
-    """#
-
-    @Test func keepsPayloadKeysVerbatim() throws {
-        let call = try #require(logs(rows)[1].payload["content"]?.array?.last?.object)
-        #expect(call["input"]?.object?["to_agent_id"]?.string == "b")
-    }
-
-    @Test func groupsByWakeNewestFirstWithToolOutcomes() throws {
-        let wakes = Activity.wakes(from: try logs(rows))
-        #expect(wakes.map(\.key) == ["4", "1"])
-        let first = wakes[1]
-        #expect(first.toolCount == 1)
-        #expect(first.errorCount == 1)
-        guard case .turn(let turn) = first.steps[1], case .tool(_, let tool) = turn.parts[0] else {
-            Issue.record("expected a tool step")
-            return
-        }
-        #expect(tool.result == ToolOutcome(content: "boom", isError: true))
-        #expect(turn.gist == "Plan")
-    }
-
-    @Test func keepsWakeKeysAsLogsSlide() throws {
-        let all = Activity.wakes(from: try logs(rows))
-        let slid = Activity.wakes(from: Array(try logs(rows).dropFirst()))
-        #expect(Activity.carryKeys(from: all, to: slid).map(\.key) == ["4", "1"])
-    }
-}
-
 /// A schedule edit sends only what changed, and "once" is an explicit null.
 struct PatchScheduleTests {
     @Test func sendsOnlyChangesAndNullsAOneShot() throws {
@@ -614,8 +568,8 @@ struct ChaaviNewItemTests {
     }
 }
 
-/// The status block Hath sends on an agent: decoded as it comes (times without fractions stay
-/// text) and put into the lines the agent sheet shows.
+/// The status Hath sends on an agent: decoded as it comes (times without fractions stay
+/// text) and put into the chips and job line the agent sheet shows.
 struct AgentStatusTests {
     private let body = #"""
     {"id":"a","name":"Planner","system_prompt":"","parent_agent_id":null,"active":true,
@@ -639,21 +593,20 @@ struct AgentStatusTests {
         #expect(agent.running.status?.pending.first?.expectsReply == true)
     }
 
-    @Test func putsTheStatusIntoLines() throws {
+    @Test func putsTheStateIntoChipsAndAJobLine() throws {
         let agent = try ServiceJSON.decoder.decode(AgentRecord.self, from: Data(body.utf8))
-        let status = try #require(agent.running.status)
-        let view = AgentStatusView.make(status, nameOf: { $0 == "planner" ? "Planner" : $0 }, timeZone: TimeZone(identifier: "UTC")!)
-        #expect(view.job == "Ankur asked at 09:05: book the flight")
-        #expect(view.work == "Waiting on task/browser/3 since 10:20")
-        #expect(view.recent.map(\.text) == ["read_file /a.txt", "web_fetch", "wait"])
-        #expect(view.recent.map(\.mark) == [.ok, .error, .running])
-        #expect(view.pending == ["To Planner (expects a reply): which date?"])
+        let chips = AgentState.chips(agent, lanes: [.work, .process], unread: 2)
+        #expect(chips.map(\.text) == ["Working", "Processing", "Waiting on task/browser/3", "2 unread"])
+        #expect(chips.map(\.tone) == [.sage, .tide, .tide, .due])
+        #expect(AgentState.chips(agent, lanes: [], unread: 0).map(\.text) == ["Waiting on task/browser/3"])
+        let job = AgentState.job(try #require(agent.running.status), nameOf: { $0 }, timeZone: TimeZone(identifier: "UTC")!)
+        #expect(job == "Ankur asked at 9:05 AM: book the flight")
     }
 
-    @Test func statesPlainlyThatTasksCouldNotBeRead() throws {
-        let agent = try ServiceJSON.decoder.decode(AgentRecord.self, from: Data(body.replacingOccurrences(of: #""tasks_unreadable":null"#, with: #""tasks_unreadable":"nas is down""#).utf8))
-        let view = AgentStatusView.make(try #require(agent.running.status), nameOf: { $0 }, timeZone: TimeZone(identifier: "UTC")!)
-        #expect(view.tasksUnreadable == "Helper tasks could not be read: nas is down")
+    @Test func summarisesTheStateInOneLine() throws {
+        let agent = try ServiceJSON.decoder.decode(AgentRecord.self, from: Data(body.utf8))
+        #expect(AgentState.summary(agent, lanes: [.work, .process], tasks: 2).hasPrefix("Working + Processing · 2 helper tasks · "))
+        #expect(AgentState.summary(agent, lanes: [], tasks: 0).hasPrefix("Waiting on a task · "))
     }
 }
 
@@ -671,6 +624,16 @@ struct AgentStatusTests {
         #expect(try task("paused", resource: "1").drivable)
         #expect(try task("asking", resource: "1").drivable)
         #expect(try !task("asleep", resource: nil).drivable)
+        #expect(try !task("stopped", resource: "1").drivable)
+    }
+
+    @Test func stopsOnlyATaskThatIsStillLive() throws {
+        for status in ["working", "paused", "idle", "asking"] {
+            #expect(try task(status, resource: "1").stoppable)
+        }
+        for status in ["asleep", "stopped"] {
+            #expect(try !task(status, resource: nil).stoppable)
+        }
     }
 
     @Test func sendsABrowserEventWithSnakeCaseKeys() throws {
