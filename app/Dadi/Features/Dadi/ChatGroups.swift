@@ -41,6 +41,9 @@ enum ChatGroups {
     /// A conversation's last activity for the right edge of its row: the time today, "Yesterday", else the day.
     static func when(_ date: Date, now: Date = .now, calendar: Calendar = .current) -> String {
         let label = dayLabel(date, now: now, calendar: calendar)
-        return label == "Today" ? date.formatted(date: .omitted, time: .shortened) : label
+        guard label == "Today" else {
+            return label
+        }
+        return date.formatted(Date.FormatStyle(date: .omitted, time: .shortened, locale: calendar.locale ?? .current, calendar: calendar, timeZone: calendar.timeZone))
     }
 }
