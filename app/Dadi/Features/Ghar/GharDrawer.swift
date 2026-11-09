@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Ghar's drawer: All off and Evening, then Everywhere and every tag with the
-/// light it gives, what is on and its switch, then the untagged devices.
+/// light it gives, what is on and its switch.
 /// Tapping a row narrows the page to it; its switch works from here without
 /// leaving.
 struct GharDrawer: View {
@@ -14,7 +14,6 @@ struct GharDrawer: View {
 
     var body: some View {
         let tags = GharLayout.tags(store.devices)
-        let loose = GharLayout.untagged(store.devices)
         VStack(alignment: .leading, spacing: 18) {
             HStack(spacing: 8) {
                 Button("All off") {
@@ -36,13 +35,10 @@ struct GharDrawer: View {
             .padding(.horizontal, 6)
 
             VStack(alignment: .leading, spacing: 2) {
-                heading("TAGS")
+                heading("Tags")
                 row(title: "Everywhere", summary: GharLayout.summary(store.devices), target: .everywhere, devices: store.devices)
                 ForEach(tags) { set in
                     row(title: set.name, summary: GharLayout.summary(set.devices), target: .tag(set.id), devices: set.devices)
-                }
-                if !loose.isEmpty && !tags.isEmpty {
-                    row(title: "Untagged", summary: GharLayout.summary(loose), target: .untagged, devices: loose)
                 }
             }
             if let error = store.error {
@@ -59,14 +55,13 @@ struct GharDrawer: View {
 
     private func heading(_ text: String) -> some View {
         Text(text)
-            .font(.caption2.weight(.semibold))
-            .tracking(1.4)
-            .foregroundStyle(.inkFaint)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.inkMuted)
             .padding(.horizontal, 6)
             .padding(.bottom, 4)
     }
 
-    /// Everywhere, a tag or the untagged devices: a dot in the light it gives, its name and what is on,
+    /// Everywhere or a tag: a dot in the light it gives, its name and what is on,
     /// and its switch; lit sage while the page shows it.
     private func row(title: String, summary: GharSummary, target: GharPage.Filter, devices: [GharDevice]) -> some View {
         let current = filter == target

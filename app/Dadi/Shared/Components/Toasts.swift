@@ -1,12 +1,29 @@
 import SwiftUI
 
+/// The part of dadi a toast is about, which picks its symbol.
+enum ToastModule {
+    case ghar, chaavi, yaad, hath, system, timeline, dadi
+
+    var symbol: String {
+        switch self {
+        case .ghar: "house"
+        case .chaavi: "key"
+        case .yaad: "brain"
+        case .hath: "point.3.connected.trianglepath.dotted"
+        case .system: "server.rack"
+        case .timeline: "calendar"
+        case .dadi: "paperplane"
+        }
+    }
+}
+
 /// One toast: a title and detail, folded with an earlier toast of the same key.
 struct Toast: Identifiable, Equatable {
     /// Toasts with the same key fold into one.
     let key: String
     let title: String
     var detail: String?
-    /// The symbol before the title.
+    /// The symbol before the title; a module's symbol, or the chat bubble when none applies.
     var symbol = "bubble.left.fill"
     /// True for a failure: the symbol and title read in the danger color.
     var failure = false

@@ -100,3 +100,83 @@ struct OfflinePill: View {
         .accessibilityElement(children: .combine)
     }
 }
+
+/// A dashed strip over content that is the last answer kept: what is shown is
+/// what dadi last reported, and when, so old data never reads as current.
+struct StaleBanner: View {
+    /// When the shown data last arrived.
+    let since: Date
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "clock.arrow.circlepath").font(.footnote.weight(.semibold))
+            TimelineView(.periodic(from: since, by: 30)) { context in
+                Text("Showing what dadi last reported \(since, format: .relative(presentation: .named, unitsStyle: .wide)).")
+                    .id(context.date)
+            }
+            .font(.footnote)
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(.inkMuted)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay { RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color.sageLine, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])) }
+        .background(.sage.opacity(0.12), in: .rect(cornerRadius: 16, style: .continuous))
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// A module that did not answer while the last read stays on screen.
+struct ModuleBanner: View {
+    /// The module's name, as the System page lists it.
+    let module: String
+    /// Why it did not answer, in its own words.
+    let why: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "exclamationmark.triangle").font(.footnote.weight(.semibold)).padding(.top, 2)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("\(module) is down").font(.subheadline.weight(.semibold))
+                Text("\(module) did not answer: \(why.hasSuffix(".") ? why : why + ".") The last read is shown.").font(.footnote)
+            }
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(.danger)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.danger.opacity(0.08), in: .rect(cornerRadius: 16, style: .continuous))
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// A module's stand-in for a first read that failed: the service, the HTTP
+/// status when there was one, and Try again.
+struct ErrorCard: View {
+    let service: String
+    /// The HTTP status the service answered with; nil when it did not answer at all.
+    let status: Int?
+    let message: String
+    let retry: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label(status.map { "\(service) answered \($0)" } ?? "\(service) did not answer", systemImage: "exclamationmark.triangle")
+                .font(.headline)
+                .foregroundStyle(.danger)
+            Text(message).font(.subheadline).foregroundStyle(.inkMuted)
+            Button("Try again", action: retry)
+                .buttonStyle(.borderedProminent)
+                .tint(.sageDeep)
+                .buttonBorderShape(.capsule)
+                .controlSize(.large)
+                .padding(.top, 4)
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassEffect(.regular, in: .rect(cornerRadius: 24, style: .continuous))
+        .accessibilityElement(children: .contain)
+    }
+}

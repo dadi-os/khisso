@@ -107,12 +107,12 @@ struct PlannerLayoutTests {
         return c
     }()
 
-    private func block(_ id: String, _ start: String, _ end: String) -> TimelineItem {
+    private func block(_ id: String, _ start: String, _ end: String, zone: String? = nil) -> TimelineItem {
         let day = "2026-10-21T"
         func date(_ time: String) -> Date { try! Date("\(day)\(time):00-04:00", strategy: .iso8601) }
         return TimelineItem(
             planId: id, occurrenceDate: "2026-10-21", title: id, body: nil, kind: .study, status: .confirmed,
-            startAt: date(start), endAt: date(end), dueAt: nil, opensAt: nil, allDay: false, timeZone: nil, hideFromPlanner: false,
+            startAt: date(start), endAt: date(end), dueAt: nil, opensAt: nil, allDay: false, timeZone: zone, hideFromPlanner: false,
             state: "scheduled", outcome: nil, recurrence: nil, series: nil, place: nil, owner: "schedule-specialist", notes: []
         )
     }
@@ -140,9 +140,37 @@ struct PlannerLayoutTests {
         #expect(segment.endMin == 510)
     }
 
+    @Test func aSessionIsOnlyElsewhereWhenItsClockDiffers() {
+        #expect(block("a", "09:00", "10:00", zone: Calendar.current.timeZone.identifier).plannedElsewhere == nil)
+        #expect(block("b", "09:00", "10:00", zone: "Pacific/Kiritimati").plannedElsewhere == "Pacific/Kiritimati")
+        #expect(block("c", "09:00", "10:00").plannedElsewhere == nil)
+    }
+
+    @Test func aShortSessionIsDrawnForItsMinimumHeight() throws {
+        let segments = PlannerLayout.segments([block("a", "09:00", "09:20"), block("b", "09:30", "10:00")], on: day, calendar: calendar)
+        #expect(segments[0].drawnEndMin == 540 + PlannerLayout.minimumSpan)
+        #expect(segments.map(\.lane) == [0, 1])
+    }
+
+    @Test func findsTheHourAClockChangeRepeatsOrSkips() throws {
+        var newYork = Calendar(identifier: .gregorian)
+        newYork.timeZone = try #require(TimeZone(identifier: "America/New_York"))
+        func noon(_ month: Int, _ day: Int) throws -> Date {
+            try #require(newYork.date(from: DateComponents(year: 2026, month: month, day: day, hour: 12)))
+        }
+        let fall = try #require(ClockChange.on(try noon(11, 1), calendar: newYork))
+        #expect(fall.kind == .repeated && fall.hour == 1 && fall.before == "EDT" && fall.after == "EST")
+        #expect(fall.caption == "1 AM happens twice: EDT, then EST")
+        let spring = try #require(ClockChange.on(try noon(3, 8), calendar: newYork))
+        #expect(spring.kind == .skipped && spring.hour == 2)
+        #expect(spring.caption == "2 AM is skipped: EST becomes EDT")
+        #expect(ClockChange.on(try noon(11, 2), calendar: newYork) == nil)
+        #expect(ClockChange.zoneName(from: try noon(11, 1).addingTimeInterval(-43_200), to: try noon(11, 30), calendar: newYork) == "EDT \u{2192} EST")
+    }
+
     @Test func openTimeOfTenMinutesOrMoreIsAGap() {
         let segments = PlannerLayout.segments([block("a", "09:00", "10:00"), block("b", "10:05", "10:30"), block("c", "11:00", "12:00")], on: day, calendar: calendar)
-        #expect(PlannerLayout.gaps(segments) == [PlannerLayout.Gap(startMin: 630, endMin: 660)])
+        #expect(PlannerLayout.gaps(segments) == [PlannerLayout.Gap(startMin: 639, endMin: 660)])
     }
 
     @Test func findsNowAndNext() {

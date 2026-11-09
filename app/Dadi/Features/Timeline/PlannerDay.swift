@@ -30,6 +30,8 @@ struct PlannerDay: View {
 
     /// Points per minute on the axis.
     private let scale: CGFloat = 1.3
+    /// The shortest a session's box is drawn, the least a finger can hit.
+    private static let minimumBlockHeight: CGFloat = 44
 
     var body: some View {
         let segments = PlannerLayout.segments(actions.shown(blocks), on: day)
@@ -152,7 +154,8 @@ struct PlannerDay: View {
 
     private func axis(_ segments: [PlannerLayout.Segment]) -> some View {
         let now = Calendar.current.component(.hour, from: .now) * 60 + Calendar.current.component(.minute, from: .now)
-        let spanned = PlannerLayout.hours(segments)
+        let change = ClockChange.on(day)
+        let spanned = change.map { min(PlannerLayout.hours(segments).lowerBound, $0.hour)..<max(PlannerLayout.hours(segments).upperBound, $0.hour + 1) } ?? PlannerLayout.hours(segments)
         let hours = Calendar.current.isDateInToday(day) ? min(spanned.lowerBound, now / 60)..<max(spanned.upperBound, now / 60 + 1) : spanned
         let origin = hours.lowerBound * 60
         let height = CGFloat(hours.count * 60) * scale
@@ -188,6 +191,10 @@ struct PlannerDay: View {
                             }
                             .offset(y: CGFloat(hour * 60 - origin) * scale)
                         }
+                        if let change {
+                            ClockBand(change: change, width: lane)
+                                .offset(x: 56, y: CGFloat(change.hour * 60 - origin) * scale)
+                        }
                         ForEach(PlannerLayout.gaps(segments).filter { $0.endMin - $0.startMin >= PlannerLayout.labeledGapMinimum }, id: \.self) { gap in
                             Text("\(PlannerLayout.span(gap.endMin - gap.startMin)) open")
                                 .font(.caption2)
@@ -201,7 +208,7 @@ struct PlannerDay: View {
                         ForEach(segments) { segment in
                             let width = lane / CGFloat(segment.lanes)
                             let block = segment.block
-                            BlockView(segment: segment, height: max(30, CGFloat(segment.endMin - segment.startMin) * scale - 3), toggle: actions.markable(block) ? { actions.toggle(block) } : nil)
+                            BlockView(segment: segment, height: max(Self.minimumBlockHeight, CGFloat(segment.endMin - segment.startMin) * scale - 3), toggle: actions.markable(block) ? { actions.toggle(block) } : nil)
                                 .sessionGestures(block, actions: actions)
                                 .frame(width: width - 4)
                                 .offset(x: 56 + width * CGFloat(segment.lane), y: CGFloat(segment.startMin - origin) * scale + 1.5)
@@ -287,7 +294,7 @@ private struct BlockView: View {
                     .foregroundStyle(.ink)
                     .strikethrough(block.cancelled || block.completed, color: .inkFaint)
                     .lineLimit(height > 50 ? 2 : 1)
-                if height > 44, let start = block.startAt, let end = block.endAt {
+                if height >= 44, let start = block.startAt, let end = block.endAt {
                     Text("\(start.formatted(date: .omitted, time: .shortened)) – \(end.formatted(date: .omitted, time: .shortened))")
                         .font(.caption2.monospacedDigit())
                         .foregroundStyle(.inkMuted)
@@ -318,7 +325,7 @@ private struct BlockView: View {
             }
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, height > 40 ? 8 : 5)
+        .padding(.vertical, height >= 52 ? 8 : 5)
         .frame(height: height, alignment: .top)
         .overlay(alignment: .bottom) {
             if height > 40, let start = block.startAt, let end = block.endAt, !block.cancelled {
@@ -507,5 +514,44 @@ private struct ZoneNotes: View {
             }
         }
         return notes
+    }
+}
+
+/// The hour a clock change repeats (a dashed tide band) or skips (a hatched clay band) on the
+/// axis, behind the sessions, with what it means in a capsule.
+private struct ClockBand: View {
+    let change: ClockChange
+    let width: CGFloat
+
+    var body: some View {
+        let tone: Color = change.kind == .repeated ? .tide : .clay
+        ZStack {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(tone.opacity(change.kind == .repeated ? 0.1 : 0.06))
+            if change.kind == .skipped {
+                Canvas { context, size in
+                    var x: CGFloat = -size.height
+                    while x < size.width {
+                        var line = Path()
+                        line.move(to: CGPoint(x: x, y: size.height))
+                        line.addLine(to: CGPoint(x: x + size.height, y: 0))
+                        context.stroke(line, with: .color(tone.opacity(0.28)), lineWidth: 3)
+                        x += 12
+                    }
+                }
+                .clipShape(.rect(cornerRadius: 12, style: .continuous))
+            }
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(tone, style: StrokeStyle(lineWidth: 1.5, dash: change.kind == .repeated ? [5, 4] : []))
+            Text(change.caption)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(change.kind == .repeated ? Color.tide : .clay)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 3)
+                .background(.boneRaised, in: .capsule)
+        }
+        .frame(width: width, height: 60 * 1.3)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(change.caption)
     }
 }

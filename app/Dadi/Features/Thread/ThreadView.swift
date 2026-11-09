@@ -151,7 +151,8 @@ struct ThreadView: View {
         } else {
             bubble(message, opensGroup: opensGroup)
                 .contextMenu {
-                    Button { UIPasteboard.general.string = message.content } label: { Label("Copy", systemImage: "doc.on.doc") }
+                    Button { UIPasteboard.general.string = plainText(message.content) } label: { Label("Copy", systemImage: "doc.on.doc") }
+                    Button { UIPasteboard.general.string = message.content } label: { Label("Copy as Markdown", systemImage: "doc.on.doc.fill") }
                     Button { reply(to: message) } label: { Label("Reply with quote", systemImage: "arrowshape.turn.up.left") }
                     ShareLink(item: message.content) { Label("Share", systemImage: "square.and.arrow.up") }
                     if !message.fromUser {
@@ -256,7 +257,7 @@ struct ThreadView: View {
         let words = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         let attached = photos
         guard !words.isEmpty || !attached.isEmpty, !sending else { return }
-        let content = quote.map { QuoteCard.blockquote($0.content) + words } ?? words
+        let content = quote.map { QuoteCard.blockquote(plainText($0.content)) + words } ?? words
         sending = true
         sendError = nil
         Task {
@@ -388,4 +389,19 @@ private struct QuoteSwipe: ViewModifier {
             )
             .sensoryFeedback(.selection, trigger: offset >= reach)
     }
+}
+
+/// `markdown` as the text a reader sees: fence lines, heading and quote marks, emphasis and code
+/// marks dropped, links and images kept as their text, and runs of blank lines folded to one.
+func plainText(_ markdown: String) -> String {
+    let lines = markdown.components(separatedBy: "\n")
+        .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("```") }
+        .map { $0.replacing(/^\s*(#{1,6}\s+|>\s?)/, with: "") }
+    return lines.joined(separator: "\n")
+        .replacing(/!?\[([^\]]*)\]\([^)]*\)/) { String($0.output.1) }
+        .replacing(/(\*\*|__)(.+?)\1/) { String($0.output.2) }
+        .replacing(/\*([^*\n]+)\*/) { String($0.output.1) }
+        .replacing(/`([^`\n]+)`/) { String($0.output.1) }
+        .replacing(/\n{3,}/, with: "\n\n")
+        .trimmingCharacters(in: .whitespacesAndNewlines)
 }

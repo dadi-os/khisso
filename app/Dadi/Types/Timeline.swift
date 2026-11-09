@@ -100,10 +100,11 @@ struct TimelineItem: Decodable, Sendable, Hashable, Identifiable {
     let owner: String
     let notes: [SessionNote]
 
-    /// The zone it was planned in when that is not this device's, else nil.
+    /// The zone it was planned in when its clock differs from this device's at that time, else nil
+    /// (Detroit and New York keep the same clock, so neither is "elsewhere" to the other).
     var plannedElsewhere: String? {
-        guard let timeZone, timeZone != Calendar.current.timeZone.identifier else { return nil }
-        return timeZone
+        guard let timeZone, let zone = TimeZone(identifier: timeZone), let at = startAt ?? dueAt ?? endAt else { return nil }
+        return zone.secondsFromGMT(for: at) == Calendar.current.timeZone.secondsFromGMT(for: at) ? nil : timeZone
     }
 
     /// A session is named by its plan and its date.

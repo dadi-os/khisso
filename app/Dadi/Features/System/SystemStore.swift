@@ -20,6 +20,10 @@ final class SystemStore {
     private(set) var tasks: [NasTask] = []
     private(set) var errors: [NasLogEntry] = []
     private(set) var problem: String?
+    /// The HTTP status of the failed read, when the box answered with one.
+    private(set) var problemStatus: Int?
+    /// When the shown status was read.
+    private(set) var lastRead: Date?
 
     init(nas: NasClient) {
         self.nas = nas
@@ -42,10 +46,13 @@ final class SystemStore {
             devices = d.filter { $0.nodeName != Self.boxNode }.sorted { ($0.online ? 0 : 1, $0.nodeName) < ($1.online ? 0 : 1, $1.nodeName) }
             tasks = t.sorted { $0.lastActivity > $1.lastActivity }
             problem = nil
+            problemStatus = nil
+            lastRead = .now
         } catch is CancellationError {
             return
         } catch {
             problem = error.localizedDescription
+            problemStatus = (error as? ServiceError)?.status
         }
     }
 

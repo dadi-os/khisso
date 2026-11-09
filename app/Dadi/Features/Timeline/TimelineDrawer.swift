@@ -107,8 +107,8 @@ struct TimelineDrawer: View {
             Circle().fill(item.completed ? Color.sage : .clay).frame(width: 7, height: 7)
             Text(item.title)
                 .font(.subheadline.weight(.medium))
-                .foregroundStyle(.ink)
-                .strikethrough(item.completed, color: .inkFaint)
+                .foregroundStyle(item.completed ? .inkMuted : .ink)
+                .strikethrough(item.completed, color: .sageDeep)
                 .lineLimit(1)
             Spacer(minLength: 8)
             if let due = item.dueAt {

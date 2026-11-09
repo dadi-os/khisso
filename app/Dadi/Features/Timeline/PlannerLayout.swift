@@ -8,6 +8,9 @@ enum PlannerLayout {
     static let gapMinimum = 10
     /// The least open time that is labeled with its length.
     static let labeledGapMinimum = 30
+    /// The least minutes a block is drawn for, so a short session keeps the 44 pt tap height
+    /// (44 pt at `PlannerDay.scale`, 1.3 pt per minute).
+    static let minimumSpan = 34
     /// Hours the axis shows on a day with no blocks.
     static let emptyHours = 7..<22
 
@@ -22,6 +25,9 @@ enum PlannerLayout {
         var lanes = 1
 
         var id: String { block.id }
+
+        /// Where the block's box ends on the axis: its own end, or its start plus `minimumSpan`.
+        var drawnEndMin: Int { max(endMin, startMin + PlannerLayout.minimumSpan) }
     }
 
     /// Open time between two blocks, in minutes after local midnight.
@@ -61,25 +67,25 @@ enum PlannerLayout {
             let segment = segments[index]
             if !group.isEmpty && segment.startMin >= groupEnd { close() }
             let lane = laneEnds.firstIndex { $0 <= segment.startMin } ?? laneEnds.count
-            if lane == laneEnds.count { laneEnds.append(segment.endMin) } else { laneEnds[lane] = segment.endMin }
+            if lane == laneEnds.count { laneEnds.append(segment.drawnEndMin) } else { laneEnds[lane] = segment.drawnEndMin }
             segments[index].lane = lane
-            groupEnd = group.isEmpty ? segment.endMin : max(groupEnd, segment.endMin)
+            groupEnd = group.isEmpty ? segment.drawnEndMin : max(groupEnd, segment.drawnEndMin)
             group.append(index)
         }
         close()
         return segments
     }
 
-    /// The open stretches between consecutive segments that last at least
+    /// The open stretches between consecutive drawn boxes that last at least
     /// `gapMinimum` minutes.
     static func gaps(_ segments: [Segment]) -> [Gap] {
-        guard var reach = segments.first?.endMin else { return [] }
+        guard var reach = segments.first?.drawnEndMin else { return [] }
         var gaps: [Gap] = []
         for segment in segments.dropFirst() {
             if segment.startMin - reach >= gapMinimum {
                 gaps.append(Gap(startMin: reach, endMin: segment.startMin))
             }
-            reach = max(reach, segment.endMin)
+            reach = max(reach, segment.drawnEndMin)
         }
         return gaps
     }

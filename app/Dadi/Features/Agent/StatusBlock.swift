@@ -84,7 +84,7 @@ struct AgentStatusBlock: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 8) {
-                Text("RIGHT NOW").font(.caption2.weight(.semibold)).tracking(1.4).foregroundStyle(.inkFaint)
+                Text("Right now").font(.caption.weight(.semibold)).foregroundStyle(.inkMuted)
                 Text(view.work).font(.subheadline.weight(.semibold)).foregroundStyle(.ink)
                 if let step = view.step {
                     Text(step).font(.system(.caption, design: .monospaced)).foregroundStyle(.inkMuted).lineLimit(1)

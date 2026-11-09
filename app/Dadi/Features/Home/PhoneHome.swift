@@ -202,7 +202,7 @@ struct PhoneHome: View {
                 chrome(ChaaviPage(store: chaavi, creating: $creatingItem), tab: .chaavi)
             }
             Tab("System", systemImage: "server.rack", value: HomeView.Tab.system) {
-                chrome(SystemPage(store: system, focus: $systemFocus, nameOf: store.name(of:)), tab: .system)
+                chrome(SystemPage(store: system, focus: $systemFocus, nameOf: store.name(of:), online: online), tab: .system)
             }
         }
         .tabBarMinimizeBehavior(.onScrollDown)

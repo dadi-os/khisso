@@ -417,7 +417,7 @@ struct SessionSheet: View {
                 Text(item.title)
                     .font(.title3.weight(.semibold))
                     .foregroundStyle(item.completed ? .inkMuted : .ink)
-                    .strikethrough(item.cancelled, color: .inkFaint)
+                    .strikethrough(item.cancelled, color: .sageDeep)
                 Text(item.cancelled ? "Cancelled · \(sessionWhen(item))" : sessionWhen(item))
                     .font(.footnote)
                     .foregroundStyle(.inkMuted)

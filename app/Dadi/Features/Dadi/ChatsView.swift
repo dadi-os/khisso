@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Chats: every conversation as a glass card, in groups where the first match
-/// wins: WORKING NOW, UNREAD and EARLIER,
+/// wins: Working now, Unread and Earlier,
 /// under a search field. Talking to Dadi is the dock, not this page.
 struct ChatsView: View {
     let threads: [ThreadSummary]
@@ -53,9 +53,8 @@ struct ChatsView: View {
                     ForEach(groups) { group in
                         VStack(alignment: .leading, spacing: 8) {
                             Text(group.title)
-                                .font(.caption2.weight(.semibold))
-                                .tracking(1.4)
-                                .foregroundStyle(.inkFaint)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.inkMuted)
                                 .padding(.horizontal, 6)
                                 .padding(.top, 6)
                             GlassEffectContainer(spacing: 8) {
@@ -98,9 +97,9 @@ struct ChatsView: View {
         let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
         let shown = threads.filter { needle.isEmpty || $0.agentName.lowercased().contains(needle) }
         return [
-            Group(title: "WORKING NOW", threads: shown.filter { !lanes($0.agentId).isEmpty }),
-            Group(title: "UNREAD", threads: shown.filter { lanes($0.agentId).isEmpty && $0.unread > 0 }),
-            Group(title: "EARLIER", threads: shown.filter { lanes($0.agentId).isEmpty && $0.unread == 0 }),
+            Group(title: "Working now", threads: shown.filter { !lanes($0.agentId).isEmpty }),
+            Group(title: "Unread", threads: shown.filter { lanes($0.agentId).isEmpty && $0.unread > 0 }),
+            Group(title: "Earlier", threads: shown.filter { lanes($0.agentId).isEmpty && $0.unread == 0 }),
         ].filter { !$0.threads.isEmpty }
     }
 

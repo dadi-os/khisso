@@ -24,6 +24,8 @@ struct SystemPage: View {
     @Binding var focus: Section?
     /// An agent's name from its id.
     let nameOf: (String) -> String
+    /// False while dadi is out of reach, when a failed read is the connection's doing, not Nas's.
+    let online: Bool
 
     @State private var opened: NasLogEntry?
     /// The module whose errors the list is narrowed to.
@@ -40,10 +42,15 @@ struct SystemPage: View {
         ScrollViewReader { reader in
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
-                    if let problem = store.problem {
-                        Label(problem, systemImage: "exclamationmark.triangle")
-                            .font(.callout)
-                            .foregroundStyle(.danger)
+                    if store.status != nil, let problem = store.problem {
+                        if online {
+                            ModuleBanner(module: "nas", why: problem)
+                        } else if let since = store.lastRead {
+                            StaleBanner(since: since)
+                        }
+                    }
+                    if let problem = store.problem, store.status == nil {
+                        ErrorCard(service: "nas", status: store.problemStatus, message: problem) { Task { await store.load() } }
                     }
                     if let status = store.status {
                         overview(status)

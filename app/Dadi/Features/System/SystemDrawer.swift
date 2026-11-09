@@ -30,10 +30,9 @@ struct SystemDrawer: View {
                 .background((store.healthy ? Color.sage : .danger).opacity(0.12), in: .rect(cornerRadius: 16, style: .continuous))
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text("SECTIONS")
-                    .font(.caption2.weight(.semibold))
-                    .tracking(1.4)
-                    .foregroundStyle(.inkFaint)
+                Text("Sections")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.inkMuted)
                     .padding(.horizontal, 6)
                     .padding(.bottom, 4)
                 ForEach(SystemPage.Section.allCases, id: \.self) { section in

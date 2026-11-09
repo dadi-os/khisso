@@ -13,7 +13,6 @@ struct GharPage: View {
     enum Filter: Hashable {
         case everywhere
         case tag(String)
-        case untagged
     }
 
     let store: GharStore
@@ -31,7 +30,6 @@ struct GharPage: View {
 
     var body: some View {
         let tags = GharLayout.tags(store.devices)
-        let loose = GharLayout.untagged(store.devices)
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -68,7 +66,7 @@ struct GharPage: View {
                 .padding(.top, 14)
                 .padding(.bottom, 4)
 
-                chips(tags: tags, hasUntagged: !loose.isEmpty)
+                chips(tags: tags)
                     .padding(.top, 16)
 
                 if let error = store.error {
@@ -83,8 +81,6 @@ struct GharPage: View {
                     if let set = tags.first(where: { $0.id == id }) {
                         field(title: set.name, devices: set.devices, tag: set.tag)
                     }
-                case .untagged:
-                    field(title: "Untagged", devices: loose, tag: nil)
                 case .everywhere:
                     field(title: "Everywhere", devices: store.devices, tag: nil)
                 }
@@ -131,14 +127,13 @@ struct GharPage: View {
         .onChange(of: store.devices) {
             switch filter {
             case .tag(let id): if store.tag(id) == nil { filter = .everywhere }
-            case .untagged: if GharLayout.untagged(store.devices).isEmpty { filter = .everywhere }
             case .everywhere: break
             }
         }
         .task(id: live.ghar) { await store.load() }
     }
 
-    private func chips(tags: [GharTagSet], hasUntagged: Bool) -> some View {
+    private func chips(tags: [GharTagSet]) -> some View {
         ScrollView(.horizontal) {
             HStack(spacing: 8) {
                 chipButton(.everywhere, title: "Everywhere")
@@ -149,9 +144,6 @@ struct GharPage: View {
                             Button("Turn on", systemImage: "lightbulb.fill") { switched += 1; store.setOn(true, set.devices) }
                             Button("Turn off", systemImage: "lightbulb") { switched += 1; store.setOn(false, set.devices) }
                         }
-                }
-                if hasUntagged && !tags.isEmpty {
-                    chipButton(.untagged, title: "Untagged")
                 }
                 Button {
                     naming = true
