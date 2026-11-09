@@ -1,8 +1,10 @@
 import SwiftUI
 
-/// Chats: every conversation as a glass card, in groups where the first match
-/// wins: Working now, Unread and Earlier,
-/// under a search field. Talking to Dadi is the dock, not this page.
+/// Chats: every conversation as a glass card under the day of its last
+/// message (Today, Yesterday, then the date), as thaali's sidebar lists them,
+/// under a search field. A row has the agent's name, when it last spoke, its
+/// last words and its unread count, and opens with a pulsing dot while a lane
+/// of the agent runs. Talking to Dadi is the dock, not this page.
 struct ChatsView: View {
     let threads: [ThreadSummary]
     /// Each agent's running lanes.
@@ -19,12 +21,6 @@ struct ChatsView: View {
     let details: (String) -> Void
 
     @State private var query = ""
-
-    private struct Group: Identifiable {
-        let title: String
-        let threads: [ThreadSummary]
-        var id: String { title }
-    }
 
     var body: some View {
         ScrollView {
@@ -43,22 +39,22 @@ struct ChatsView: View {
                 } else if threads.isEmpty {
                     EmptyState(title: "No chats yet", detail: "Tell Dadi what you need. It lands with the agent who owns it, and that chat opens.")
                         .padding(.top, 96)
-                } else if groups.isEmpty {
+                } else if days.isEmpty {
                     Text("No chat matches \u{201C}\(query)\u{201D}.")
                         .font(.subheadline)
                         .foregroundStyle(.inkMuted)
                         .padding(.vertical, 18)
                         .padding(.horizontal, 8)
                 } else {
-                    ForEach(groups) { group in
+                    ForEach(days) { day in
                         VStack(alignment: .leading, spacing: 8) {
-                            Text(group.title)
+                            Text(day.label)
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(.inkMuted)
                                 .padding(.horizontal, 6)
                                 .padding(.top, 6)
                             GlassEffectContainer(spacing: 8) {
-                                VStack(spacing: 8) { ForEach(group.threads) { card($0) } }
+                                VStack(spacing: 8) { ForEach(day.threads) { card($0) } }
                             }
                         }
                     }
@@ -71,7 +67,7 @@ struct ChatsView: View {
             .frame(maxWidth: .infinity)
         }
         .scrollDismissesKeyboard(.interactively)
-        .animation(Motion.settle, value: groups.map(\.id))
+        .animation(Motion.settle, value: days.map(\.id))
     }
 
     private var search: some View {
@@ -92,24 +88,42 @@ struct ChatsView: View {
         .glassEffect(.regular, in: .rect(cornerRadius: 22, style: .continuous))
     }
 
-    /// The groups, in priority order; a thread sits in the first that fits.
-    private var groups: [Group] {
-        let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
-        let shown = threads.filter { needle.isEmpty || $0.agentName.lowercased().contains(needle) }
-        return [
-            Group(title: "Working now", threads: shown.filter { !lanes($0.agentId).isEmpty }),
-            Group(title: "Unread", threads: shown.filter { lanes($0.agentId).isEmpty && $0.unread > 0 }),
-            Group(title: "Earlier", threads: shown.filter { lanes($0.agentId).isEmpty && $0.unread == 0 }),
-        ].filter { !$0.threads.isEmpty }
+    private var days: [ChatGroups.Day] {
+        ChatGroups.days(threads, matching: query)
     }
 
     private func card(_ thread: ThreadSummary) -> some View {
-        let running = lanes(thread.agentId)
+        let working = ChatGroups.isWorking(lanes(thread.agentId))
         return Button { open(thread.agentId) } label: {
-            ThreadRow(thread: thread, lanes: running, unread: thread.unread)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 8) {
+                    if working {
+                        WorkingDot()
+                    }
+                    Text(thread.agentName)
+                        .font(.subheadline.weight(thread.unread > 0 ? .bold : .semibold))
+                        .foregroundStyle(.ink)
+                        .lineLimit(1)
+                    Spacer(minLength: 6)
+                    Text(ChatGroups.when(thread.lastAt))
+                        .font(.caption2)
+                        .foregroundStyle(thread.unread > 0 ? Color.sageText : .inkFaint)
+                }
+                HStack(alignment: .top, spacing: 8) {
+                    Text((thread.fromUser ? "You: " : "") + Agent.preview(thread.lastMessage))
+                        .font(.footnote)
+                        .foregroundStyle(thread.unread > 0 ? Color.ink : .inkMuted)
+                        .lineLimit(2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if thread.unread > 0 {
+                        UnreadBadge(count: thread.unread)
+                    }
+                }
+            }
+            .animation(Motion.settle, value: working)
+            .animation(Motion.pop, value: thread.unread)
             .padding(.horizontal, 16)
             .padding(.vertical, 11)
-            .laneSheen(running.contains(.work), in: .rect(cornerRadius: 20, style: .continuous))
             .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 20, style: .continuous))
         }
         .buttonStyle(.plain)

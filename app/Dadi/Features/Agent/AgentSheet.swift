@@ -49,7 +49,7 @@ struct AgentSheet: View {
                         problem("Helper tasks could not be read: \(unreadable)")
                     }
                     if !tasks.isEmpty {
-                        HelperTasks(hath: services.hath, nas: services.nas, agentId: agentId, owner: name, tasks: tasks) { await loadHost() }
+                        HelperTasks(hath: services.hath, nas: services.nas, owner: name, tasks: tasks) { await loadHost() }
                     }
                     if let hostError {
                         problem("Couldn't read the agent's tasks: \(hostError)")

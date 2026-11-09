@@ -16,6 +16,7 @@ struct DadiApp: App {
         let relay = WatchRelay(connection: connection)
         relay.activate()
         _relay = State(initialValue: relay)
+        UITabBarItem.appearance().badgeColor = UIColor(Color.sageDeep)
     }
 
     var body: some Scene {

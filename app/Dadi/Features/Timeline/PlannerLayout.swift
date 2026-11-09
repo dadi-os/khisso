@@ -90,10 +90,27 @@ enum PlannerLayout {
         return gaps
     }
 
-    /// The whole hours the axis spans: the segments' extent, or a default window.
-    static func hours(_ segments: [Segment]) -> Range<Int> {
-        guard let first = segments.map(\.startMin).min(), let last = segments.map(\.endMin).max() else { return emptyHours }
+    /// The whole hours the axis spans: the segments' extent and an hour either side of each due
+    /// minute, or a default window when there is neither.
+    static func hours(_ segments: [Segment], dueMinutes: [Int] = []) -> Range<Int> {
+        let padded = dueMinutes.flatMap { [max(0, $0 - 60), min(24 * 60, $0 + 60)] }
+        let starts = segments.map(\.startMin) + padded
+        let ends = segments.map(\.endMin) + padded
+        guard let first = starts.min(), let last = ends.max() else { return emptyHours }
         return (first / 60)..<Int((Double(last) / 60).rounded(.up))
+    }
+
+    /// Wall-clock minutes after local midnight at `date`.
+    static func minute(of date: Date, calendar: Calendar = .current) -> Int {
+        calendar.component(.hour, from: date) * 60 + calendar.component(.minute, from: date)
+    }
+
+    /// The items due on `day` at a time: no start, a due time that day, and not hidden from the planner.
+    static func dues(_ items: [TimelineItem], on day: Date, calendar: Calendar = .current) -> [TimelineItem] {
+        items.filter { item in
+            guard item.startAt == nil, !item.hideFromPlanner, let due = item.dueAt else { return false }
+            return calendar.isDate(due, inSameDayAs: day)
+        }
     }
 
     /// The segment happening at `nowMin` and the first one starting after it.

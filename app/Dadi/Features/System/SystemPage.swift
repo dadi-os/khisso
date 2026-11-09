@@ -2,7 +2,7 @@ import SwiftUI
 
 /// System: the box at a glance. Rings for its processor, memory and disk, how
 /// long it has been up, each module's health, every device on dadi but the
-/// box, every browser and terminal helper task (tapping one opens its sheet,
+/// box, every browser and terminal helper task (tapping one opens its card,
 /// where a sleeping one shows its summary), and the latest errors in the logs. The meters and devices refresh
 /// every two seconds while open, as in thaali; the slower log read keeps its
 /// own pace so it never holds them up. The drawer jumps to a section; holding
@@ -19,6 +19,7 @@ struct SystemPage: View {
         case errors = "Recent errors"
     }
 
+    let hath: HathClient
     let store: SystemStore
     /// The section the drawer asked for; the page scrolls to it and clears it.
     @Binding var focus: Section?
@@ -95,7 +96,7 @@ struct SystemPage: View {
                         section(.tasks, detail: "\(store.tasks.filter { $0.status == "working" }.count) working") {
                             VStack(spacing: 0) {
                                 ForEach(store.tasks) { task in
-                                    TaskRow(nas: store.nas, task: task, owner: nameOf(task.owner), showsOwner: true) { await store.load() }
+                                    TaskRow(hath: hath, nas: store.nas, task: task, owner: nameOf(task.owner), showsOwner: true) { await store.load() }
                                     if task.id != store.tasks.last?.id { Rectangle().fill(.rule).frame(height: 1) }
                                 }
                             }
@@ -157,6 +158,7 @@ struct SystemPage: View {
                 .padding(.bottom, 40)
                 .frame(maxWidth: 820)
                 .frame(maxWidth: .infinity)
+                .containerRelativeFrame(.horizontal)
                 .animation(Motion.settle, value: store.status)
                 .animation(Motion.settle, value: errorsFrom)
             }

@@ -35,6 +35,8 @@ struct PhoneHome: View {
     @State private var agentSheet: String?
     /// The router dock: the draft, the composer over the page and the last send.
     @State private var router = RouterDock()
+    /// Whether an open thread's composer is out or down in the condensed dock.
+    @State private var threadDock = ThreadDock()
     /// The toasts over the page.
     @State private var toaster = Toaster()
     @Namespace private var sheetWordmark
@@ -206,12 +208,12 @@ struct PhoneHome: View {
                 chrome(ChaaviPage(store: chaavi, creating: $creatingItem), tab: .chaavi)
             }
             Tab("System", systemImage: "server.rack", value: HomeView.Tab.system) {
-                chrome(SystemPage(store: system, focus: $systemFocus, nameOf: store.name(of:), online: online), tab: .system)
+                chrome(SystemPage(hath: services.hath, store: system, focus: $systemFocus, nameOf: store.name(of:), online: online), tab: .system)
             }
         }
-        .tabBarMinimizeBehavior(.onScrollDown)
-        .routerAccessory(hidden: page.isThread) {
-            RouterDockBar(dock: router, active: store.routing, online: online)
+        .tabBarMinimizeBehavior(page.isThread ? .onScrollUp : .onScrollDown)
+        .tabViewBottomAccessory {
+            DockAccessory(router: router, active: store.routing, online: online, thread: threadDock, threadName: openThreadName)
         }
         .tint(.sageDeep)
     }
@@ -221,7 +223,7 @@ struct PhoneHome: View {
         ZStack {
             switch dadiPage {
             case .thread(let agentId):
-                ThreadView(hath: services.hath, nas: services.nas, agentId: agentId, name: store.name(of: agentId), live: store.live, lanes: store.lanes(of: agentId), connections: store.connections) { seq in
+                ThreadView(hath: services.hath, nas: services.nas, agentId: agentId, name: store.name(of: agentId), live: store.live, lanes: store.lanes(of: agentId), connections: store.connections, dock: threadDock) { seq in
                     Task { await store.markRead(services.hath, agentId: agentId, through: seq) }
                 } details: {
                     agentSheet = agentId
@@ -237,6 +239,12 @@ struct PhoneHome: View {
                 .transition(.opacity)
             }
         }
+    }
+
+    /// The agent's name while its thread is open.
+    private var openThreadName: String? {
+        guard case .thread(let agentId) = page else { return nil }
+        return store.name(of: agentId)
     }
 
     /// The Chats tab's badge: Ankur's unread replies.
@@ -470,19 +478,6 @@ struct NameBubble: View {
                 .accessibilityHint("Shows details and activity")
         } else {
             label
-        }
-    }
-}
-
-private extension View {
-    /// The bottom accessory, off while `hidden`. `isEnabled` exists from iOS 26.1;
-    /// on 26.0 the accessory stays and its content is not shown in a thread.
-    @ViewBuilder
-    func routerAccessory<Dock: View>(hidden: Bool, @ViewBuilder dock: () -> Dock) -> some View {
-        if #available(iOS 26.1, *) {
-            tabViewBottomAccessory(isEnabled: !hidden, content: dock)
-        } else {
-            tabViewBottomAccessory { if !hidden { dock() } }
         }
     }
 }

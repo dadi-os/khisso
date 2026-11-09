@@ -69,7 +69,7 @@ struct NasTask: Decodable, Sendable, Hashable, Identifiable {
     /// The agent that owns it.
     let owner: String
     let purpose: String
-    /// working, paused (Ankur has taken it over), idle, asking (it asked its agent), asleep or stopped (halted by Ankur or Hath).
+    /// working, paused (held by Ankur), idle, asking (it asked its agent), asleep or stopped (halted by Ankur or Hath).
     let status: String
     /// The browser slot or terminal id it holds; nil while it sleeps.
     let resource: String?
@@ -84,45 +84,9 @@ struct NasTask: Decodable, Sendable, Hashable, Identifiable {
     /// The path under `/tasks` that addresses this task: `browser/3f2a91` for `task/browser/3f2a91`.
     var route: String { task.replacingOccurrences(of: "task/", with: "", options: .anchored) }
 
-    /// True while Ankur can act on its browser or terminal.
-    var drivable: Bool { resource != nil && status != "asleep" && status != "stopped" }
+    /// True while it holds a browser or terminal that can be watched.
+    var live: Bool { resource != nil && status != "asleep" && status != "stopped" }
 
     /// True while Hath can still halt it: it is working, paused, idle or asking.
     var stoppable: Bool { ["working", "paused", "idle", "asking"].contains(status) }
-}
-
-/// One pointer or key event Ankur sends into a browser, as POST /browsers/:id/input takes it.
-/// Positions are fractions (0 to 1) of the display.
-struct BrowserInputEvent: Encodable, Sendable {
-    /// move, down, up, wheel, key_down or key_up.
-    let type: String
-    var x = 0.0
-    var y = 0.0
-    var button = "none"
-    var buttons = 0
-    var clickCount = 0
-    var deltaX = 0.0
-    var deltaY = 0.0
-    var key = ""
-    var code = ""
-    var keyCode = 0
-    var text = ""
-
-    /// A left press or release at a fraction of the display.
-    static func pointer(_ type: String, x: Double, y: Double) -> BrowserInputEvent {
-        BrowserInputEvent(type: type, x: x, y: y, button: "left", buttons: type == "up" ? 0 : 1, clickCount: type == "move" ? 0 : 1)
-    }
-
-    /// A wheel turn at a fraction of the display, `deltaX` and `deltaY` in the page's pixels (positive scrolls right and down).
-    static func wheel(x: Double, y: Double, deltaX: Double, deltaY: Double) -> BrowserInputEvent {
-        BrowserInputEvent(type: "wheel", x: x, y: y, deltaX: deltaX, deltaY: deltaY)
-    }
-
-    /// A key press and release for `key`, typing `text` when it types a character.
-    static func press(key: String, code: String, keyCode: Int, text: String = "") -> [BrowserInputEvent] {
-        [
-            BrowserInputEvent(type: "key_down", key: key, code: code, keyCode: keyCode, text: text),
-            BrowserInputEvent(type: "key_up", key: key, code: code, keyCode: keyCode),
-        ]
-    }
 }

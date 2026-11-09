@@ -112,11 +112,11 @@ private struct DisplayLayerView: UIViewRepresentable {
 /// on screen and the app is forward, at `profile` for as long as it is shown;
 /// a stream that drops or goes quiet reconnects on a short bounded backoff,
 /// keeping the last frame under a badge, and fails with its last error and a
-/// Retry once those run out. Input goes through the view drawn over it.
+/// Retry once those run out.
 struct BrowserView: View {
     let nas: NasClient
     let browserId: Int
-    /// What the stream costs and shows: `.watch` for a view left open, `.drive` for one Ankur uses.
+    /// What the stream costs and shows.
     var profile = StreamProfile.watch
     /// The corner radius of the display, 0 where a bar sits above it.
     var cornerRadius: CGFloat = 12

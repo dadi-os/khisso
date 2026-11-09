@@ -1,9 +1,10 @@
 import SwiftUI
 
-/// One helper task as a row, the same on the agent sheet and the System page: its address, purpose
-/// and step, a state capsule, and under it the helper's own words when it asked its agent. Tapping
-/// the row opens the task sheet, where its browser or terminal is watched and taken over.
+/// One helper task as a row, the same on the agent sheet and the System page and laid out as in Thaali: its
+/// id, the owner where the row stands apart from its agent, a state capsule, what it is for and where it is
+/// now, and under it the helper's own words when it asked its agent. Tapping the row opens the task card.
 struct TaskRow: View {
+    let hath: HathClient
     let nas: NasClient
     let task: NasTask
     /// The owning agent's name.
@@ -22,36 +23,38 @@ struct TaskRow: View {
                 .accessibilityHint("Opens the task")
             note
         }
-        .taskSheet(isPresented: $acting, nas: nas, task: task, owner: owner, changed: changed)
+        .taskSheet(isPresented: $acting, hath: hath, nas: nas, task: task, owner: owner, changed: changed)
     }
 
     private var head: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: task.kind == "browser" ? "globe" : "terminal")
-                .font(.body.weight(.medium))
-                .foregroundStyle(.sageText)
-                .frame(width: 32, height: 32)
-                .background(.sage.opacity(0.12), in: .rect(cornerRadius: 10, style: .continuous))
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Image(systemName: task.kind == "browser" ? "globe" : "terminal")
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(task.status == "asking" ? Color.tideText : .inkMuted)
+                Text(task.route).font(.footnote.monospaced().weight(.medium)).foregroundStyle(.ink).lineLimit(1).layoutPriority(1)
+                if showsOwner { Text(owner).font(.footnote).foregroundStyle(.inkMuted).lineLimit(1).truncationMode(.tail) }
+                Spacer(minLength: 4)
+                TaskStateCapsule(status: task.status).layoutPriority(2)
+                Text(task.lastActivity, format: .relative(presentation: .numeric, unitsStyle: .narrow))
+                    .font(.caption2)
+                    .foregroundStyle(.inkFaint)
+                    .lineLimit(1)
+            }
             VStack(alignment: .leading, spacing: 3) {
-                Text(task.route).font(.footnote.monospaced().weight(.medium)).foregroundStyle(.ink).lineLimit(1)
-                if showsOwner { Text(owner).font(.caption).foregroundStyle(.inkMuted).lineLimit(1) }
-                Text(task.purpose).font(.footnote).foregroundStyle(.ink).lineLimit(2).multilineTextAlignment(.leading)
+                Text(task.purpose).font(.subheadline).foregroundStyle(.ink).lineLimit(2).multilineTextAlignment(.leading)
                 if task.status != "asleep", task.status != "asking" {
                     Text(task.state).font(.caption.monospaced()).foregroundStyle(.inkMuted).lineLimit(1)
                 }
             }
-            Spacer(minLength: 8)
-            VStack(alignment: .trailing, spacing: 6) {
-                TaskStateCapsule(status: task.status)
-                Text(task.lastActivity, style: .relative).font(.caption2).foregroundStyle(.inkFaint)
-                Image(systemName: "chevron.right").font(.caption2.weight(.bold)).foregroundStyle(.inkFaint)
-            }
+            .padding(.leading, 24)
         }
-        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 10)
         .contentShape(.rect)
     }
 
-    /// What a waiting or paused task says under its row.
+    /// What a task waiting on its agent says under its row.
     @ViewBuilder
     private var note: some View {
         if task.status == "asking" {
@@ -63,18 +66,8 @@ struct TaskRow: View {
             .padding(.vertical, 9)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(.tide.opacity(0.1), in: .rect(cornerRadius: 12, style: .continuous))
-            .padding(.leading, 44)
-            .padding(.bottom, 12)
-        } else if task.status == "paused" {
-            Label("Paused while you are in it. Return it from its sheet.", systemImage: "pause.fill")
-                .font(.footnote)
-                .foregroundStyle(.ink)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 9)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(.tide.opacity(0.2), in: .rect(cornerRadius: 12, style: .continuous))
-                .padding(.leading, 44)
-                .padding(.bottom, 12)
+            .padding(.leading, 24)
+            .padding(.bottom, 10)
         }
     }
 }

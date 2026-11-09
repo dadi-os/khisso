@@ -106,14 +106,7 @@ struct ThreadRow: View {
                 }
             }
             if unread > 0 {
-                Text("\(unread)")
-                    .font(.caption2.weight(.bold).monospacedDigit())
-                    .foregroundStyle(.bone)
-                    .padding(.horizontal, 6)
-                    .frame(minWidth: 20, minHeight: 20)
-                    .background(.sageDeep, in: .capsule)
-                    .transition(.scale.combined(with: .opacity))
-                    .accessibilityLabel("\(unread) unread")
+                UnreadBadge(count: unread)
             }
         }
         .animation(Motion.settle, value: lanes)

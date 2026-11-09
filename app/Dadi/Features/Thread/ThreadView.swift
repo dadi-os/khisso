@@ -23,6 +23,8 @@ struct ThreadView: View {
     /// Changes each time Home's event stream reconnects; the thread reloads to
     /// catch what arrived while it was down.
     let connections: Int
+    /// Whether the composer is out or down in the condensed dock.
+    let dock: ThreadDock
     /// Ankur has seen the thread through this message.
     let read: (Int) -> Void
     /// Opens the agent's sheet, where its activity is.
@@ -83,7 +85,7 @@ struct ThreadView: View {
         .scrollDismissesKeyboard(.interactively)
         .scrollEdgeEffectHidden(true, for: .bottom)
         .safeAreaInset(edge: .top, spacing: 0) {
-            HostPin(nas: nas, agentId: agentId, owner: name)
+            HostPin(hath: hath, nas: nas, agentId: agentId, owner: name)
         }
         .safeAreaInset(edge: .bottom) {
             VStack(spacing: 12) {
@@ -114,14 +116,18 @@ struct ThreadView: View {
                         .foregroundStyle(.danger)
                         .transition(.opacity)
                 }
-                if let quote {
-                    QuoteCard(message: quote, author: quote.fromUser ? "You" : name) {
-                        withAnimation(Motion.snap) { self.quote = nil }
+                if dock.composerShown {
+                    if let quote {
+                        QuoteCard(message: quote, author: quote.fromUser ? "You" : name) {
+                            withAnimation(Motion.snap) { self.quote = nil }
+                        }
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
                     }
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    Composer(text: $draft, photos: $photos, placeholder: "Message \(name)…", busy: sending, lanes: lanes, focusOnAppear: dock.writing, send: send)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
-                Composer(text: $draft, photos: $photos, placeholder: "Message \(name)…", busy: sending, lanes: lanes, send: send)
             }
+            .animation(Motion.settle, value: dock.composerShown)
             .padding(.horizontal, 16)
             .padding(.top, 8)
             .composerInset()
@@ -274,6 +280,7 @@ struct ThreadView: View {
                 photos = []
                 quote = nil
                 sent += 1
+                dock.writing = false
                 insert(DurableMessage(seq: reply.seq, fromAgentId: nil, toAgentId: agentId, content: reply.content, attachments: reply.attachments, kind: .message, createdAt: reply.createdAt))
             } catch {
                 withAnimation(Motion.snap) { sendError = error.localizedDescription }

@@ -1,14 +1,14 @@
 import Foundation
 
-/// The helper tasks a thread pins: the agent's newest live browser and newest live terminal, where live
-/// means awake and holding a browser or terminal.
+/// The helper tasks a thread pins: the agent's newest active browser and newest active terminal, where active
+/// means working, asking or paused while holding a browser or terminal. Idle and asleep tasks are not pinned.
 struct PinnedTasks: Equatable {
     let browser: NasTask?
     let terminal: NasTask?
 
     /// Picks the pins from an agent's tasks, newest activity first.
     init(of tasks: [NasTask]) {
-        let live = tasks.filter(\.drivable).sorted { $0.lastActivity > $1.lastActivity }
+        let live = tasks.filter { $0.live && ["working", "asking", "paused"].contains($0.status) }.sorted { $0.lastActivity > $1.lastActivity }
         browser = live.first { $0.kind == "browser" }
         terminal = live.first { $0.kind == "terminal" }
     }

@@ -620,11 +620,11 @@ struct AgentStatusTests {
         #expect(try task("paused", resource: "1").route == "browser/3f2a91")
     }
 
-    @Test func drivesOnlyAnAwakeTaskHoldingAResource() throws {
-        #expect(try task("paused", resource: "1").drivable)
-        #expect(try task("asking", resource: "1").drivable)
-        #expect(try !task("asleep", resource: nil).drivable)
-        #expect(try !task("stopped", resource: "1").drivable)
+    @Test func isLiveOnlyWhenAwakeAndHoldingAResource() throws {
+        #expect(try task("paused", resource: "1").live)
+        #expect(try task("asking", resource: "1").live)
+        #expect(try !task("asleep", resource: nil).live)
+        #expect(try !task("stopped", resource: "1").live)
     }
 
     @Test func stopsOnlyATaskThatIsStillLive() throws {
@@ -634,13 +634,5 @@ struct AgentStatusTests {
         for status in ["asleep", "stopped"] {
             #expect(try !task(status, resource: nil).stoppable)
         }
-    }
-
-    @Test func sendsABrowserEventWithSnakeCaseKeys() throws {
-        let data = try ServiceJSON.encoder.encode(BrowserInputEvent.pointer("down", x: 0.5, y: 0.25))
-        let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
-        #expect(json["click_count"] as? Int == 1)
-        #expect(json["button"] as? String == "left")
-        #expect(json["buttons"] as? Int == 1)
     }
 }

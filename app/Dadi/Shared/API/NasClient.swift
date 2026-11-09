@@ -40,32 +40,13 @@ struct NasClient: Sendable {
         try await client.get("/tasks")
     }
 
-    /// POST /browsers/:id/input: pointer, wheel and key events, in order.
-    func browserInput(_ id: Int, events: [BrowserInputEvent]) async throws {
-        struct Body: Encodable { let events: [BrowserInputEvent] }
-        try await client.send("/browsers/\(id)/input", body: Body(events: events))
-    }
-
-    /// POST /browsers/:id/navigate: `back` or `reload`.
-    func browserNavigate(_ id: Int, action: String) async throws {
-        struct Body: Encodable { let action: String }
-        try await client.send("/browsers/\(id)/navigate", body: Body(action: action))
-    }
-
-    /// POST /terminals/:id/keys: tmux send-keys. `literal` types the text as-is; otherwise each is a key name such as Enter or C-c.
-    func terminalKeys(_ id: String, keys: [String], literal: Bool) async throws {
-        struct Body: Encodable { let keys: [String]; let literal: Bool }
-        struct Sent: Decodable { let sent: Bool }
-        let _: Sent = try await client.post("/terminals/\(Self.escaped(id))/keys", body: Body(keys: keys, literal: literal))
-    }
-
-    /// POST /tasks/:kind/:id/pause: takes an awake task over, so its helper stops at the next step; pausing a paused task changes nothing.
+    /// POST /tasks/:kind/:id/pause: holds an awake task, so its helper stops at the next step; pausing a paused task changes nothing.
     func pause(_ task: NasTask) async throws -> NasTask {
         struct Body: Encodable {}
         return try await client.post("/tasks/\(task.route)/pause", body: Body())
     }
 
-    /// POST /tasks/:kind/:id/resume: hands a paused task back, with `note` as what Ankur did when there is one.
+    /// POST /tasks/:kind/:id/resume: hands a paused task back to its helper, with `note` when there is one.
     func resume(_ task: NasTask, note: String?) async throws -> NasTask {
         struct Body: Encodable { let note: String? }
         return try await client.post("/tasks/\(task.route)/resume", body: Body(note: note))
@@ -109,8 +90,4 @@ struct StreamProfile: Sendable, Hashable {
     let kbps: Int
 
     /// Nas's watch-only defaults, cheap enough to leave open on every pin.
-    static let watch = StreamProfile(fps: 5, width: 960, kbps: 600)
-
-    /// A view Ankur drives: 720p at 30 fps, with a bitrate ceiling under the mesh link's measured 0.7 MB/s.
-    static let drive = StreamProfile(fps: 30, width: 1280, kbps: 3000)
-}
+    static let watch = StreamProfile(fps: 5, width: 960, kbps: 600)}

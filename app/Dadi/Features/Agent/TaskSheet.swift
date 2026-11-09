@@ -1,162 +1,189 @@
 import SwiftUI
 
-/// The full-height sheet for a helper task's browser or terminal. It opens watching: the helper keeps working
-/// and taps and keys do nothing. Takeover pauses the helper and lets Ankur in; Return, closing the sheet or
-/// 29 minutes without input hands the task back with a summary of what he did, and the sheet goes on
-/// watching. Stop task is in the menu, behind a confirmation.
+/// The modal card for a helper task, watch only: its browser live in a window frame showing the active tab's
+/// address, or its terminal's output following the end. The header carries the task's kind, purpose, state and
+/// a menu to pause or resume it and to stop it for good. The card is as tall as its browser needs; a terminal
+/// opens medium and pulls up to full height.
 struct TaskSheet: View {
+    let hath: HathClient
     let nas: NasClient
-    let task: NasTask
     /// The owning agent's name.
     let owner: String
     /// Reads the tasks again after the task was paused, resumed or stopped.
     let changed: () async -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @State private var control: TakeoverControl
+    @State private var task: NasTask
+    @State private var actionProblem: String?
+    @State private var readProblem: String?
+    @State private var busy = false
     @State private var confirmingStop = false
-    @State private var stopping = false
+    @State private var fitted: CGFloat = 360
 
-    init(nas: NasClient, task: NasTask, owner: String, changed: @escaping () async -> Void) {
+    private static let refresh: Duration = .seconds(2)
+    private static let terminalLines = 400
+    private static let terminalHeight: CGFloat = 420
+
+    init(hath: HathClient, nas: NasClient, task: NasTask, owner: String, changed: @escaping () async -> Void) {
+        self.hath = hath
         self.nas = nas
-        self.task = task
         self.owner = owner
         self.changed = changed
-        _control = State(initialValue: TakeoverControl(
-            isBrowser: task.kind == "browser",
-            pause: {
-                _ = try await nas.pause(task)
-                await changed()
-            },
-            resume: { summary in
-                _ = try await nas.resume(task, note: summary)
-                await changed()
-            }
-        ))
+        _task = State(initialValue: task)
     }
 
+    private var terminal: Bool { task.kind == "terminal" && task.resource != nil }
+    private var problem: String? { actionProblem ?? readProblem }
+
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 12) {
             header
-            if let problem = control.problem {
+            if let problem {
                 Label(problem, systemImage: "exclamationmark.triangle")
                     .font(.footnote)
                     .foregroundStyle(.danger)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 16)
             }
-            if task.kind == "browser", let resource = task.resource, let browserId = Int(resource) {
-                BrowserDrive(nas: nas, browserId: browserId, control: control)
-            } else if let resource = task.resource {
-                TerminalPane(nas: nas, terminalId: resource, control: control)
-            } else {
-                Text(task.state).font(.footnote).foregroundStyle(.inkMuted).padding()
-                Spacer()
-            }
+            screen
         }
-        .padding(.top, 8)
-        .onDisappear {
-            let control = control
-            Task {
-                _ = await control.handBack()
-                control.dispose()
-            }
-        }
+        .padding(.top, 14)
+        .padding(.bottom, terminal ? 0 : 16)
+        .frame(maxHeight: terminal ? .infinity : nil, alignment: .top)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { if !terminal { fitted = $0 } }
+        .presentationDetents(terminal ? [.height(Self.terminalHeight), .large] : [.height(fitted)])
+        .presentationDragIndicator(.visible)
+        .presentationBackground(.boneRaised)
+        .task { await follow() }
         .confirmationDialog("Stop this task?", isPresented: $confirmingStop, titleVisibility: .visible) {
             Button("Stop task", role: .destructive) { stop() }
             Button("Keep", role: .cancel) {}
         } message: {
-            Text("It goes to sleep and \(owner) is told it was stopped.")
+            Text("Ends the task for good; its agent is told.")
         }
     }
 
-    private var busy: Bool { control.state == .pausing || control.state == .returning || stopping }
-
     private var header: some View {
-        HStack(spacing: 8) {
-            Button("Close") { close() }
-                .font(.body.weight(.semibold))
-                .foregroundStyle(.sageDeep)
-                .frame(minWidth: 56, minHeight: 44, alignment: .leading)
-                .disabled(busy)
-            VStack(spacing: 0) {
-                Text(task.route).font(.subheadline.monospaced().weight(.semibold)).foregroundStyle(.ink).lineLimit(1)
-                Text("\(owner) · \(stateWord)").font(.caption).foregroundStyle(.inkMuted).lineLimit(1)
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: task.kind == "browser" ? "globe" : "terminal")
+                .font(.body.weight(.medium))
+                .foregroundStyle(.sageText)
+                .frame(width: 32, height: 32)
+                .background(.sage.opacity(0.12), in: .rect(cornerRadius: 10, style: .continuous))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(task.purpose).font(.subheadline.weight(.semibold)).foregroundStyle(.ink).lineLimit(2).multilineTextAlignment(.leading)
+                Text("\(task.route) \u{00B7} \(owner)").font(.caption.monospaced()).foregroundStyle(.inkMuted).lineLimit(1)
             }
-            .frame(maxWidth: .infinity)
-            HStack(spacing: 4) {
-                if task.drivable { handle }
-                if task.stoppable {
-                    Menu {
-                        Button("Stop task", systemImage: "power", role: .destructive) { confirmingStop = true }
-                    } label: {
-                        Image(systemName: "ellipsis.circle").font(.title3).foregroundStyle(.sageDeep).frame(width: 36, height: 44)
-                    }
-                    .disabled(busy)
-                    .accessibilityLabel("More")
-                }
-            }
-            .frame(minWidth: 56, alignment: .trailing)
+            Spacer(minLength: 4)
+            TaskStateCapsule(status: task.status)
+            if task.stoppable { menu }
+            Button("Close", systemImage: "xmark") { dismiss() }
+                .labelStyle(.iconOnly)
+                .font(.footnote.weight(.bold))
+                .foregroundStyle(.inkMuted)
+                .frame(width: 32, height: 32)
+                .background(.ink.opacity(0.06), in: .circle)
         }
         .padding(.horizontal, 16)
     }
 
-    /// Takeover while watching, Return while in control.
-    private var handle: some View {
-        let inControl = control.state == .inControl || control.state == .returning
-        return Button(inControl ? "Return" : "Takeover") {
-            Task { if inControl { _ = await control.handBack() } else { await control.takeOver() } }
+    private var menu: some View {
+        Menu {
+            if task.status == "paused" {
+                Button("Resume", systemImage: "play.fill") { change { try await nas.resume(task, note: nil) } }
+            } else {
+                Button("Pause", systemImage: "pause.fill") { change { try await nas.pause(task) } }
+            }
+            Button("Stop task", systemImage: "power", role: .destructive) { confirmingStop = true }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.footnote.weight(.bold))
+                .foregroundStyle(.inkMuted)
+                .frame(width: 32, height: 32)
+                .background(.ink.opacity(0.06), in: .circle)
         }
-        .font(.subheadline.weight(.semibold))
-        .buttonStyle(.borderedProminent)
-        .buttonBorderShape(.capsule)
-        .tint(inControl ? .tide : .sageDeep)
-        .foregroundStyle(inControl ? Color.tideText : .white)
         .disabled(busy)
-        .accessibilityLabel(inControl ? "Return" : "Takeover")
+        .accessibilityLabel("More")
     }
 
-    private var stateWord: String {
-        switch control.state {
-        case .watching: "Watching"
-        case .pausing: "Pausing\u{2026}"
-        case .inControl: "You are in control"
-        case .returning: "Returning\u{2026}"
+    @ViewBuilder
+    private var screen: some View {
+        if task.kind == "browser", let resource = task.resource, let browserId = Int(resource) {
+            BrowserWindow(nas: nas, browserId: browserId, address: task.activeUrl)
+                .padding(.horizontal, 16)
+        } else if let resource = task.resource {
+            GeometryReader { pane in
+                ScrollView {
+                    TaskTerminal(nas: nas, terminalId: resource, lines: Self.terminalLines, fontSize: 12)
+                        .frame(minHeight: pane.size.height, alignment: .top)
+                }
+                .defaultScrollAnchor(.bottom)
+                .defaultScrollAnchor(.bottom, for: .sizeChanges)
+            }
+            .padding(.horizontal, 16)
+            .accessibilityLabel("Terminal output")
+        } else {
+            Text(task.state).font(.footnote).foregroundStyle(.inkMuted).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 16)
         }
     }
 
-    /// Hands the task back when he is in control, then closes; a failed hand back keeps the sheet open.
-    private func close() {
-        Task {
-            if await control.handBack() { dismiss() }
-        }
-    }
-
-    /// Pauses the task, stops it, and closes the sheet; a failure is said in the sheet.
-    private func stop() {
-        stopping = true
-        Task {
-            defer { stopping = false }
+    /// Reads the task again every `refresh`, so its state and the page in front stay current.
+    private func follow() async {
+        while !Task.isCancelled {
             do {
-                _ = try await nas.pause(task)
-                _ = try await nas.stop(task)
-                control.dispose()
+                try await Task.sleep(for: Self.refresh)
+                guard let fresh = try await nas.tasks().first(where: { $0.id == task.id }) else {
+                    readProblem = "The task is no longer on the box."
+                    continue
+                }
+                task = fresh
+                readProblem = nil
+            } catch is CancellationError {
+                return
+            } catch {
+                readProblem = "The task could not be read: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    /// Runs a pause or resume, shows the task as Nas answers, and reads the tasks again.
+    private func change(_ action: @escaping () async throws -> NasTask) {
+        busy = true
+        Task {
+            defer { busy = false }
+            do {
+                task = try await action()
+                actionProblem = nil
+                await changed()
+            } catch {
+                actionProblem = "The task did not change: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    /// Halts the task through Hath, which kills it and tells its agent, then closes the card.
+    private func stop() {
+        busy = true
+        Task {
+            defer { busy = false }
+            do {
+                try await hath.haltSession(agentId: task.owner, taskId: task.id)
                 await changed()
                 dismiss()
+            } catch is CancellationError {
+                return
             } catch {
-                control.fail("The task did not stop", error)
+                actionProblem = "The task did not stop: \(WakeFormat.haltSentence(error))"
             }
         }
     }
 }
 
 extension View {
-    /// Presents the sheet for `task` over this view.
-    func taskSheet(isPresented: Binding<Bool>, nas: NasClient, task: NasTask, owner: String, changed: @escaping () async -> Void) -> some View {
+    /// Presents the task card for `task` over this view.
+    func taskSheet(isPresented: Binding<Bool>, hath: HathClient, nas: NasClient, task: NasTask, owner: String, changed: @escaping () async -> Void) -> some View {
         sheet(isPresented: isPresented) {
-            TaskSheet(nas: nas, task: task, owner: owner, changed: changed)
-                .presentationDetents([.large])
-                .presentationBackground(.boneRaised)
+            TaskSheet(hath: hath, nas: nas, task: task, owner: owner, changed: changed)
         }
     }
 }
