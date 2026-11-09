@@ -595,10 +595,10 @@ struct AgentStatusTests {
 
     @Test func putsTheStateIntoChipsAndAJobLine() throws {
         let agent = try ServiceJSON.decoder.decode(AgentRecord.self, from: Data(body.utf8))
-        let chips = AgentState.chips(agent, lanes: [.work, .process], unread: 2)
-        #expect(chips.map(\.text) == ["Working", "Processing", "Waiting on task/browser/3", "2 unread"])
-        #expect(chips.map(\.tone) == [.sage, .tide, .tide, .due])
-        #expect(AgentState.chips(agent, lanes: [], unread: 0).map(\.text) == ["Waiting on task/browser/3"])
+        let chips = AgentState.chips(agent, lanes: [.work, .process])
+        #expect(chips.map(\.text) == ["Working", "Processing", "Waiting on task/browser/3"])
+        #expect(chips.map(\.tone) == [.sage, .tide, .tide])
+        #expect(AgentState.chips(agent, lanes: []).map(\.text) == ["Waiting on task/browser/3"])
         let job = AgentState.job(try #require(agent.running.status), nameOf: { $0 }, timeZone: TimeZone(identifier: "UTC")!)
         #expect(job == "Ankur asked at 9:05 AM: book the flight")
     }

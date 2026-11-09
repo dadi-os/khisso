@@ -8,9 +8,12 @@ import SwiftUI
 /// Ankur's words are sage bubbles. Holding a message lifts it with Copy,
 /// Reply with quote, Share and, for the agent's, its activity; swiping one
 /// right quotes it too. A quote waits over the composer and goes out as a
-/// blockquote ahead of the reply.
+/// blockquote ahead of the reply. The agent's live browser and terminal are
+/// pinned above the thread.
 struct ThreadView: View {
     let hath: HathClient
+    /// Nas, for the agent's pinned browser and terminal.
+    let nas: NasClient
     let agentId: String
     let name: String
     /// The newest event from Home's stream; messages for this agent are added.
@@ -79,6 +82,9 @@ struct ThreadView: View {
         .scrollPosition($position)
         .scrollDismissesKeyboard(.interactively)
         .scrollEdgeEffectHidden(true, for: .bottom)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            HostPin(nas: nas, agentId: agentId, owner: name)
+        }
         .safeAreaInset(edge: .bottom) {
             VStack(spacing: 12) {
                 GlassEffectContainer(spacing: 6) {

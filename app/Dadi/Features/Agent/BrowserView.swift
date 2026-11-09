@@ -108,14 +108,18 @@ private struct DisplayLayerView: UIViewRepresentable {
     func updateUIView(_ host: DisplayLayerHost, context: Context) {}
 }
 
-/// The live display of an agent's browser from Nas, 16:9, watching only. It
-/// streams while on screen and the app is forward; a stream that drops or
-/// goes quiet reconnects on a short bounded backoff, keeping the last frame
-/// under a badge, and fails with its last error and a Retry once those run out.
+/// The live display of an agent's browser from Nas, 16:9. It streams while
+/// on screen and the app is forward, at `profile` for as long as it is shown;
+/// a stream that drops or goes quiet reconnects on a short bounded backoff,
+/// keeping the last frame under a badge, and fails with its last error and a
+/// Retry once those run out. Input goes through the view drawn over it.
 struct BrowserView: View {
     let nas: NasClient
     let browserId: Int
-
+    /// What the stream costs and shows: `.watch` for a view left open, `.drive` for one Ankur uses.
+    var profile = StreamProfile.watch
+    /// The corner radius of the display, 0 where a bar sits above it.
+    var cornerRadius: CGFloat = 12
     private enum Phase: Equatable {
         case opening
         case live
@@ -166,8 +170,8 @@ struct BrowserView: View {
             }
         }
         .aspectRatio(16.0 / 9.0, contentMode: .fit)
-        .clipShape(.rect(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.sageLine.opacity(0.7), lineWidth: 1))
+        .clipShape(.rect(cornerRadius: cornerRadius, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).strokeBorder(Color.sageLine.opacity(0.7), lineWidth: 1))
         .animation(Motion.settle, value: phase)
         .task(id: StreamKey(browserId: browserId, forward: scenePhase == .active, attempt: attempt)) {
             guard scenePhase == .active else { return }
@@ -189,7 +193,7 @@ struct BrowserView: View {
         while !Task.isCancelled {
             let failure: String
             do {
-                for try await event in Self.events(from: try await nas.browserStream(browserId)) {
+                for try await event in Self.events(from: try await nas.browserStream(browserId, profile: profile)) {
                     switch event {
                     case .config(let sps, let pps):
                         try renderer.configure(sps: sps, pps: pps)

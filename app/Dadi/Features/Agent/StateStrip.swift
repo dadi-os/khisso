@@ -3,7 +3,7 @@ import SwiftUI
 /// One chip of the state strip.
 struct StripChip: Equatable, Identifiable {
     enum Tone: Equatable {
-        case sage, tide, due
+        case sage, tide
     }
 
     let tone: Tone
@@ -12,16 +12,15 @@ struct StripChip: Equatable, Identifiable {
     var id: String { text }
 }
 
-/// What is true of an agent now, in words: a chip per lane running, what its work lane waits on and unread
-/// messages, and the job it was given.
+/// What is true of an agent now, in words: a chip per lane running and what its work lane waits on, and the
+/// job it was given.
 enum AgentState {
     /// One chip per thing true of the agent now. `lanes` are the lanes running now.
-    static func chips(_ agent: AgentRecord, lanes: Set<Lane>, unread: Int) -> [StripChip] {
+    static func chips(_ agent: AgentRecord, lanes: Set<Lane>) -> [StripChip] {
         [
             lanes.contains(.work) ? StripChip(tone: .sage, text: "Working") : nil,
             lanes.contains(.process) ? StripChip(tone: .tide, text: "Processing") : nil,
             agent.running.waitingOn.map { StripChip(tone: .tide, text: "Waiting on \($0.targets.joined(separator: ", "))") },
-            unread > 0 ? StripChip(tone: .due, text: "\(unread) unread") : nil,
         ]
         .compactMap { $0 }
     }
@@ -70,12 +69,10 @@ struct StateStrip: View {
     let agent: AgentRecord
     /// The lanes running now.
     let lanes: Set<Lane>
-    /// Messages from the agent Ankur has not read.
-    let unread: Int
     let nameOf: (String) -> String
 
     var body: some View {
-        let chips = AgentState.chips(agent, lanes: lanes, unread: unread)
+        let chips = AgentState.chips(agent, lanes: lanes)
         let job = agent.running.status.flatMap { AgentState.job($0, nameOf: nameOf) }
         if !chips.isEmpty || job != nil {
             VStack(alignment: .leading, spacing: 10) {
@@ -107,7 +104,6 @@ struct StateStrip: View {
         switch tone {
         case .sage: .sageText
         case .tide: .tideText
-        case .due: .clay
         }
     }
 
@@ -115,7 +111,6 @@ struct StateStrip: View {
         switch tone {
         case .sage: .sage.opacity(0.26)
         case .tide: .tide.opacity(0.2)
-        case .due: .clay.opacity(0.16)
         }
     }
 }

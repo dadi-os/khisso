@@ -64,6 +64,8 @@ struct WakeRow: View {
     /// The time the row's durations are measured to while the wake runs.
     let now: Date
     let toggle: () -> Void
+    /// Opens the sheet of an agent a name in the wake points to.
+    let selectAgent: (String) -> Void
     /// Reads the wake's entries again.
     let retry: () -> Void
 
@@ -71,11 +73,14 @@ struct WakeRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Button(action: toggle) { head }
-                .buttonStyle(.plain)
-                .accessibilityHint(open ? "Collapses the wake" : "Expands the wake")
-            if open { entries }
+            head
+                .contentShape(.rect)
+                .onTapGesture(perform: toggle)
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction(named: open ? "Collapse" : "Expand", toggle)
+            if open { entries.transition(.reveal) }
         }
+        .reveals(on: open)
         .background(open ? Color.sage.opacity(0.1) : .clear, in: .rect(cornerRadius: 14, style: .continuous))
         .overlay { if wake.outcome == .failed { RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.danger.opacity(0.4), lineWidth: 1) } }
     }
@@ -84,7 +89,7 @@ struct WakeRow: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
                 Image(systemName: "chevron.right").font(.caption2.weight(.bold)).foregroundStyle(.inkMuted).rotationEffect(.degrees(open ? 90 : 0))
-                Text(WakeFormat.reason(wake.reason, nameOf: nameOf)).font(.footnote.weight(.semibold)).foregroundStyle(.ink).lineLimit(2).multilineTextAlignment(.leading)
+                reason
                 Spacer(minLength: 4)
                 OutcomeChip(outcome: wake.outcome)
             }
@@ -112,33 +117,60 @@ struct WakeRow: View {
         .contentShape(.rect)
     }
 
+    /// Why the wake began; the agent that opened it is a link to its sheet.
+    @ViewBuilder
+    private var reason: some View {
+        if wake.reason.kind == .message {
+            HStack(spacing: 0) {
+                Text("Opened by ")
+                AgentLink(agentId: wake.reason.ref, name: wake.reason.ref.map(nameOf) ?? "Ankur", select: selectAgent)
+            }
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(.ink)
+        } else {
+            Text(WakeFormat.reason(wake.reason, nameOf: nameOf)).font(.footnote.weight(.semibold)).foregroundStyle(.ink).lineLimit(2).multilineTextAlignment(.leading)
+        }
+    }
+
     /// The entries of an open wake under the lane filter, or why they are not there: loading, failed, or aged out.
     @ViewBuilder
     private var entries: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if let detail {
-                if wake.activityTrimmed {
-                    Text("Details expired").font(.footnote).foregroundStyle(.inkMuted)
-                } else {
-                    Picker("Lane", selection: $filter) {
-                        ForEach(LaneFilter.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                }
-                let shown = filter.apply(to: detail.entries)
-                if shown.isEmpty {
-                    Text(wake.activityTrimmed ? "No messages were kept." : "Nothing recorded yet.").font(.footnote).foregroundStyle(.inkMuted)
-                } else {
-                    WakeEntryList(hath: hath, agentId: wake.agentId, entries: shown, nameOf: nameOf)
-                }
-            } else if let detailError {
+        if let detailError, detail == nil {
+            VStack(alignment: .leading, spacing: 12) {
                 Label("Could not read this wake: \(detailError)", systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(.danger)
                 Button("Try again", action: retry).font(.footnote.weight(.semibold)).foregroundStyle(.sageDeep)
+            }
+            .padding(.horizontal, 12)
+            .padding(.bottom, 12)
+        } else {
+            Arrive(ready: detail != nil) {
+                WakeSkeleton()
+            } content: {
+                if let detail { loaded(detail) }
+            }
+            .padding(.horizontal, 12)
+            .padding(.bottom, 12)
+        }
+    }
+
+    private func loaded(_ detail: WakeDetail) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if wake.activityTrimmed {
+                Text("Details expired").font(.footnote).foregroundStyle(.inkMuted)
             } else {
-                SkeletonRows(count: 3, height: 14)
+                Picker("Lane", selection: $filter) {
+                    ForEach(LaneFilter.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .fixedSize()
+            }
+            let shown = filter.apply(to: detail.entries)
+            if shown.isEmpty {
+                Text(wake.activityTrimmed ? "No messages were kept." : "Nothing recorded yet.").font(.footnote).foregroundStyle(.inkMuted)
+            } else {
+                WakeEntryList(hath: hath, agentId: wake.agentId, entries: shown, nameOf: nameOf, selectAgent: selectAgent)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.bottom, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

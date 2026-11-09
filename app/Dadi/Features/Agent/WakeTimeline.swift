@@ -8,6 +8,8 @@ struct WakeTimeline: View {
     let hath: HathClient
     let agentId: String
     let nameOf: (String) -> String
+    /// Opens the sheet of an agent a wake names.
+    let selectAgent: (String) -> Void
     /// Changes when the wakes must be read again.
     let refresh: Refresh
 
@@ -69,7 +71,7 @@ struct WakeTimeline: View {
                             WakeRow(
                                 hath: hath, wake: wake, open: openId == wake.id, detail: details[wake.id], detailError: detailErrors[wake.id],
                                 nameOf: nameOf, now: context.date,
-                                toggle: { withAnimation(Motion.settle) { chosen = .some(openId == wake.id ? nil : wake.id) } },
+                                toggle: { chosen = .some(openId == wake.id ? nil : wake.id) }, selectAgent: selectAgent,
                                 retry: { Task { await loadDetails([wake.id]) } }
                             )
                         }
@@ -152,7 +154,7 @@ struct WakeTimeline: View {
     }
 
     /// The newest page `fresh` over the wakes already `held`: every fresh wake, then each held one older than the oldest fresh wake.
-    static func merged(_ held: [WakeSummary], with fresh: [WakeSummary]) -> [WakeSummary] {
+    nonisolated static func merged(_ held: [WakeSummary], with fresh: [WakeSummary]) -> [WakeSummary] {
         guard let oldest = fresh.last else { return held }
         return fresh + held.filter { $0.startedAt < oldest.startedAt }
     }

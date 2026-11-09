@@ -76,6 +76,8 @@ struct NasTask: Decodable, Sendable, Hashable, Identifiable {
     /// The helper's state summary: its current step, or what it was doing when it slept.
     let state: String
     let lastActivity: Date
+    /// The address of the page in front, for a browser task whose browser is awake.
+    let activeUrl: String?
 
     var id: String { task }
 
@@ -99,6 +101,8 @@ struct BrowserInputEvent: Encodable, Sendable {
     var button = "none"
     var buttons = 0
     var clickCount = 0
+    var deltaX = 0.0
+    var deltaY = 0.0
     var key = ""
     var code = ""
     var keyCode = 0
@@ -107,6 +111,11 @@ struct BrowserInputEvent: Encodable, Sendable {
     /// A left press or release at a fraction of the display.
     static func pointer(_ type: String, x: Double, y: Double) -> BrowserInputEvent {
         BrowserInputEvent(type: type, x: x, y: y, button: "left", buttons: type == "up" ? 0 : 1, clickCount: type == "move" ? 0 : 1)
+    }
+
+    /// A wheel turn at a fraction of the display, `deltaX` and `deltaY` in the page's pixels (positive scrolls right and down).
+    static func wheel(x: Double, y: Double, deltaX: Double, deltaY: Double) -> BrowserInputEvent {
+        BrowserInputEvent(type: "wheel", x: x, y: y, deltaX: deltaX, deltaY: deltaY)
     }
 
     /// A key press and release for `key`, typing `text` when it types a character.

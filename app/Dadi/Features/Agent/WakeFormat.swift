@@ -3,8 +3,8 @@ import Foundation
 /// The lane filter of an open wake: both lanes, or one.
 enum LaneFilter: String, CaseIterable, Sendable {
     case all = "All"
-    case work = "Work"
     case process = "Process"
+    case work = "Work"
 
     /// The entries an open wake shows under this filter: every message, and the turns of the chosen lane (every turn for All).
     func apply(to entries: [WakeEntry]) -> [WakeEntry] {

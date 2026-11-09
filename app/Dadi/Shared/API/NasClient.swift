@@ -40,13 +40,13 @@ struct NasClient: Sendable {
         try await client.get("/tasks")
     }
 
-    /// POST /browsers/:id/input: pointer and key events, in order. The first one pauses the helper holding the browser.
+    /// POST /browsers/:id/input: pointer, wheel and key events, in order.
     func browserInput(_ id: Int, events: [BrowserInputEvent]) async throws {
         struct Body: Encodable { let events: [BrowserInputEvent] }
         try await client.send("/browsers/\(id)/input", body: Body(events: events))
     }
 
-    /// POST /browsers/:id/navigate: `back` or `reload`. Pauses the helper like input does.
+    /// POST /browsers/:id/navigate: `back` or `reload`.
     func browserNavigate(_ id: Int, action: String) async throws {
         struct Body: Encodable { let action: String }
         try await client.send("/browsers/\(id)/navigate", body: Body(action: action))
@@ -59,7 +59,13 @@ struct NasClient: Sendable {
         let _: Sent = try await client.post("/terminals/\(Self.escaped(id))/keys", body: Body(keys: keys, literal: literal))
     }
 
-    /// POST /tasks/:kind/:id/resume: hands a paused task back, with Ankur's `note` when he left one.
+    /// POST /tasks/:kind/:id/pause: takes an awake task over, so its helper stops at the next step; pausing a paused task changes nothing.
+    func pause(_ task: NasTask) async throws -> NasTask {
+        struct Body: Encodable {}
+        return try await client.post("/tasks/\(task.route)/pause", body: Body())
+    }
+
+    /// POST /tasks/:kind/:id/resume: hands a paused task back, with `note` as what Ankur did when there is one.
     func resume(_ task: NasTask, note: String?) async throws -> NasTask {
         struct Body: Encodable { let note: String? }
         return try await client.post("/tasks/\(task.route)/resume", body: Body(note: note))
@@ -82,20 +88,29 @@ struct NasClient: Sendable {
         return response.output
     }
 
-    /// How a view wants a browser's stream: Nas's watch-only defaults, cheap
-    /// enough to leave open.
-    static let watch = (fps: 5, width: 960, kbps: 600)
-
     /// The stream may go this many seconds without a byte: the first frame
     /// waits on the encoder starting, and a still page sends little after.
     static let streamIdle: TimeInterval = 15
 
     /// GET /browsers/:id/stream: the browser's display as raw H.264 (Annex B).
-    func browserStream(_ id: Int) async throws -> URLSession.AsyncBytes {
+    func browserStream(_ id: Int, profile: StreamProfile) async throws -> URLSession.AsyncBytes {
         try await client.bytes("/browsers/\(id)/stream", query: [
-            URLQueryItem(name: "fps", value: String(Self.watch.fps)),
-            URLQueryItem(name: "width", value: String(Self.watch.width)),
-            URLQueryItem(name: "kbps", value: String(Self.watch.kbps)),
+            URLQueryItem(name: "fps", value: String(profile.fps)),
+            URLQueryItem(name: "width", value: String(profile.width)),
+            URLQueryItem(name: "kbps", value: String(profile.kbps)),
         ], idle: Self.streamIdle)
     }
+}
+
+/// How a view wants a browser's stream.
+struct StreamProfile: Sendable, Hashable {
+    let fps: Int
+    let width: Int
+    let kbps: Int
+
+    /// Nas's watch-only defaults, cheap enough to leave open on every pin.
+    static let watch = StreamProfile(fps: 5, width: 960, kbps: 600)
+
+    /// A view Ankur drives: 720p at 30 fps, with a bitrate ceiling under the mesh link's measured 0.7 MB/s.
+    static let drive = StreamProfile(fps: 30, width: 1280, kbps: 3000)
 }

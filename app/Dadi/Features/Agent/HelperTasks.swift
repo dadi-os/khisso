@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The agent's helper tasks: a row each (opening it shows its live view) and, while the task can still
+/// The agent's helper tasks: a row each (tapping it opens its sheet) and, while the task can still
 /// be stopped, a Stop that asks first. A refused stop is said under its row in plain words and the row
 /// stays as it was.
 struct HelperTasks: View {
@@ -11,8 +11,6 @@ struct HelperTasks: View {
     let owner: String
     /// The agent's helper tasks, most recently active first.
     let tasks: [NasTask]
-    /// The task whose preview is open; only one holds a capture on the box at a time.
-    @Binding var opened: String?
     /// Reads the tasks again, after one was stopped or changed.
     let changed: () async -> Void
 
@@ -30,7 +28,7 @@ struct HelperTasks: View {
                 .foregroundStyle(.inkFaint)
             VStack(spacing: 0) {
                 ForEach(tasks) { task in
-                    TaskRow(nas: nas, task: task, owner: owner, opened: $opened, changed: changed)
+                    TaskRow(nas: nas, task: task, owner: owner, changed: changed)
                     if task.stoppable { stop(task) }
                     if let reason = refused[task.id] {
                         Label("Could not stop \(task.route): \(reason)", systemImage: "exclamationmark.triangle")

@@ -2,8 +2,8 @@ import SwiftUI
 
 /// System: the box at a glance. Rings for its processor, memory and disk, how
 /// long it has been up, each module's health, every device on dadi but the
-/// box, every browser and terminal helper task (opening one shows its live
-/// screen, and tapping that opens the sheet to act in it; a sleeping one shows its summary), and the latest errors in the logs. The meters and devices refresh
+/// box, every browser and terminal helper task (tapping one opens its sheet,
+/// where a sleeping one shows its summary), and the latest errors in the logs. The meters and devices refresh
 /// every two seconds while open, as in thaali; the slower log read keeps its
 /// own pace so it never holds them up. The drawer jumps to a section; holding
 /// a module shows its errors or copies its status, holding a device copies
@@ -31,8 +31,6 @@ struct SystemPage: View {
     /// The module whose errors the list is narrowed to.
     @State private var errorsFrom: String?
     @State private var copies = 0
-    /// The task whose live screen is open; only one holds a capture at a time.
-    @State private var openTask: String?
     @Environment(LiveData.self) private var live: LiveData?
 
     private let refresh: Duration = .seconds(2)
@@ -97,7 +95,7 @@ struct SystemPage: View {
                         section(.tasks, detail: "\(store.tasks.filter { $0.status == "working" }.count) working") {
                             VStack(spacing: 0) {
                                 ForEach(store.tasks) { task in
-                                    TaskRow(nas: store.nas, task: task, owner: nameOf(task.owner), showsOwner: true, opened: $openTask) { await store.load() }
+                                    TaskRow(nas: store.nas, task: task, owner: nameOf(task.owner), showsOwner: true) { await store.load() }
                                     if task.id != store.tasks.last?.id { Rectangle().fill(.rule).frame(height: 1) }
                                 }
                             }

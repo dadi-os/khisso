@@ -34,6 +34,8 @@ struct SheetDisclosure<Content: View>: View {
 struct AboutSection: View {
     let agent: AgentRecord
     let nameOf: (String) -> String
+    /// Opens the parent's sheet.
+    let selectAgent: (String) -> Void
 
     /// Characters per token Hath measured for the model's text; a charter's size in tokens is its characters over this.
     private static let charsPerToken = 2.37
@@ -53,7 +55,11 @@ struct AboutSection: View {
             Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 6) {
                 GridRow {
                     Text("Parent").foregroundStyle(.inkFaint)
-                    Text(agent.parentAgentId.map(nameOf) ?? "None").foregroundStyle(agent.parentAgentId == nil ? .inkMuted : .sageDeep)
+                    if let parent = agent.parentAgentId {
+                        AgentLink(agentId: parent, name: nameOf(parent), select: selectAgent)
+                    } else {
+                        Text("None").foregroundStyle(.inkMuted)
+                    }
                 }
                 GridRow {
                     Text("Created").foregroundStyle(.inkFaint)

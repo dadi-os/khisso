@@ -10,13 +10,13 @@ struct AgentSheet: View {
     let name: String
     /// The agent's lanes running now.
     let lanes: Set<Lane>
-    /// Messages from the agent Ankur has not read.
-    let unread: Int
     /// Changes each time Home's event stream reconnects; the sheet reloads on it.
     let connections: Int
     /// Wake events Home has seen for this agent; the wakes reload on it.
     let wakeChanges: Int
     let nameOf: (String) -> String
+    /// Replaces the sheet's content with another agent's.
+    let selectAgent: (String) -> Void
     /// Closes the sheet and opens the agent's thread.
     let openThread: () -> Void
 
@@ -27,7 +27,6 @@ struct AgentSheet: View {
     @State private var scheduleError: String?
     @State private var schedulesOpen = false
     @State private var tasks: [NasTask] = []
-    @State private var openTask: String?
     @Environment(LiveData.self) private var live: LiveData?
     @State private var hostError: String?
 
@@ -44,24 +43,24 @@ struct AgentSheet: View {
                 VStack(alignment: .leading, spacing: 20) {
                     header
                     if let agent = detail?.agent {
-                        StateStrip(agent: agent, lanes: lanes, unread: unread, nameOf: nameOf)
+                        StateStrip(agent: agent, lanes: lanes, nameOf: nameOf)
                     }
                     if let status = detail?.agent.running.status, let unreadable = status.tasksUnreadable {
                         problem("Helper tasks could not be read: \(unreadable)")
                     }
                     if !tasks.isEmpty {
-                        HelperTasks(hath: services.hath, nas: services.nas, agentId: agentId, owner: name, tasks: tasks, opened: $openTask) { await loadHost() }
+                        HelperTasks(hath: services.hath, nas: services.nas, agentId: agentId, owner: name, tasks: tasks) { await loadHost() }
                     }
                     if let hostError {
                         problem("Couldn't read the agent's tasks: \(hostError)")
                     }
-                    WakeTimeline(hath: services.hath, agentId: agentId, nameOf: nameOf, refresh: .init(connections: connections, wakeChanges: wakeChanges))
+                    WakeTimeline(hath: services.hath, agentId: agentId, nameOf: nameOf, selectAgent: selectAgent, refresh: .init(connections: connections, wakeChanges: wakeChanges))
                     schedulesSection
                     if let detailError {
                         problem("Couldn't load agent detail: \(detailError)")
                     }
                     if let agent = detail?.agent {
-                        AboutSection(agent: agent, nameOf: nameOf)
+                        AboutSection(agent: agent, nameOf: nameOf, selectAgent: selectAgent)
                     }
                 }
                 .padding(.horizontal, 18)

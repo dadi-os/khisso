@@ -9,12 +9,14 @@ struct WakeEntryList: View {
     /// The entries to draw, oldest first.
     let entries: [WakeEntry]
     let nameOf: (String) -> String
+    /// Opens the sheet of the agent a message's counterpart names.
+    let selectAgent: (String) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             ForEach(entries) { entry in
                 switch entry {
-                case .message(let message): MessageBubble(entry: message, nameOf: nameOf)
+                case .message(let message): MessageBubble(entry: message, nameOf: nameOf, selectAgent: selectAgent)
                 case .turn(let turn): TurnBlock(hath: hath, agentId: agentId, turn: turn)
                 }
             }
@@ -31,6 +33,7 @@ private func clock(_ date: Date) -> Text {
 private struct MessageBubble: View {
     let entry: WakeMessageEntry
     let nameOf: (String) -> String
+    let selectAgent: (String) -> Void
 
     /// Characters past which a message folds until opened.
     private static let folded = 280
@@ -39,15 +42,13 @@ private struct MessageBubble: View {
 
     private var received: Bool { entry.direction == .received }
 
-    private var counterpart: String {
-        (received ? entry.message.fromAgentId : entry.message.toAgentId).map(nameOf) ?? "Ankur"
-    }
+    private var counterpartId: String? { received ? entry.message.fromAgentId : entry.message.toAgentId }
 
     var body: some View {
         VStack(alignment: received ? .leading : .trailing, spacing: 4) {
             HStack(spacing: 0) {
                 Text(received ? "From " : "To ")
-                Text(counterpart).fontWeight(.semibold)
+                AgentLink(agentId: counterpartId, name: counterpartId.map(nameOf) ?? "Ankur", select: selectAgent)
                 Text(" · ")
                 clock(entry.at)
             }
@@ -102,7 +103,7 @@ private struct TurnBlock: View {
                 }
                 if let thinking = turn.thinking {
                     VStack(alignment: .leading, spacing: 4) {
-                        Button { withAnimation(Motion.settle) { thinkingOpen.toggle() } } label: {
+                        Button { thinkingOpen.toggle() } label: {
                             HStack(spacing: 6) {
                                 Image(systemName: "chevron.right").font(.caption2.weight(.bold)).rotationEffect(.degrees(thinkingOpen ? 90 : 0))
                                 Text("Thinking").fontWeight(.semibold)
@@ -116,9 +117,10 @@ private struct TurnBlock: View {
                         }
                         .buttonStyle(.plain)
                         if thinkingOpen {
-                            Text(thinking).font(.caption).foregroundStyle(.inkMuted).textSelection(.enabled)
+                            Text(thinking).font(.caption).foregroundStyle(.inkMuted).textSelection(.enabled).transition(.reveal)
                         }
                     }
+                    .reveals(on: thinkingOpen)
                 }
                 ForEach(turn.calls) { call in
                     CallRow(hath: hath, agentId: agentId, call: call)
@@ -151,10 +153,11 @@ private struct CallRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Button { withAnimation(Motion.settle) { open.toggle() } } label: { line }
+            Button { open.toggle() } label: { line }
                 .buttonStyle(.plain)
-            if open { details }
+            if open { details.transition(.reveal) }
         }
+        .reveals(on: open)
     }
 
     private var line: some View {

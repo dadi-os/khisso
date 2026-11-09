@@ -80,7 +80,10 @@ struct WakeDecodingTests {
 
     @Test func keepsToolInputKeysAsTheAgentWroteThem() throws {
         let detail = try WakeExamples.decode(WakeDetail.self, WakeExamples.running)
-        guard case .turn(let turn) = detail.entries[3] else { return Issue.record("entry 3 is not a turn") }
+        guard case .turn(let turn) = detail.entries[3] else {
+            Issue.record("entry 3 is not a turn")
+            return
+        }
         #expect(turn.calls[0].input.object?["id"]?.string == "task/browser/4fa9b970")
         #expect(turn.calls[0].result == nil && turn.calls[0].logId == "a1f0c0de-0000-4000-8000-000000000012")
     }
@@ -127,7 +130,7 @@ struct WakeEntriesTests {
     @Test func derivesTheNowLineFromTheWorkLanesLatestCall() throws {
         let line = try #require(WakeFormat.currentCall(entries()))
         #expect(line.name == "steer_browser" && line.target == "task/browser/4fa9b970" && line.running)
-        #expect(WakeFormat.currentCall(Array(entries().prefix(3))) == nil)
+        #expect(try WakeFormat.currentCall(Array(entries().prefix(3))) == nil)
     }
 
     @Test func aFinishedCallIsNotRunning() throws {

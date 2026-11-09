@@ -142,10 +142,11 @@ struct PhoneHome: View {
         }
         .sheet(isPresented: Binding { agentSheet != nil } set: { if !$0 { agentSheet = nil } }) {
             if let agentId = agentSheet {
-                AgentSheet(services: services, agentId: agentId, name: store.name(of: agentId), lanes: store.lanes(of: agentId), unread: store.threads.first { $0.agentId == agentId }?.unread ?? 0, connections: store.connections, wakeChanges: store.wakeChanges[agentId, default: 0], nameOf: store.name(of:)) {
+                AgentSheet(services: services, agentId: agentId, name: store.name(of: agentId), lanes: store.lanes(of: agentId), connections: store.connections, wakeChanges: store.wakeChanges[agentId, default: 0], nameOf: store.name(of:), selectAgent: { agentSheet = $0 }) {
                     agentSheet = nil
                     show(.thread(agentId))
                 }
+                    .id(agentId)
                     .presentationDetents([.medium, .large])
                     .presentationBackground(.boneRaised)
             }
@@ -220,7 +221,7 @@ struct PhoneHome: View {
         ZStack {
             switch dadiPage {
             case .thread(let agentId):
-                ThreadView(hath: services.hath, agentId: agentId, name: store.name(of: agentId), live: store.live, lanes: store.lanes(of: agentId), connections: store.connections) { seq in
+                ThreadView(hath: services.hath, nas: services.nas, agentId: agentId, name: store.name(of: agentId), live: store.live, lanes: store.lanes(of: agentId), connections: store.connections) { seq in
                     Task { await store.markRead(services.hath, agentId: agentId, through: seq) }
                 } details: {
                     agentSheet = agentId
