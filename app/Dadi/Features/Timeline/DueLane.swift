@@ -30,6 +30,39 @@ enum DueClusters {
         }
         return clusters
     }
+
+    /// The margin added above and below each due tag or pill when deciding whether a session needs room.
+    static let roomMargin: CGFloat = 4
+
+    /// A vertical extent on the day's axis.
+    struct Extent {
+        let top: CGFloat
+        let bottom: CGFloat
+    }
+
+    /// Which sessions must leave the due lane free, matching thaali's `sessionsNeedingRoom`. A session needs room when its
+    /// extent overlaps a tag's extent padded by `margin`; sessions that overlap one another form a group, and a group needs
+    /// room as a whole so its columns stay aligned. `sessions` must be ordered by `top`; the answer follows the same order.
+    static func sessionsNeedingRoom(_ sessions: [Extent], tags: [Extent], margin: CGFloat = DueClusters.roomMargin) -> [Bool] {
+        var needs = sessions.map { s in tags.contains { s.top < $0.bottom + margin && s.bottom > $0.top - margin } }
+        var start = 0
+        var reach = -CGFloat.infinity
+        func close(_ end: Int) {
+            if needs[start..<end].contains(true) {
+                for i in start..<end { needs[i] = true }
+            }
+            start = end
+        }
+        for (i, s) in sessions.enumerated() {
+            if i > start, s.top >= reach {
+                close(i)
+                reach = -.infinity
+            }
+            reach = max(reach, s.bottom)
+        }
+        close(sessions.count)
+        return needs
+    }
 }
 
 /// The day's due lane, as thaali draws it: each due-at item sits at its time as a clay tag with its

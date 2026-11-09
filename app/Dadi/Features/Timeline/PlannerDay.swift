@@ -31,7 +31,7 @@ struct PlannerDay: View {
     /// Points per minute on the axis.
     private let scale: CGFloat = 1.3
     /// The width kept at the right of the day column for the due lane: its 156 pt and its 8 pt inset,
-    /// so sessions end 164 pt from the right edge on a day with due items.
+    /// so a session beside a due tag ends 164 pt from the right edge.
     private static let dueReserve: CGFloat = DueLane.width + 8
     /// The shortest a session's box is drawn, the least a finger can hit.
     private static let minimumBlockHeight: CGFloat = 44
@@ -183,7 +183,17 @@ struct PlannerDay: View {
                 }
                 GeometryReader { proxy in
                     let lane = proxy.size.width - 56
-                    let sessions = lane - (dues.isEmpty ? 0 : Self.dueReserve)
+                    let sessions = lane
+                    let tags = DueClusters.group(dues.map { (item: $0, y: CGFloat(PlannerLayout.minute(of: $0.dueAt ?? day) - origin) * scale) })
+                        .map { DueClusters.Extent(top: $0.y - DueClusters.tagHeight / 2, bottom: $0.y + DueClusters.tagHeight / 2) }
+                    let heights = segments.map { max(Self.minimumBlockHeight, CGFloat($0.endMin - $0.startMin) * scale - 3) }
+                    let room = DueClusters.sessionsNeedingRoom(
+                        segments.enumerated().map { i, s in
+                            let top = CGFloat(s.startMin - origin) * scale + 1.5
+                            return DueClusters.Extent(top: top, bottom: top + heights[i])
+                        },
+                        tags: tags
+                    )
                     ZStack(alignment: .topLeading) {
                         ForEach(Array(hours), id: \.self) { hour in
                             HStack(alignment: .top, spacing: 8) {
@@ -204,13 +214,13 @@ struct PlannerDay: View {
                             Text("\(PlannerLayout.span(gap.endMin - gap.startMin)) open")
                                 .font(.caption2)
                                 .foregroundStyle(.inkFaint)
-                                .frame(width: sessions, height: CGFloat(gap.endMin - gap.startMin) * scale)
+                                .frame(width: lane - (dues.isEmpty ? 0 : Self.dueReserve), height: CGFloat(gap.endMin - gap.startMin) * scale)
                                 .offset(x: 56, y: CGFloat(gap.startMin - origin) * scale)
                         }
-                        ForEach(segments) { segment in
-                            let width = sessions / CGFloat(segment.lanes)
+                        ForEach(Array(segments.enumerated()), id: \.element.id) { index, segment in
+                            let width = (sessions - (room[index] ? Self.dueReserve : 0)) / CGFloat(segment.lanes)
                             let block = segment.block
-                            BlockView(segment: segment, height: max(Self.minimumBlockHeight, CGFloat(segment.endMin - segment.startMin) * scale - 3), toggle: actions.markable(block) ? { actions.toggle(block) } : nil)
+                            BlockView(segment: segment, height: heights[index], toggle: actions.markable(block) ? { actions.toggle(block) } : nil)
                                 .sessionGestures(block, actions: actions)
                                 .frame(width: width - 4)
                                 .offset(x: 56 + width * CGFloat(segment.lane), y: CGFloat(segment.startMin - origin) * scale + 1.5)

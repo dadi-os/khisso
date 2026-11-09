@@ -144,3 +144,34 @@ import Testing
         #expect(!dock.composerShown)
     }
 }
+
+/// Which sessions leave room for the due lane, as in thaali's `sessionsNeedingRoom` tests.
+@Suite struct SessionRoomTests {
+    private let tag = DueClusters.Extent(top: -12, bottom: 12)
+    private func hour(_ h: CGFloat, length: CGFloat = 56) -> DueClusters.Extent {
+        DueClusters.Extent(top: h * 56, bottom: h * 56 + length)
+    }
+
+    @Test func noDueTagInsetsNothing() {
+        #expect(DueClusters.sessionsNeedingRoom([hour(0), hour(5)], tags: []) == [false, false])
+    }
+
+    @Test func aTagAtMidnightInsetsOnlySessionsNearIt() {
+        #expect(DueClusters.sessionsNeedingRoom([hour(0), hour(2), hour(6)], tags: [tag]) == [true, false, false])
+    }
+
+    @Test func theMarginCountsButNotBeyondIt() {
+        #expect(DueClusters.sessionsNeedingRoom([.init(top: 15, bottom: 60)], tags: [tag]) == [true])
+        #expect(DueClusters.sessionsNeedingRoom([.init(top: 16, bottom: 60)], tags: [tag]) == [false])
+    }
+
+    @Test func aClusterPillsWholeExtentCounts() {
+        let pill = DueClusters.Extent(top: 100, bottom: 148)
+        #expect(DueClusters.sessionsNeedingRoom([.init(top: 140, bottom: 200), .init(top: 300, bottom: 360)], tags: [pill]) == [true, false])
+    }
+
+    @Test func anOverlappingGroupInsetsTogetherButNotTheNextGroup() {
+        let sessions = [DueClusters.Extent(top: 0, bottom: 56), .init(top: 40, bottom: 200), .init(top: 300, bottom: 360)]
+        #expect(DueClusters.sessionsNeedingRoom(sessions, tags: [.init(top: 0, bottom: 24)]) == [true, true, false])
+    }
+}
