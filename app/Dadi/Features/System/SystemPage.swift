@@ -221,19 +221,29 @@ struct SystemPage: View {
                 .foregroundStyle(device.online ? Color.sageDeep : .inkFaint)
                 .frame(width: 30)
             VStack(alignment: .leading, spacing: 1) {
-                Text(device.nodeName).font(.subheadline.weight(.semibold)).foregroundStyle(.ink)
+                Text(device.nodeName).font(.subheadline.weight(.semibold)).foregroundStyle(device.online ? Color.ink : .inkFaint).lineLimit(1)
                 Text(device.pending ? "Setup code not used yet" : (device.ipAddresses.first ?? ""))
                     .font(.caption.monospaced())
-                    .foregroundStyle(.inkMuted)
+                    .foregroundStyle(device.online ? Color.inkMuted : .inkFaint)
+                    .lineLimit(1)
             }
-            Spacer()
-            Text(device.online ? "Online" : "Offline")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(device.online ? Color.sageText : .inkFaint)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
-                .background((device.online ? Color.sage : .inkFaint).opacity(0.14), in: .capsule)
+            Spacer(minLength: 8)
+            HStack(spacing: 6) {
+                if device.online {
+                    Circle().fill(Color.sage).frame(width: 8, height: 8).shadow(color: .sage.opacity(0.85), radius: 5)
+                } else {
+                    Circle().strokeBorder(Color.inkFaint, lineWidth: 1.5).frame(width: 8, height: 8)
+                }
+                Text(device.online ? "Online" : "Offline")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(device.online ? Color.sageText : .inkFaint)
+            }
+            .fixedSize()
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(device.online ? Color.sage.opacity(0.18) : Color.inkFaint.opacity(0.08), in: .capsule)
         }
+        .accessibilityElement(children: .combine)
         .padding(.vertical, 10)
         .contentShape(.rect)
     }

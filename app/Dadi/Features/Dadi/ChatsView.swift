@@ -3,7 +3,7 @@ import SwiftUI
 /// Chats: every conversation as a glass card under the day of its last
 /// message (Today, Yesterday, then the date), as thaali's sidebar lists them,
 /// under a search field. A row has the agent's name, when it last spoke, its
-/// last words and its unread count, and opens with a pulsing dot while a lane
+/// last words and its unread count, and opens with a dot while a lane
 /// of the agent runs. Talking to Dadi is the dock, not this page.
 struct ChatsView: View {
     let threads: [ThreadSummary]

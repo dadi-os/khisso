@@ -33,7 +33,7 @@ enum ChatGroups {
         return days
     }
 
-    /// True while an agent lane runs, work or process: the row opens with a pulsing dot.
+    /// True while an agent lane runs, work or process: the row opens with a dot.
     static func isWorking(_ lanes: Set<Lane>) -> Bool {
         lanes.contains(.work) || lanes.contains(.process)
     }

@@ -1,12 +1,14 @@
 import SwiftUI
 
-/// The Timeline's drawer: its four views as tiles, what comes due in the
+/// The Timeline's drawer: its three views and Needs a time as tiles, what comes due in the
 /// next two weeks, and how much of this week is completed.
 struct TimelineDrawer: View {
     let yaad: YaadClient
     let mode: TimelineMode
     /// Shows a view and closes the drawer.
     let choose: (TimelineMode) -> Void
+    /// Opens the Needs a time sheet and closes the drawer.
+    let needsTime: () -> Void
 
     /// How far ahead Coming due looks.
     private static let dueDays = 14
@@ -21,7 +23,10 @@ struct TimelineDrawer: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
-                ForEach(TimelineMode.allCases, id: \.self) { tile($0) }
+                ForEach(TimelineMode.allCases, id: \.self) { target in
+                    tile(symbol: target.symbol, title: target.rawValue, current: target == mode) { choose(target) }
+                }
+                tile(symbol: TimelineMode.needsTimeSymbol, title: TimelineMode.needsTimeTitle, current: false, action: needsTime)
             }
             if let error {
                 Label(error, systemImage: "exclamationmark.triangle")
@@ -72,18 +77,16 @@ struct TimelineDrawer: View {
     }
 
     /// A view's tile, filled sage while it is the one shown.
-    private func tile(_ target: TimelineMode) -> some View {
-        let current = target == mode
-        return Button { choose(target) } label: {
+    private func tile(symbol: String, title: String, current: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
             VStack(alignment: .leading, spacing: 10) {
-                Image(systemName: target.symbol)
+                Image(systemName: symbol)
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(current ? Color.bone : .sageDeep)
-                Text(target.rawValue)
+                Text(title)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(current ? Color.bone : .ink)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
+                    .lineLimit(2)
             }
             .padding(12)
             .frame(maxWidth: .infinity, minHeight: 74, alignment: .topLeading)

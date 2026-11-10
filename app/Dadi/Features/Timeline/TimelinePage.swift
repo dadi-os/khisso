@@ -6,40 +6,48 @@ enum TimelineMode: String, CaseIterable, Hashable {
     case day = "Day"
     case week = "Week"
     case month = "Month"
-    case someday = "Needs a time"
+
+    /// The symbol of the Needs a time button, which opens a sheet over whichever view is shown.
+    static let needsTimeSymbol = "tray"
+
+    /// The title of the Needs a time sheet and its button.
+    static let needsTimeTitle = "Needs a time"
 
     var symbol: String {
         switch self {
         case .day: "clock"
         case .week: "calendar.day.timeline.left"
         case .month: "calendar"
-        case .someday: "tray"
         }
     }
 }
 
 /// The timeline: Day (the hour axis, `PlannerDay`), Week (each day's
-/// sessions and dues as rows with what is completed), Month (a calendar with
-/// a dot on each busy day and the month's commitments) and Needs a time
-/// (ideas, and tasks with a due but no time yet), with Someday under Week and
-/// Month too. Every view is one of Yaad's timeline views; every session row
+/// sessions and dues as rows with what is completed) and Month (a calendar with
+/// a dot on each busy day and the month's commitments), with Someday under Week and
+/// Month too. Needs a time (ideas, and tasks with a due but no time yet) is a sheet
+/// over whichever view is shown, so opening it leaves the day and the view as they are. Every view is one of Yaad's timeline views; every session row
 /// taps open its sheet, swipes right to Completed and left to message its
 /// owner, and long-presses for its menu. Nothing here edits a plan: changes
 /// go through the owner's thread or Dadi.
 struct TimelinePage: View {
     let yaad: YaadClient
     @Binding var mode: TimelineMode
+    /// Whether the Needs a time sheet is up.
+    @Binding var needsTime: Bool
 
     @State private var actions: SessionActions
 
     /// - Parameters:
     ///   - mode: the view shown, which the name bubble and the drawer also set.
+    ///   - needsTime: whether the Needs a time sheet is up, which its button and the drawer also set.
     ///   - message: opens the thread of the agent with this id.
     ///   - tellDadi: opens Talk to Dadi about a session.
     ///   - reachable: whether an agent can still be messaged.
-    init(yaad: YaadClient, mode: Binding<TimelineMode>, message: @escaping (String) -> Void, tellDadi: @escaping (TimelineItem) -> Void, reachable: @escaping (String) -> Bool) {
+    init(yaad: YaadClient, mode: Binding<TimelineMode>, needsTime: Binding<Bool>, message: @escaping (String) -> Void, tellDadi: @escaping (TimelineItem) -> Void, reachable: @escaping (String) -> Bool) {
         self.yaad = yaad
         _mode = mode
+        _needsTime = needsTime
         _actions = State(initialValue: SessionActions(yaad: yaad, message: message, tellDadi: tellDadi, reachable: reachable))
     }
 
@@ -55,9 +63,6 @@ struct TimelinePage: View {
             case .month:
                 MonthList(yaad: yaad, actions: actions)
                     .transition(.opacity)
-            case .someday:
-                SomedayList(yaad: yaad, actions: actions)
-                    .transition(.opacity)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -66,10 +71,13 @@ struct TimelinePage: View {
                 .animation(Motion.settle, value: actions.undo)
                 .animation(Motion.settle, value: actions.failure)
         }
-        .sheet(item: Bindable(actions).opened) { item in
+        .sheet(item: Binding(get: { needsTime ? nil : actions.opened }, set: { actions.opened = $0 })) { item in
             SessionSheet(item: actions.shown(item), actions: actions)
                 .fittedSheet()
                 .presentationBackground(.thinMaterial)
+        }
+        .sheet(isPresented: $needsTime) {
+            NeedsTimeSheet(yaad: yaad, actions: actions)
         }
         .sensoryFeedback(.selection, trigger: mode)
         .navigationTitle("Timeline")
@@ -119,7 +127,39 @@ private struct SomedaySection: View {
         let day = Date.FormatStyle.dateTime.month(.abbreviated).day()
         if let opens = item.opensAt { return "Opens \(opens.formatted(day))" }
         if let due = item.dueAt { return "By \(due.formatted(day))" }
-        return "Needs a time"
+        return TimelineMode.needsTimeTitle
+    }
+}
+
+/// The Needs a time sheet: a title with Done over the list of ideas and tasks waiting for a time. A
+/// row opens its session sheet over this one.
+private struct NeedsTimeSheet: View {
+    let yaad: YaadClient
+    let actions: SessionActions
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text(TimelineMode.needsTimeTitle).font(.title3.weight(.semibold)).foregroundStyle(.ink)
+                Spacer()
+                Button("Done") { dismiss() }
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.sageDeep)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 22)
+            .padding(.bottom, 4)
+            SomedayList(yaad: yaad, actions: actions)
+        }
+        .presentationDetents([.medium, .large])
+        .presentationBackground(.thinMaterial)
+        .sheet(item: Bindable(actions).opened) { item in
+            SessionSheet(item: actions.shown(item), actions: actions)
+                .fittedSheet()
+                .presentationBackground(.thinMaterial)
+        }
     }
 }
 
@@ -158,7 +198,7 @@ private struct SomedayList: View {
                 SomedaySection(items: items, actions: actions, titled: false)
             }
             .padding(.horizontal, 20)
-            .padding(.bottom, 100)
+            .padding(.bottom, 24)
             .frame(maxWidth: 760)
             .frame(maxWidth: .infinity)
             .animation(Motion.settle, value: items)

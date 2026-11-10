@@ -90,13 +90,9 @@ enum PlannerLayout {
         return gaps
     }
 
-    /// The whole hours the axis spans: the segments' extent and an hour either side of each due
-    /// minute, or a default window when there is neither.
-    static func hours(_ segments: [Segment], dueMinutes: [Int] = []) -> Range<Int> {
-        let padded = dueMinutes.flatMap { [max(0, $0 - 60), min(24 * 60, $0 + 60)] }
-        let starts = segments.map(\.startMin) + padded
-        let ends = segments.map(\.endMin) + padded
-        guard let first = starts.min(), let last = ends.max() else { return emptyHours }
+    /// The whole hours the axis spans: the segments' extent, or a default window when there are none.
+    static func hours(_ segments: [Segment]) -> Range<Int> {
+        guard let first = segments.map(\.startMin).min(), let last = segments.map(\.endMin).max() else { return emptyHours }
         return (first / 60)..<Int((Double(last) / 60).rounded(.up))
     }
 

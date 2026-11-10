@@ -4,7 +4,7 @@ import SwiftUI
 /// and next, pinned over the scrolling day; under them the week's days in a strip (a dot on each
 /// with something due), then the day's timed sessions (Yaad's planner view) on an hour axis, each
 /// as tall as its time, with open time left as space and labeled with its length. Items due at a
-/// time sit on the same axis in the `DueLane` at the right. Commitments are solid, the gym warm,
+/// time are not on the axis: the `DuePanel` pinned under the strip lists them all in its own scroll. Commitments are solid, the gym warm,
 /// routines quiet, and a cancelled session is struck through. Each session's circle marks it
 /// Completed (dashed once it has ended unmarked), the one happening now fills a bar as it runs,
 /// and today's `NowLine` marks the time now. A session's other gestures are `SessionGestures`,
@@ -25,14 +25,13 @@ struct PlannerDay: View {
     @State private var drift: CGFloat = 0
     /// The days of the shown week with something due.
     @State private var dueDays: Set<Date> = []
-    /// The id of the first item of the due cluster whose list is open.
-    @State private var openDue: String?
+    /// Whether the Due panel is folded to its header.
+    @State private var dueCollapsed = false
+    /// The height of the page, of which the Due panel may take a third.
+    @State private var pageHeight: CGFloat = 800
 
     /// Points per minute on the axis.
     private let scale: CGFloat = 1.3
-    /// The width kept at the right of the day column for the due lane: its 156 pt and its 8 pt inset,
-    /// so a session beside a due tag ends 164 pt from the right edge.
-    private static let dueReserve: CGFloat = DueLane.width + 8
     /// The shortest a session's box is drawn, the least a finger can hit.
     private static let minimumBlockHeight: CGFloat = 44
 
@@ -166,7 +165,7 @@ struct PlannerDay: View {
         let now = Calendar.current.component(.hour, from: .now) * 60 + Calendar.current.component(.minute, from: .now)
         let change = ClockChange.on(day)
         let dues = PlannerLayout.dues(actions.shown(due), on: day)
-        let spans = PlannerLayout.hours(segments, dueMinutes: dues.compactMap(\.dueAt).map { PlannerLayout.minute(of: $0) })
+        let spans = PlannerLayout.hours(segments)
         let spanned = change.map { min(spans.lowerBound, $0.hour)..<max(spans.upperBound, $0.hour + 1) } ?? spans
         let hours = Calendar.current.isDateInToday(day) ? min(spanned.lowerBound, now / 60)..<max(spanned.upperBound, now / 60 + 1) : spanned
         let origin = hours.lowerBound * 60
@@ -183,17 +182,7 @@ struct PlannerDay: View {
                 }
                 GeometryReader { proxy in
                     let lane = proxy.size.width - 56
-                    let sessions = lane
-                    let tags = DueClusters.group(dues.map { (item: $0, y: CGFloat(PlannerLayout.minute(of: $0.dueAt ?? day) - origin) * scale) })
-                        .map { DueClusters.Extent(top: $0.y - DueClusters.tagHeight / 2, bottom: $0.y + DueClusters.tagHeight / 2) }
                     let heights = segments.map { max(Self.minimumBlockHeight, CGFloat($0.endMin - $0.startMin) * scale - 3) }
-                    let room = DueClusters.sessionsNeedingRoom(
-                        segments.enumerated().map { i, s in
-                            let top = CGFloat(s.startMin - origin) * scale + 1.5
-                            return DueClusters.Extent(top: top, bottom: top + heights[i])
-                        },
-                        tags: tags
-                    )
                     ZStack(alignment: .topLeading) {
                         ForEach(Array(hours), id: \.self) { hour in
                             HStack(alignment: .top, spacing: 8) {
@@ -214,30 +203,17 @@ struct PlannerDay: View {
                             Text("\(PlannerLayout.span(gap.endMin - gap.startMin)) open")
                                 .font(.caption2)
                                 .foregroundStyle(.inkFaint)
-                                .frame(width: lane - (dues.isEmpty ? 0 : Self.dueReserve), height: CGFloat(gap.endMin - gap.startMin) * scale)
+                                .frame(width: lane, height: CGFloat(gap.endMin - gap.startMin) * scale)
                                 .offset(x: 56, y: CGFloat(gap.startMin - origin) * scale)
                         }
                         ForEach(Array(segments.enumerated()), id: \.element.id) { index, segment in
-                            let width = (sessions - (room[index] ? Self.dueReserve : 0)) / CGFloat(segment.lanes)
+                            let width = lane / CGFloat(segment.lanes)
                             let block = segment.block
                             BlockView(segment: segment, height: heights[index], toggle: actions.markable(block) ? { actions.toggle(block) } : nil)
                                 .sessionGestures(block, actions: actions)
                                 .frame(width: width - 4)
                                 .offset(x: 56 + width * CGFloat(segment.lane), y: CGFloat(segment.startMin - origin) * scale + 1.5)
                         }
-                        if openDue != nil {
-                            Color.clear
-                                .contentShape(.rect)
-                                .onTapGesture { withAnimation(Motion.snap) { openDue = nil } }
-                        }
-                        DueLane(
-                            items: dues,
-                            position: { CGFloat(PlannerLayout.minute(of: $0.dueAt ?? day) - origin) * scale },
-                            height: height,
-                            expanded: $openDue,
-                            open: { actions.opened = $0 }
-                        )
-                        .offset(x: proxy.size.width - 8 - DueLane.width)
                         if Calendar.current.isDateInToday(day) {
                             NowLine(origin: origin, scale: scale, hours: hours)
                         }
@@ -260,6 +236,7 @@ struct PlannerDay: View {
                 if Calendar.current.isDateInToday(day) {
                     NowNext(segments: segments)
                 }
+                DuePanel(items: dues, available: pageHeight, collapsed: $dueCollapsed) { actions.opened = $0 }
             }
             .padding(.horizontal, 20)
             .padding(.bottom, 10)
@@ -269,8 +246,7 @@ struct PlannerDay: View {
                     .allowsHitTesting(false)
             }
         }
-        .onChange(of: due) { openDue = nil }
-        .onChange(of: day) { openDue = nil }
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { pageHeight = $0 }
     }
 
     private func hourLabel(_ hour: Int) -> String {

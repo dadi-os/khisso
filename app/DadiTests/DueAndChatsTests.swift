@@ -2,43 +2,7 @@ import Foundation
 import Testing
 @testable import Khisso
 
-/// Due items in the day's lane: which share a pill, as in thaali's `dueClusters.test.ts`.
-@Suite struct DueClustersTests {
-    private func group(_ ys: [CGFloat]) -> [[Int]] {
-        DueClusters.group(ys.enumerated().map { (item: $0.offset, y: $0.element) }).map(\.items)
-    }
-
-    @Test func spreadItemsEachGetATag() {
-        #expect(group([0, 28, 56]) == [[0], [1], [2]])
-    }
-
-    @Test func anItemLessThanOneTagAndGapBelowTheFirstJoinsIt() {
-        #expect(group([100, 127.9]) == [[0, 1]])
-        #expect(group([100, 128]) == [[0], [1]])
-    }
-
-    @Test func theGapIsMeasuredFromTheClustersFirstItemNotItsLast() {
-        #expect(group([0, 20, 40]) == [[0, 1], [2]])
-    }
-
-    @Test func sameMinuteAlwaysClustersAndKeepsInputOrder() {
-        #expect(group([50, 50, 50]) == [[0, 1, 2]])
-        #expect(group([50, 10, 50]) == [[1], [0, 2]])
-    }
-
-    @Test func clustersSitAtTheirFirstMembersPosition() {
-        let clusters = DueClusters.group([(item: "b", y: 40), (item: "a", y: 30), (item: "c", y: 200)])
-        #expect(clusters.map(\.y) == [30, 200])
-        #expect(clusters.map(\.items) == [["a", "b"], ["c"]])
-    }
-
-    @Test func noItemsMakeNoClusters() {
-        let none: [(item: Int, y: CGFloat)] = []
-        #expect(DueClusters.group(none).isEmpty)
-    }
-}
-
-/// The planner's axis with due items on it.
+/// The day's due items and the Due panel's rules.
 @Suite struct DueAxisTests {
     private let calendar: Calendar = {
         var c = Calendar(identifier: .gregorian)
@@ -67,11 +31,31 @@ import Testing
         #expect(kept.map(\.planId) == ["due"])
     }
 
-    @Test func theAxisReachesAnHourEitherSideOfADueTime() {
-        #expect(PlannerLayout.hours([], dueMinutes: [0]) == 0..<1)
-        #expect(PlannerLayout.hours([], dueMinutes: [9 * 60]) == 8..<10)
-        #expect(PlannerLayout.hours([], dueMinutes: [23 * 60 + 59]) == 22..<24)
-        #expect(PlannerLayout.hours([], dueMinutes: []) == PlannerLayout.emptyHours)
+    @Test func dueItemsDoNotWidenTheAxis() {
+        #expect(PlannerLayout.hours([]) == PlannerLayout.emptyHours)
+    }
+
+    @Test func theDuePanelListsDueItemsInTimeOrderKeepingTiesInInputOrder() {
+        let ordered = DueList.ordered([item("b", due: "15:00"), item("a", due: "09:00"), item("c", due: "15:00")])
+        #expect(ordered.map(\.planId) == ["a", "b", "c"])
+    }
+
+    @Test func theDuePanelGrowsToItsRowsThenStopsAtAThirdOfThePage() {
+        #expect(DueList.height(content: 100, available: 900) == 100)
+        #expect(DueList.height(content: 900, available: 900) == 300)
+    }
+
+    @Test func urgencyIsOverdueOnceTimePassedSoonWithinTwoHoursElseLater() {
+        let now = try! Date("2026-10-21T10:00:00-04:00", strategy: .iso8601)
+        #expect(DueList.urgency(item("x", due: "09:59"), now: now) == .overdue)
+        #expect(DueList.urgency(item("x", due: "11:59"), now: now) == .soon)
+        #expect(DueList.urgency(item("x", due: "12:01"), now: now) == .later)
+    }
+
+    @Test func aCompletedItemIsNeverPressing() {
+        let now = try! Date("2026-10-21T10:00:00-04:00", strategy: .iso8601)
+        let done = item("x", due: "09:00").marked(completed: true)
+        #expect(DueList.urgency(done, now: now) == .later)
     }
 }
 
@@ -145,33 +129,15 @@ import Testing
     }
 }
 
-/// Which sessions leave room for the due lane, as in thaali's `sessionsNeedingRoom` tests.
-@Suite struct SessionRoomTests {
-    private let tag = DueClusters.Extent(top: -12, bottom: 12)
-    private func hour(_ h: CGFloat, length: CGFloat = 56) -> DueClusters.Extent {
-        DueClusters.Extent(top: h * 56, bottom: h * 56 + length)
+/// The Needs a time sheet opens over the shown view, and the thread's status pill stays large.
+@Suite struct NeedsTimeAndPillTests {
+    @Test func needsATimeIsASheetNotAViewSoOpeningItLeavesTheDayAlone() {
+        #expect(TimelineMode.allCases == [.day, .week, .month])
+        #expect(!TimelineMode.allCases.map(\.rawValue).contains(TimelineMode.needsTimeTitle))
     }
 
-    @Test func noDueTagInsetsNothing() {
-        #expect(DueClusters.sessionsNeedingRoom([hour(0), hour(5)], tags: []) == [false, false])
-    }
-
-    @Test func aTagAtMidnightInsetsOnlySessionsNearIt() {
-        #expect(DueClusters.sessionsNeedingRoom([hour(0), hour(2), hour(6)], tags: [tag]) == [true, false, false])
-    }
-
-    @Test func theMarginCountsButNotBeyondIt() {
-        #expect(DueClusters.sessionsNeedingRoom([.init(top: 15, bottom: 60)], tags: [tag]) == [true])
-        #expect(DueClusters.sessionsNeedingRoom([.init(top: 16, bottom: 60)], tags: [tag]) == [false])
-    }
-
-    @Test func aClusterPillsWholeExtentCounts() {
-        let pill = DueClusters.Extent(top: 100, bottom: 148)
-        #expect(DueClusters.sessionsNeedingRoom([.init(top: 140, bottom: 200), .init(top: 300, bottom: 360)], tags: [pill]) == [true, false])
-    }
-
-    @Test func anOverlappingGroupInsetsTogetherButNotTheNextGroup() {
-        let sessions = [DueClusters.Extent(top: 0, bottom: 56), .init(top: 40, bottom: 200), .init(top: 300, bottom: 360)]
-        #expect(DueClusters.sessionsNeedingRoom(sessions, tags: [.init(top: 0, bottom: 24)]) == [true, true, false])
+    @Test func theThreadStatusPillKeepsAFingerSizedHeightAndTheChatsDotStaysSmall() {
+        #expect(LaneChip.height >= 44)
+        #expect(WorkingDot.size == 8)
     }
 }

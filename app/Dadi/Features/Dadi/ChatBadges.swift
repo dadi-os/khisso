@@ -16,28 +16,15 @@ struct UnreadBadge: View {
     }
 }
 
-/// The sage dot that opens a row while an agent lane runs: a 14 pt dot with a ring that spreads
-/// and fades around it, large enough to read at a glance.
+/// The sage dot that opens a row while an agent lane runs.
 struct WorkingDot: View {
-    private static let size: CGFloat = 14
-
-    @State private var pulsing = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The dot's diameter in points.
+    static let size: CGFloat = 8
 
     var body: some View {
-        ZStack {
-            Circle()
-                .stroke(Color.sage, lineWidth: 2)
-                .scaleEffect(pulsing ? 2 : 1)
-                .opacity(pulsing ? 0 : 0.7)
-            Circle().fill(Color.sageDeep)
-        }
-        .frame(width: Self.size, height: Self.size)
-        .padding(.horizontal, 3)
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.easeOut(duration: 1.4).repeatForever(autoreverses: false)) { pulsing = true }
-        }
-        .accessibilityLabel("Working")
+        Circle()
+            .fill(Color.sageDeep)
+            .frame(width: Self.size, height: Self.size)
+            .accessibilityLabel("Working")
     }
 }

@@ -42,6 +42,8 @@ struct PhoneHome: View {
     @Namespace private var sheetWordmark
     /// The Timeline's view, set from its name bubble or its drawer.
     @State private var timelineMode = TimelineMode.day
+    /// True while the Timeline's Needs a time sheet is up.
+    @State private var needsTime = false
     /// Ghar's devices and tags, which its page and its drawer share.
     @State private var ghar: GharStore
     /// What the Ghar page is narrowed to, set from its chips or its drawer.
@@ -106,6 +108,10 @@ struct PhoneHome: View {
                             guard !swiping else { return }
                             withAnimation(Motion.settle) { timelineMode = mode }
                             set(open: false)
+                        } needsTime: {
+                            guard !swiping else { return }
+                            set(open: false)
+                            needsTime = true
                         }
                     default:
                         AgentsDrawer(store: store, page: page) { next in
@@ -191,7 +197,7 @@ struct PhoneHome: View {
             .badge(chatsBadge)
             Tab("Yaad", systemImage: "calendar", value: HomeView.Tab.timeline) {
                 chrome(
-                    TimelinePage(yaad: services.yaad, mode: $timelineMode) { agentId in
+                    TimelinePage(yaad: services.yaad, mode: $timelineMode, needsTime: $needsTime) { agentId in
                         show(.thread(agentId))
                     } tellDadi: { item in
                         router.compose("About \u{201C}\(item.title)\u{201D} (\(sessionWhen(item))): ")
@@ -327,6 +333,15 @@ struct PhoneHome: View {
                 .buttonStyle(.glass)
                 .buttonBorderShape(.circle)
                 .accessibilityLabel("New login or note")
+            } else if tab == .timeline {
+                Button { needsTime = true } label: {
+                    Image(systemName: TimelineMode.needsTimeSymbol)
+                        .font(.body.weight(.semibold))
+                        .frame(width: 22, height: 22)
+                }
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
+                .accessibilityLabel(TimelineMode.needsTimeTitle)
             } else if shown.isThread {
                 RouterMark(active: store.routing)
                     .frame(width: 52, height: 52)
