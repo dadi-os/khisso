@@ -117,19 +117,19 @@ struct LaneChip: View {
     let glass: Namespace.ID
 
     /// The pill's height, which the caret beside it matches.
-    static let height: CGFloat = 46
+    static let height: CGFloat = 40
 
     var body: some View {
         ZStack {
             if let label {
                 let processing = lanes.contains(.process)
-                HStack(spacing: 12) {
+                HStack(spacing: 11) {
                     if processing {
-                        ProcessingMark(scale: 1.8)
+                        ProcessingMark(scale: 1.5)
                             .transition(.opacity.combined(with: .scale(scale: 0.2, anchor: .leading)))
                     }
                     Text(label)
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.system(size: 16, weight: .semibold))
                         .tracking(0.3)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
@@ -140,8 +140,8 @@ struct LaneChip: View {
                             removal: .opacity.combined(with: .offset(y: -3))
                         ))
                 }
-                .padding(.leading, processing ? 16 : 22)
-                .padding(.trailing, 22)
+                .padding(.leading, processing ? 14 : 19)
+                .padding(.trailing, 19)
                 .frame(height: Self.height)
                 .overlay(Capsule().strokeBorder(Color.sageLine.opacity(0.48), lineWidth: 1))
                 .laneSheen(lanes.contains(.work), in: Capsule())

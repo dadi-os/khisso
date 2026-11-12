@@ -302,10 +302,7 @@ private struct WeekList: View {
                         .buttonBorderShape(.circle)
                         .accessibilityLabel("Previous week")
                     Spacer()
-                    VStack(spacing: 4) {
-                        Text(title).font(.title3.weight(.semibold)).foregroundStyle(.ink).contentTransition(.opacity)
-                        ZoneChip(name: zoneName)
-                    }
+                    Text(title).font(.title3.weight(.semibold)).foregroundStyle(.ink).contentTransition(.opacity)
                     Spacer()
                     Button { move(by: 1) } label: { Image(systemName: "chevron.right").frame(width: 20, height: 20) }
                         .buttonStyle(.glass)
@@ -354,12 +351,6 @@ private struct WeekList: View {
         guard let last = days.last else { return "" }
         let day = Date.FormatStyle.dateTime.month(.abbreviated).day()
         return "\(start.formatted(day)) – \(last.formatted(day))"
-    }
-
-    /// The zone the week is read in, with both names when a clock change falls inside it.
-    private var zoneName: String {
-        guard let first = days.first, let last = days.last else { return "" }
-        return ClockChange.zoneName(from: Calendar.current.date(byAdding: .hour, value: 12, to: first) ?? first, to: Calendar.current.date(byAdding: .hour, value: 12, to: last) ?? last)
     }
 
     private func heading(_ day: Date) -> String {
@@ -422,13 +413,10 @@ private struct MonthList: View {
                         .buttonBorderShape(.circle)
                         .accessibilityLabel("Previous month")
                     Spacer()
-                    VStack(spacing: 4) {
-                        Text(month, format: .dateTime.month(.wide).year())
-                            .font(.title3.weight(.semibold))
-                            .foregroundStyle(.ink)
-                            .contentTransition(.opacity)
-                        ZoneChip(name: zoneName)
-                    }
+                    Text(month, format: .dateTime.month(.wide).year())
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(.ink)
+                        .contentTransition(.opacity)
                     Spacer()
                     Button { move(by: 1) } label: { Image(systemName: "chevron.right").frame(width: 20, height: 20) }
                         .buttonStyle(.glass)
@@ -495,13 +483,6 @@ private struct MonthList: View {
         .glassEffect(.regular, in: .rect(cornerRadius: 22))
     }
 
-    /// The zone the month is read in, with both names when a clock change falls inside it.
-    private var zoneName: String {
-        let calendar = Calendar.current
-        guard let next = calendar.date(byAdding: .month, value: 1, to: month), let last = calendar.date(byAdding: .day, value: -1, to: next) else { return "" }
-        return ClockChange.zoneName(from: month, to: calendar.date(byAdding: .hour, value: 12, to: last) ?? last)
-    }
-
     private func move(by months: Int) {
         guard let next = Calendar.current.date(byAdding: .month, value: months, to: month) else { return }
         withAnimation(Motion.settle) {
@@ -537,19 +518,4 @@ private struct MonthList: View {
 private struct MonthReload: Hashable {
     let month: Date
     let change: Int
-}
-
-/// The zone a week or month is read in, as a small capsule under its title.
-private struct ZoneChip: View {
-    let name: String
-
-    var body: some View {
-        Label(name, systemImage: "globe")
-            .font(.caption.weight(.semibold).monospacedDigit())
-            .foregroundStyle(.inkMuted)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 4)
-            .background(.sage.opacity(0.12), in: .capsule)
-            .accessibilityLabel("Time zone \(name)")
-    }
 }

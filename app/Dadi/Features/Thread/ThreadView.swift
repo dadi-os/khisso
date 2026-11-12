@@ -1,13 +1,13 @@
 import SwiftUI
 
 /// One agent's thread: its history by day, live replies from Hath's events,
-/// thaali's lane pill over the composer while the agent thinks or works, a
+/// thaali's lane pill above the dock while the agent thinks or works, a
 /// caret beside it that returns to the newest message once the thread is
-/// scrolled up, and the composer to reply as Ankur. Agent text runs the full
+/// scrolled up. Replies are written in the dock's accessory, which holds the thread's draft. Agent text runs the full
 /// width on the field as rendered markdown and scrolls up under the bars;
 /// Ankur's words are sage bubbles. Holding a message lifts it with Copy,
 /// Reply with quote, Share and, for the agent's, its activity; swiping one
-/// right quotes it too. A quote waits over the composer and goes out as a
+/// right quotes it too. A quote waits above the dock and goes out as a
 /// blockquote ahead of the reply. The agent's live browser and terminal are
 /// pinned above the thread.
 struct ThreadView: View {
@@ -23,8 +23,8 @@ struct ThreadView: View {
     /// Changes each time Home's event stream reconnects; the thread reloads to
     /// catch what arrived while it was down.
     let connections: Int
-    /// Whether the composer is out or down in the condensed dock.
-    let dock: ThreadDock
+    /// The thread's draft, which the dock's accessory writes into.
+    let draft: ThreadDraft
     /// Ankur has seen the thread through this message.
     let read: (Int) -> Void
     /// Opens the agent's sheet, where its activity is.
@@ -33,14 +33,7 @@ struct ThreadView: View {
     @State private var messages: [DurableMessage] = []
     @State private var loaded = false
     @State private var loadError: String?
-    @State private var sendError: String?
-    @State private var draft = ""
-    @State private var photos: [DraftPhoto] = []
-    @State private var sending = false
-    /// The message being replied to, quoted ahead of the reply.
-    @State private var quote: DurableMessage?
     @State private var quoted = 0
-    @State private var sent = 0
     @State private var received = 0
     @Namespace private var glass
     @State private var position = ScrollPosition(edge: .bottom)
@@ -110,31 +103,33 @@ struct ThreadView: View {
                     }
                 }
                 .animation(.spring(response: 0.42, dampingFraction: 0.82), value: awayFromBottom)
-                if let sendError {
+                if let sendError = draft.sendError {
                     Label(sendError, systemImage: "exclamationmark.circle")
                         .font(.footnote)
                         .foregroundStyle(.danger)
                         .transition(.opacity)
                 }
-                if dock.composerShown {
-                    if let quote {
-                        QuoteCard(message: quote, author: quote.fromUser ? "You" : name) {
-                            withAnimation(Motion.snap) { self.quote = nil }
-                        }
-                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                if let quote = draft.quote {
+                    QuoteCard(message: quote, author: quote.fromUser ? "You" : name) {
+                        withAnimation(Motion.snap) { draft.quote = nil }
                     }
-                    Composer(text: $draft, photos: $photos, placeholder: "Message \(name)…", busy: sending, lanes: lanes, focusOnAppear: dock.writing, send: send)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                }
+                if !draft.photos.isEmpty {
+                    @Bindable var draft = draft
+                    PhotoStrip(photos: $draft.photos)
+                        .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .bottomLeading)))
                 }
             }
-            .animation(Motion.settle, value: dock.composerShown)
+            .animation(Motion.settle, value: draft.photos)
             .padding(.horizontal, 16)
             .padding(.top, 8)
-            .composerInset()
+            .padding(.bottom, 8)
         }
         .navigationTitle(name)
-        .animation(Motion.snap, value: quote)
-        .sensoryFeedback(.impact(weight: .light), trigger: sent)
+        .animation(Motion.snap, value: draft.quote)
+        .animation(Motion.snap, value: draft.sendError)
+        .sensoryFeedback(.impact(weight: .light), trigger: draft.sent)
         .sensoryFeedback(.impact(flexibility: .soft), trigger: quoted)
         .sensoryFeedback(.impact(flexibility: .soft), trigger: received)
         .task(id: connections) { await load() }
@@ -142,6 +137,9 @@ struct ThreadView: View {
             guard case .message(let id, let message)? = event, id == agentId else { return }
             if insert(message), !message.fromUser { received += 1 }
             read(message.seq)
+        }
+        .onChange(of: draft.delivered) { _, message in
+            if let message { insert(message) }
         }
     }
 
@@ -262,30 +260,7 @@ struct ThreadView: View {
     /// Quotes `message` over the composer.
     private func reply(to message: DurableMessage) {
         quoted += 1
-        withAnimation(Motion.snap) { quote = message }
-    }
-
-    private func send() {
-        let words = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        let attached = photos
-        guard !words.isEmpty || !attached.isEmpty, !sending else { return }
-        let content = quote.map { QuoteCard.blockquote(plainText($0.content)) + words } ?? words
-        sending = true
-        sendError = nil
-        Task {
-            defer { sending = false }
-            do {
-                let reply = try await hath.send(content, to: agentId, attachments: attached.map(\.outbound))
-                draft = ""
-                photos = []
-                quote = nil
-                sent += 1
-                dock.writing = false
-                insert(DurableMessage(seq: reply.seq, fromAgentId: nil, toAgentId: agentId, content: reply.content, attachments: reply.attachments, kind: .message, createdAt: reply.createdAt))
-            } catch {
-                withAnimation(Motion.snap) { sendError = error.localizedDescription }
-            }
-        }
+        withAnimation(Motion.snap) { draft.reply(to: message) }
     }
 }
 
@@ -312,7 +287,7 @@ private struct DayMark: View {
 
 /// A message being replied to, over the composer: who wrote it and its first
 /// lines, with a button to drop it.
-private struct QuoteCard: View {
+struct QuoteCard: View {
     let message: DurableMessage
     let author: String
     let dismiss: () -> Void

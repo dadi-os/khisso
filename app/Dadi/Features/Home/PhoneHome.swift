@@ -35,8 +35,8 @@ struct PhoneHome: View {
     @State private var agentSheet: String?
     /// The router dock: the draft, the composer over the page and the last send.
     @State private var router = RouterDock()
-    /// Whether an open thread's composer is out or down in the condensed dock.
-    @State private var threadDock = ThreadDock()
+    /// Each thread's draft, which the dock's accessory writes while its thread is open.
+    @State private var drafts = ThreadDrafts()
     /// The toasts over the page.
     @State private var toaster = Toaster()
     @Namespace private var sheetWordmark
@@ -219,7 +219,7 @@ struct PhoneHome: View {
         }
         .tabBarMinimizeBehavior(page.isThread ? .onScrollUp : .onScrollDown)
         .tabViewBottomAccessory {
-            DockAccessory(router: router, active: store.routing, online: online, thread: threadDock, threadName: openThreadName)
+            DockAccessory(router: router, active: store.routing, online: online, thread: openThread)
         }
         .tint(.sageDeep)
     }
@@ -229,7 +229,7 @@ struct PhoneHome: View {
         ZStack {
             switch dadiPage {
             case .thread(let agentId):
-                ThreadView(hath: services.hath, nas: services.nas, agentId: agentId, name: store.name(of: agentId), live: store.live, lanes: store.lanes(of: agentId), connections: store.connections, dock: threadDock) { seq in
+                ThreadView(hath: services.hath, nas: services.nas, agentId: agentId, name: store.name(of: agentId), live: store.live, lanes: store.lanes(of: agentId), connections: store.connections, draft: drafts.draft(for: agentId)) { seq in
                     Task { await store.markRead(services.hath, agentId: agentId, through: seq) }
                 } details: {
                     agentSheet = agentId
@@ -247,10 +247,11 @@ struct PhoneHome: View {
         }
     }
 
-    /// The agent's name while its thread is open.
-    private var openThreadName: String? {
+    /// The open thread, with its draft and how it sends, for the dock's accessory.
+    private var openThread: DockThread? {
         guard case .thread(let agentId) = page else { return nil }
-        return store.name(of: agentId)
+        let draft = drafts.draft(for: agentId)
+        return DockThread(agentId: agentId, name: store.name(of: agentId), draft: draft) { draft.send(services.hath, to: agentId) }
     }
 
     /// The Chats tab's badge: Ankur's unread replies.

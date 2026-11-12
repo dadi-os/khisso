@@ -8,9 +8,8 @@ import UIKit
 /// on one spring and the field draws in to make room, and it flows back in
 /// when the field empties. The glass only melds while the shapes move: at rest
 /// the gap between them is wider than the container's merge distance, so no
-/// bridge of glass is left between them. Sending puts the keyboard away, a beat after the bubble. The
-/// field's rim answers the agent's lanes as thaali's does: quieter while it
-/// thinks, sage while it works.
+/// bridge of glass is left between them. Sending puts the keyboard away, a beat after the bubble. Dadi's
+/// composer is this; a thread's is written in the dock's accessory.
 struct Composer: View {
     @Binding var text: String
     /// Photos waiting to go with the message.
@@ -18,7 +17,6 @@ struct Composer: View {
     let placeholder: String
     /// A send is in flight: the button spins and another send waits.
     let busy: Bool
-    var lanes: Set<Lane> = []
     /// Puts the cursor in the field as soon as it shows, for a page opened to write.
     var focusOnAppear = false
     let send: () -> Void
@@ -50,12 +48,6 @@ struct Composer: View {
     private let gap: CGFloat = 10
     /// How near the two shapes must be for their glass to meld.
     private let merge: CGFloat = 6
-
-    private var rim: Color {
-        if lanes.contains(.process) { return .sageLine.opacity(0.28) }
-        if lanes.contains(.work) { return .sage.opacity(0.36) }
-        return .sageLine.opacity(0.42)
-    }
 
     private var ready: Bool { !busy && (!text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !photos.isEmpty) }
 
@@ -194,8 +186,7 @@ struct Composer: View {
                         .glassEffectID("field", in: glass)
                         .overlay {
                             RoundedRectangle(cornerRadius: 23, style: .continuous)
-                                .strokeBorder(rim, lineWidth: 1)
-                                .animation(Motion.settle, value: lanes)
+                                .strokeBorder(Color.sageLine.opacity(0.42), lineWidth: 1)
                         }
                         .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .leading)))
                     if showsSend {
@@ -296,48 +287,9 @@ struct Composer: View {
     }
 }
 
-/// Where a page's composer sits above the bottom of the screen: low, just
-/// over the home indicator as iMessage's field sits, and a little higher over
-/// the keyboard so the glass never meets it.
-private struct ComposerInset: ViewModifier {
-    @State private var keyboard = false
-
-    /// Above the home indicator.
-    private let resting: CGFloat = 5
-    /// Above the keyboard.
-    private let raised: CGFloat = 10
-
-    /// An ease as long as the keyboard's own move in `note`, so the composer
-    /// settles with it rather than ahead of it.
-    private static func follow(_ note: Notification) -> Animation {
-        let seconds = note.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double ?? 0.25
-        return .easeInOut(duration: seconds)
-    }
-
-    func body(content: Content) -> some View {
-        content
-            .padding(.bottom, keyboard ? raised : resting)
-            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { note in
-                withAnimation(Self.follow(note)) { keyboard = true }
-            }
-            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { note in
-                withAnimation(Self.follow(note)) { keyboard = false }
-            }
-    }
-}
-
-extension View {
-    /// Sits a composer at the bottom of its page: just above the home
-    /// indicator, or above the keyboard while it is up.
-    func composerInset() -> some View {
-        modifier(ComposerInset())
-    }
-}
-
-
 /// The photos waiting to be sent, as a row of thumbnails each with a button to
 /// take it back out.
-private struct PhotoStrip: View {
+struct PhotoStrip: View {
     @Binding var photos: [DraftPhoto]
 
     var body: some View {

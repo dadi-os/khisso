@@ -229,19 +229,12 @@ struct SystemPage: View {
             }
             Spacer(minLength: 8)
             HStack(spacing: 6) {
-                if device.online {
-                    Circle().fill(Color.sage).frame(width: 8, height: 8).shadow(color: .sage.opacity(0.85), radius: 5)
-                } else {
-                    Circle().strokeBorder(Color.inkFaint, lineWidth: 1.5).frame(width: 8, height: 8)
-                }
+                Circle().fill(device.online ? Color.sage : .inkFaint).frame(width: 8, height: 8)
                 Text(device.online ? "Online" : "Offline")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(device.online ? Color.sageText : .inkFaint)
+                    .font(.caption)
+                    .foregroundStyle(device.online ? Color.sageText : .inkMuted)
             }
             .fixedSize()
-            .padding(.horizontal, 10)
-            .padding(.vertical, 4)
-            .background(device.online ? Color.sage.opacity(0.18) : Color.inkFaint.opacity(0.08), in: .capsule)
         }
         .accessibilityElement(children: .combine)
         .padding(.vertical, 10)

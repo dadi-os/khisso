@@ -2,7 +2,7 @@ import SwiftUI
 
 /// One helper task as a row, the same on the agent sheet and the System page and laid out as in Thaali: its
 /// id, the owner where the row stands apart from its agent, a state capsule, what it is for and where it is
-/// now, and under it the helper's own words when it asked its agent. Tapping the row opens the task card.
+/// now, and under it the helper's own words when it asked its agent. Tapping the row opens the task card, except an asleep task, which is inert.
 struct TaskRow: View {
     let hath: HathClient
     let nas: NasClient
@@ -16,11 +16,21 @@ struct TaskRow: View {
 
     @State private var acting = false
 
+    /// Whether a task with `status` opens its card; an asleep task is inert.
+    nonisolated static func opens(_ status: String) -> Bool { status != "asleep" }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Button { acting = true } label: { head }
-                .buttonStyle(.plain)
-                .accessibilityHint("Opens the task")
+            if Self.opens(task.status) {
+                Button { acting = true } label: { head }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Opens the task")
+            } else {
+                head
+                    .opacity(0.55)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("\(task.route), \(task.purpose), asleep, not available")
+            }
             note
         }
         .taskSheet(isPresented: $acting, hath: hath, nas: nas, task: task, owner: owner, changed: changed)

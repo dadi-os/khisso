@@ -418,10 +418,13 @@ struct SessionSheet: View {
                     .font(.title3.weight(.semibold))
                     .foregroundStyle(item.completed ? .inkMuted : .ink)
                     .strikethrough(item.cancelled, color: .sageDeep)
+                    .lineLimit(4)
                 Text(item.cancelled ? "Cancelled · \(sessionWhen(item))" : sessionWhen(item))
                     .font(.footnote)
                     .foregroundStyle(.inkMuted)
+                    .lineLimit(2)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             if let place = item.place {
                 Button {
                     if let url = Directions.url(to: place) { openURL(url) }
@@ -434,10 +437,12 @@ struct SessionSheet: View {
                             Text(place.room.map { "\(place.title) · Room \($0)" } ?? place.title)
                                 .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(.ink)
+                                .lineLimit(2)
                             if let address = place.address {
-                                Text(address).font(.caption).foregroundStyle(.inkMuted)
+                                Text(address).font(.caption).foregroundStyle(.inkMuted).lineLimit(3)
                             }
                         }
+                        .multilineTextAlignment(.leading)
                         Spacer(minLength: 0)
                         if place.address != nil {
                             Text("Go").font(.subheadline.weight(.semibold)).foregroundStyle(.sageDeep)
@@ -467,12 +472,11 @@ struct SessionSheet: View {
             if !item.notes.isEmpty || item.body != nil {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("This session").font(.caption.weight(.semibold)).foregroundStyle(.sageText)
-                    ForEach(item.notes) { note in
-                        Text(note.title).font(.callout).foregroundStyle(.ink)
+                    ViewThatFits(in: .vertical) {
+                        notes
+                        ScrollView { notes }.scrollIndicators(.hidden)
                     }
-                    if let body = item.body {
-                        Text(body).font(.callout).foregroundStyle(.inkMuted)
-                    }
+                    .frame(maxHeight: 220)
                 }
             }
             if actions.markable(item) {
@@ -497,6 +501,19 @@ struct SessionSheet: View {
         }
         .padding(24)
         .animation(Motion.settle, value: item)
+    }
+
+    /// The session's notes and body, which scroll in the sheet when they outgrow it.
+    private var notes: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(item.notes) { note in
+                Text(note.title).font(.callout).foregroundStyle(.ink)
+            }
+            if let body = item.body {
+                Text(body).font(.callout).foregroundStyle(.inkMuted)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// One day of the timeline: the day's title with its arrows and, today, what is happening now
-/// and next, pinned over the scrolling day; under them the week's days in a strip (a dot on each
-/// with something due), then the day's timed sessions (Yaad's planner view) on an hour axis, each
+/// One day of the timeline: the day's title (tap it for today), the week strip (`WeekStrip`, swiped
+/// by weeks, a dot on each day with something due) and, today, what is happening now and next,
+/// all pinned over the scrolling day, whose timed sessions (Yaad's planner view) on an hour axis, each
 /// as tall as its time, with open time left as space and labeled with its length. Items due at a
 /// time are not on the axis: the `DuePanel` pinned under the strip lists them all in its own scroll. Commitments are solid, the gym warm,
 /// routines quiet, and a cancelled session is struck through. Each session's circle marks it
@@ -66,74 +66,27 @@ struct PlannerDay: View {
         .task(id: Reload(day: Self.monday(of: day), change: live.yaad)) { await loadWeek() }
     }
 
-    /// The week holding `day` as a row of days to tap, today in sage, the
-    /// shown day filled, a dot under each day with something due.
-    private var weekStrip: some View {
-        let monday = Self.monday(of: day)
-        return HStack(spacing: 0) {
-            ForEach(0..<7, id: \.self) { offset in
-                if let date = Calendar.current.date(byAdding: .day, value: offset, to: monday) {
-                    let shown = Calendar.current.isDate(date, inSameDayAs: day)
-                    let today = Calendar.current.isDateInToday(date)
-                    Button { go(to: date) } label: {
-                        VStack(spacing: 3) {
-                            Text(date, format: .dateTime.weekday(.narrow))
-                                .font(.caption2.weight(.semibold))
-                                .foregroundStyle(shown ? Color.bone.opacity(0.8) : .inkFaint)
-                            Text(date, format: .dateTime.day())
-                                .font(.callout.weight(shown || today ? .bold : .medium).monospacedDigit())
-                                .foregroundStyle(shown ? Color.bone : today ? .sageDeep : .ink)
-                            Circle()
-                                .fill(shown ? Color.bone : .clay)
-                                .frame(width: 4, height: 4)
-                                .opacity(dueDays.contains(Calendar.current.startOfDay(for: date)) ? 1 : 0)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 6)
-                        .background {
-                            if shown {
-                                RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.sageDeep)
-                            }
-                        }
-                        .contentShape(.rect(cornerRadius: 14))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(date.formatted(.dateTime.weekday(.wide).month().day()))
-                    .accessibilityAddTraits(shown ? .isSelected : [])
-                }
-            }
-        }
-        .animation(Motion.snap, value: day)
-    }
-
     /// Monday at local midnight of the week holding `date`.
-    static func monday(of date: Date) -> Date {
-        let calendar = Calendar.current
+    nonisolated static func monday(of date: Date, calendar: Calendar = .current) -> Date {
         let start = calendar.startOfDay(for: date)
         return calendar.date(byAdding: .day, value: -((calendar.component(.weekday, from: start) + 5) % 7), to: start)!
     }
 
+    /// The day's title over its date; tapping it jumps to today.
     private var header: some View {
-        HStack {
-            Button { move(by: -1) } label: { Image(systemName: "chevron.left").frame(width: 20, height: 20) }
-                .buttonStyle(.glass)
-                .buttonBorderShape(.circle)
-                .accessibilityLabel("Previous day")
-            Spacer()
+        Button { go(to: .now) } label: {
             VStack(spacing: 1) {
                 Text(title).font(.title3.weight(.semibold)).foregroundStyle(.ink)
                 Text(day, format: .dateTime.month(.wide).day())
                     .font(.footnote)
                     .foregroundStyle(.inkMuted)
             }
+            .frame(maxWidth: .infinity)
             .contentTransition(.opacity)
-            .onTapGesture { withAnimation(Motion.settle) { day = Calendar.current.startOfDay(for: .now) } }
-            Spacer()
-            Button { move(by: 1) } label: { Image(systemName: "chevron.right").frame(width: 20, height: 20) }
-                .buttonStyle(.glass)
-                .buttonBorderShape(.circle)
-                .accessibilityLabel("Next day")
+            .contentShape(.rect)
         }
+        .buttonStyle(.plain)
+        .accessibilityHint("Jumps to today")
         .sensoryFeedback(.selection, trigger: day)
     }
 
@@ -163,18 +116,14 @@ struct PlannerDay: View {
 
     private func axis(_ segments: [PlannerLayout.Segment]) -> some View {
         let now = Calendar.current.component(.hour, from: .now) * 60 + Calendar.current.component(.minute, from: .now)
-        let change = ClockChange.on(day)
         let dues = PlannerLayout.dues(actions.shown(due), on: day)
-        let spans = PlannerLayout.hours(segments)
-        let spanned = change.map { min(spans.lowerBound, $0.hour)..<max(spans.upperBound, $0.hour + 1) } ?? spans
+        let spanned = PlannerLayout.hours(segments)
         let hours = Calendar.current.isDateInToday(day) ? min(spanned.lowerBound, now / 60)..<max(spanned.upperBound, now / 60 + 1) : spanned
         let origin = hours.lowerBound * 60
         let height = CGFloat(hours.count * 60) * scale
         let start = Calendar.current.isDateInToday(day) ? UnitPoint(x: 0, y: max(0, min(1, CGFloat(now - 60 - origin) / CGFloat(max(1, hours.count * 60))))) : .top
         return ScrollView {
             VStack(spacing: 14) {
-                weekStrip
-                ZoneNotes(day: day, blocks: blocks)
                 if let error {
                     Label(error, systemImage: "exclamationmark.triangle")
                         .font(.footnote)
@@ -194,10 +143,6 @@ struct PlannerDay: View {
                                 Rectangle().fill(.rule).frame(height: 1)
                             }
                             .offset(y: CGFloat(hour * 60 - origin) * scale)
-                        }
-                        if let change {
-                            ClockBand(change: change, width: lane)
-                                .offset(x: 56, y: CGFloat(change.hour * 60 - origin) * scale)
                         }
                         ForEach(PlannerLayout.gaps(segments).filter { $0.endMin - $0.startMin >= PlannerLayout.labeledGapMinimum }, id: \.self) { gap in
                             Text("\(PlannerLayout.span(gap.endMin - gap.startMin)) open")
@@ -233,6 +178,7 @@ struct PlannerDay: View {
         .safeAreaInset(edge: .top, spacing: 8) {
             VStack(spacing: 10) {
                 header
+                WeekStrip(day: day, dueDays: dueDays, select: go(to:))
                 if Calendar.current.isDateInToday(day) {
                     NowNext(segments: segments)
                 }
@@ -253,12 +199,12 @@ struct PlannerDay: View {
         Calendar.current.date(bySettingHour: hour % 24, minute: 0, second: 0, of: day)?.formatted(.dateTime.hour()) ?? "\(hour)"
     }
 
-    /// Reads which days of the shown week have something due, for the strip's dots.
+    /// Reads which days of the shown week and its neighbors have something due, for the strip's dots.
     private func loadWeek() async {
         let monday = Self.monday(of: day)
-        guard let end = Calendar.current.date(byAdding: .day, value: 7, to: monday) else { return }
+        guard let from = Calendar.current.date(byAdding: .day, value: -7, to: monday), let end = Calendar.current.date(byAdding: .day, value: 14, to: monday) else { return }
         do {
-            let dues = try await yaad.timeline(.due, from: monday, to: end)
+            let dues = try await yaad.timeline(.due, from: from, to: end)
             dueDays = Set(dues.compactMap(\.dueAt).map(Calendar.current.startOfDay(for:)))
         } catch is CancellationError {
             return
@@ -320,12 +266,6 @@ private struct BlockView: View {
                     Text("\(start.formatted(date: .omitted, time: .shortened)) – \(end.formatted(date: .omitted, time: .shortened))")
                         .font(.caption2.monospacedDigit())
                         .foregroundStyle(.inkMuted)
-                    if height >= 84, let planned = block.plannedElsewhere, let zone = TimeZone(identifier: planned) {
-                        Text("In \(planned.split(separator: "/").last.map { $0.replacingOccurrences(of: "_", with: " ") } ?? planned): \(start.formatted(Date.FormatStyle(date: .omitted, time: .shortened, timeZone: zone))) – \(end.formatted(Date.FormatStyle(date: .omitted, time: .shortened, timeZone: zone))) \(zone.abbreviation(for: start) ?? "")")
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(.inkMuted)
-                            .lineLimit(2)
-                    }
                 }
             }
             Spacer(minLength: 0)
@@ -434,85 +374,4 @@ private struct NowNext: View {
 private struct Reload: Hashable {
     let day: Date
     let change: Int
-}
-
-/// What the day's clock needs said under the week strip: the device's zone when it is away from the
-/// zone the day's sessions were planned in, and the clock change on a 23- or 25-hour day.
-private struct ZoneNotes: View {
-    let day: Date
-    let blocks: [TimelineItem]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            ForEach(notes, id: \.symbol) { note in
-                Label(note.text, systemImage: note.symbol)
-                    .font(.footnote)
-                    .foregroundStyle(.inkMuted)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-        }
-        .padding(.horizontal, 6)
-    }
-
-    private var notes: [(symbol: String, text: String)] {
-        let calendar = Calendar.current
-        let device = calendar.timeZone
-        guard let noon = calendar.date(bySettingHour: 12, minute: 0, second: 0, of: day) else { return [] }
-        var notes: [(symbol: String, text: String)] = []
-        if let planned = blocks.compactMap(\.plannedElsewhere).first, let home = TimeZone(identifier: planned) {
-            let hours = (device.secondsFromGMT(for: noon) - home.secondsFromGMT(for: noon)) / 3600
-            if hours != 0 {
-                notes.append(("globe", "\(device.abbreviation(for: noon) ?? device.identifier) \u{00B7} \(abs(hours)) h \(hours < 0 ? "behind" : "ahead of") home"))
-            }
-        }
-        let start = calendar.startOfDay(for: day)
-        if let next = calendar.date(byAdding: .day, value: 1, to: start) {
-            let length = Int((next.timeIntervalSince(start) / 3600).rounded())
-            if length != 24, let before = calendar.date(byAdding: .minute, value: 30, to: start) {
-                let from = device.abbreviation(for: before) ?? ""
-                let to = device.abbreviation(for: noon) ?? ""
-                notes.append(("clock.arrow.circlepath", length == 25 ? "Clocks go back at 2:00 AM (\(from) \u{2192} \(to)): this day has 25 hours." : "Clocks go forward at 2:00 AM (\(from) \u{2192} \(to)): this day has 23 hours."))
-            }
-        }
-        return notes
-    }
-}
-
-/// The hour a clock change repeats (a dashed tide band) or skips (a hatched clay band) on the
-/// axis, behind the sessions, with what it means in a capsule.
-private struct ClockBand: View {
-    let change: ClockChange
-    let width: CGFloat
-
-    var body: some View {
-        let tone: Color = change.kind == .repeated ? .tide : .clay
-        ZStack {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(tone.opacity(change.kind == .repeated ? 0.1 : 0.06))
-            if change.kind == .skipped {
-                Canvas { context, size in
-                    var x: CGFloat = -size.height
-                    while x < size.width {
-                        var line = Path()
-                        line.move(to: CGPoint(x: x, y: size.height))
-                        line.addLine(to: CGPoint(x: x + size.height, y: 0))
-                        context.stroke(line, with: .color(tone.opacity(0.28)), lineWidth: 3)
-                        x += 12
-                    }
-                }
-                .clipShape(.rect(cornerRadius: 12, style: .continuous))
-            }
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(tone, style: StrokeStyle(lineWidth: 1.5, dash: change.kind == .repeated ? [5, 4] : []))
-            Text(change.caption)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(change.kind == .repeated ? Color.tide : .clay)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 3)
-                .background(.boneRaised, in: .capsule)
-        }
-        .frame(width: width, height: 60 * 1.3)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(change.caption)
-    }
 }

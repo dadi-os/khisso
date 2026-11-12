@@ -14,7 +14,7 @@ import Testing
         func date(_ time: String) -> Date { try! Date("2026-10-21T\(time):00-04:00", strategy: .iso8601) }
         return TimelineItem(
             planId: id, occurrenceDate: "2026-10-21", title: id, body: nil, kind: .task, status: .confirmed,
-            startAt: start.map(date), endAt: start.map(date), dueAt: due.map(date), opensAt: nil, allDay: false, timeZone: nil, hideFromPlanner: hidden,
+            startAt: start.map(date), endAt: start.map(date), dueAt: due.map(date), opensAt: nil, allDay: false, hideFromPlanner: hidden,
             state: "scheduled", outcome: nil, recurrence: nil, series: nil, place: nil, owner: "schedule-specialist", notes: []
         )
     }
@@ -109,23 +109,39 @@ import Testing
     }
 }
 
-/// A thread's composer follows the condensed dock.
-@Suite struct ThreadDockTests {
-    @Test func theComposerShowsUnlessTheDockIsCondensedAndNobodyIsWriting() {
-        #expect(ThreadDock.showsComposer(condensed: false, writing: false))
-        #expect(!ThreadDock.showsComposer(condensed: true, writing: false))
-        #expect(ThreadDock.showsComposer(condensed: true, writing: true))
+/// The dock's one composer: who it is for and what a thread's draft keeps.
+@Suite struct DockComposerTests {
+    @Test func theAccessoryIsDadiOnEveryPageButAThread() {
+        #expect(DockDestination.of(openThread: nil, routerComposing: false) == .dadi)
+        #expect(DockDestination.of(openThread: "career", routerComposing: false) == .thread(agentId: "career"))
     }
 
-    @MainActor @Test func expandingTheDockEndsWritingFromTheCondensedOne() {
-        let dock = ThreadDock()
-        dock.condense(true)
-        dock.writing = true
-        #expect(dock.composerShown)
-        dock.condense(false)
-        #expect(!dock.writing && dock.composerShown)
-        dock.condense(true)
-        #expect(!dock.composerShown)
+    @Test func dadisComposerOverAThreadTakesTheAccessoryFromTheThreadField() {
+        #expect(DockDestination.of(openThread: "career", routerComposing: true) == .dadi)
+        #expect(DockDestination.of(openThread: nil, routerComposing: true) == .dadi)
+    }
+
+    @Test func aDraftSendsWithWordsOrPhotosAndNotWhileOneIsGoing() {
+        #expect(!ThreadDraft.canSend(text: "  \n", photos: 0, sending: false))
+        #expect(ThreadDraft.canSend(text: "hi", photos: 0, sending: false))
+        #expect(ThreadDraft.canSend(text: "", photos: 1, sending: false))
+        #expect(!ThreadDraft.canSend(text: "hi", photos: 0, sending: true))
+    }
+
+    @MainActor @Test func eachAgentKeepsItsOwnDraftAcrossVisits() {
+        let drafts = ThreadDrafts()
+        drafts.draft(for: "career").text = "half a thought"
+        #expect(drafts.draft(for: "career").text == "half a thought")
+        #expect(drafts.draft(for: "health").text.isEmpty)
+    }
+
+    @MainActor @Test func quotingAMessageAsksTheFieldForTheCursor() throws {
+        let draft = ThreadDraft()
+        let before = draft.focusRequests
+        let json = #"{"seq":4,"from_agent_id":"career","to_agent_id":null,"content":"hello","attachments":[],"created_at":"2026-11-09T10:00:00.000Z"}"#
+        draft.reply(to: try ServiceJSON.decoder.decode(DurableMessage.self, from: Data(json.utf8)))
+        #expect(draft.quote?.seq == 4)
+        #expect(draft.focusRequests == before + 1)
     }
 }
 
@@ -136,8 +152,36 @@ import Testing
         #expect(!TimelineMode.allCases.map(\.rawValue).contains(TimelineMode.needsTimeTitle))
     }
 
-    @Test func theThreadStatusPillKeepsAFingerSizedHeightAndTheChatsDotStaysSmall() {
-        #expect(LaneChip.height >= 44)
+    @Test func theThreadStatusPillIsAModestStepAboveItsOriginal36() {
+        #expect((39...42).contains(LaneChip.height))
         #expect(WorkingDot.size == 8)
+    }
+}
+
+/// The week strip pages by weeks and keeps the weekday; asleep tasks are inert.
+@Suite struct WeekStripAndTaskTests {
+    private let calendar: Calendar = {
+        var c = Calendar(identifier: .gregorian)
+        c.timeZone = TimeZone(identifier: "UTC")!
+        return c
+    }()
+
+    @Test func pagingToAnotherWeekKeepsTheSelectedWeekday() throws {
+        let wednesday = try Date("2026-11-11T15:00:00Z", strategy: .iso8601)
+        let nextMonday = try Date("2026-11-16T00:00:00Z", strategy: .iso8601)
+        let next = try #require(WeekStrip.day(in: nextMonday, keeping: wednesday, calendar: calendar))
+        #expect(next == (try Date("2026-11-18T00:00:00Z", strategy: .iso8601)))
+    }
+
+    @Test func theStripReachesWeeksEitherSideOfThisOne() throws {
+        let now = try Date("2026-11-11T15:00:00Z", strategy: .iso8601)
+        let weeks = WeekStrip.weeks(around: now, calendar: calendar)
+        #expect(weeks.count == 2 * WeekStrip.reach + 1)
+        #expect(weeks[WeekStrip.reach] == (try Date("2026-11-09T00:00:00Z", strategy: .iso8601)))
+    }
+
+    @Test func anAsleepTaskDoesNotOpenItsCard() {
+        #expect(!TaskRow.opens("asleep"))
+        #expect(TaskRow.opens("idle") && TaskRow.opens("working") && TaskRow.opens("stopped"))
     }
 }

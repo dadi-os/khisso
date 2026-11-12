@@ -85,8 +85,6 @@ struct TimelineItem: Decodable, Sendable, Hashable, Identifiable {
     let dueAt: Date?
     let opensAt: Date?
     let allDay: Bool
-    /// The IANA zone the session was planned in; nil when the plan carries none.
-    let timeZone: String?
     let hideFromPlanner: Bool
     /// scheduled, moved or cancelled.
     let state: String
@@ -99,13 +97,6 @@ struct TimelineItem: Decodable, Sendable, Hashable, Identifiable {
     /// The agent that keeps it, or `manual` / `ingest` when no agent does.
     let owner: String
     let notes: [SessionNote]
-
-    /// The zone it was planned in when its clock differs from this device's at that time, else nil
-    /// (Detroit and New York keep the same clock, so neither is "elsewhere" to the other).
-    var plannedElsewhere: String? {
-        guard let timeZone, let zone = TimeZone(identifier: timeZone), let at = startAt ?? dueAt ?? endAt else { return nil }
-        return zone.secondsFromGMT(for: at) == Calendar.current.timeZone.secondsFromGMT(for: at) ? nil : timeZone
-    }
 
     /// A session is named by its plan and its date.
     var id: String { "\(planId):\(occurrenceDate ?? "undated")" }
@@ -122,7 +113,7 @@ struct TimelineItem: Decodable, Sendable, Hashable, Identifiable {
 
     private enum CodingKeys: String, CodingKey {
         case planId = "id"
-        case occurrenceDate, title, body, kind, status, startAt, endAt, dueAt, opensAt, allDay, timeZone, hideFromPlanner
+        case occurrenceDate, title, body, kind, status, startAt, endAt, dueAt, opensAt, allDay, hideFromPlanner
         case state, outcome, recurrence, series, place, owner, notes
     }
 
@@ -130,7 +121,7 @@ struct TimelineItem: Decodable, Sendable, Hashable, Identifiable {
     func marked(completed: Bool) -> TimelineItem {
         TimelineItem(
             planId: planId, occurrenceDate: occurrenceDate, title: title, body: body, kind: kind, status: status,
-            startAt: startAt, endAt: endAt, dueAt: dueAt, opensAt: opensAt, allDay: allDay, timeZone: timeZone, hideFromPlanner: hideFromPlanner,
+            startAt: startAt, endAt: endAt, dueAt: dueAt, opensAt: opensAt, allDay: allDay, hideFromPlanner: hideFromPlanner,
             state: state, outcome: completed ? "done" : nil, recurrence: recurrence, series: series, place: place,
             owner: owner, notes: notes
         )
