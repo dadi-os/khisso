@@ -15,16 +15,3 @@ struct UnreadBadge: View {
             .accessibilityLabel("\(count) unread")
     }
 }
-
-/// The sage dot that opens a row while an agent lane runs.
-struct WorkingDot: View {
-    /// The dot's diameter in points.
-    static let size: CGFloat = 8
-
-    var body: some View {
-        Circle()
-            .fill(Color.sageDeep)
-            .frame(width: Self.size, height: Self.size)
-            .accessibilityLabel("Working")
-    }
-}

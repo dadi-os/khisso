@@ -2,7 +2,7 @@ name: Khisso
 options:
   bundleIdPrefix: com.dadi
   deploymentTarget:
-    iOS: "26.0"
+    iOS: "26.1"
     watchOS: "26.0"
   createIntermediateGroups: true
 packages:
@@ -69,8 +69,9 @@ targets:
       - DadiWatch
       - Dadi/Shared/Watch
       - Dadi/Shared/Design/Design.swift
-      - Dadi/Shared/Components/Lanes.swift
+      - Dadi/Shared/Components/AgentActivity.swift
       - Dadi/Shared/Components/Agent.swift
+      - Dadi/Shared/Components/LinkFormat.swift
       - Dadi/Shared/Components/UnicodeMath.swift
       - Dadi/Shared/Components/MathDelimiters.swift
       - Dadi/Types/Hath.swift

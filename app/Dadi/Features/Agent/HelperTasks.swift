@@ -15,19 +15,13 @@ struct HelperTasks: View {
     private var active: Int { tasks.filter(\.stoppable).count }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("HELPER TASKS · \(tasks.count) · \(active) ACTIVE")
-                .font(.caption2.weight(.semibold))
-                .tracking(1.4)
-                .foregroundStyle(.inkFaint)
+        InsetCard(title: "Helper tasks", count: active > 0 ? "\(active) active" : nil) {
             VStack(spacing: 0) {
                 ForEach(tasks) { task in
                     TaskRow(hath: hath, nas: nas, task: task, owner: owner, changed: changed)
                     if task.id != tasks.last?.id { Rectangle().fill(.rule).frame(height: 1) }
                 }
             }
-            .padding(.horizontal, 14)
-            .background(Color.ink.opacity(0.04), in: .rect(cornerRadius: 16, style: .continuous))
         }
     }
 }

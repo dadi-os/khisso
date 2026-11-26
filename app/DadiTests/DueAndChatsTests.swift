@@ -2,63 +2,6 @@ import Foundation
 import Testing
 @testable import Khisso
 
-/// The day's due items and the Due panel's rules.
-@Suite struct DueAxisTests {
-    private let calendar: Calendar = {
-        var c = Calendar(identifier: .gregorian)
-        c.timeZone = TimeZone(identifier: "America/Detroit")!
-        return c
-    }()
-
-    private func item(_ id: String, due: String?, start: String? = nil, hidden: Bool = false) -> TimelineItem {
-        func date(_ time: String) -> Date { try! Date("2026-10-21T\(time):00-04:00", strategy: .iso8601) }
-        return TimelineItem(
-            planId: id, occurrenceDate: "2026-10-21", title: id, body: nil, kind: .task, status: .confirmed,
-            startAt: start.map(date), endAt: start.map(date), dueAt: due.map(date), opensAt: nil, allDay: false, hideFromPlanner: hidden,
-            state: "scheduled", outcome: nil, recurrence: nil, series: nil, place: nil, owner: "schedule-specialist", notes: []
-        )
-    }
-
-    private var day: Date { try! Date("2026-10-21T12:00:00-04:00", strategy: .iso8601) }
-
-    @Test func onlyUntimedItemsDueThatDayAreDueItems() {
-        let kept = PlannerLayout.dues([
-            item("due", due: "09:00"),
-            item("timed", due: "09:00", start: "08:00"),
-            item("hidden", due: "09:00", hidden: true),
-            item("none", due: nil),
-        ], on: day, calendar: calendar)
-        #expect(kept.map(\.planId) == ["due"])
-    }
-
-    @Test func dueItemsDoNotWidenTheAxis() {
-        #expect(PlannerLayout.hours([]) == PlannerLayout.emptyHours)
-    }
-
-    @Test func theDuePanelListsDueItemsInTimeOrderKeepingTiesInInputOrder() {
-        let ordered = DueList.ordered([item("b", due: "15:00"), item("a", due: "09:00"), item("c", due: "15:00")])
-        #expect(ordered.map(\.planId) == ["a", "b", "c"])
-    }
-
-    @Test func theDuePanelGrowsToItsRowsThenStopsAtAThirdOfThePage() {
-        #expect(DueList.height(content: 100, available: 900) == 100)
-        #expect(DueList.height(content: 900, available: 900) == 300)
-    }
-
-    @Test func urgencyIsOverdueOnceTimePassedSoonWithinTwoHoursElseLater() {
-        let now = try! Date("2026-10-21T10:00:00-04:00", strategy: .iso8601)
-        #expect(DueList.urgency(item("x", due: "09:59"), now: now) == .overdue)
-        #expect(DueList.urgency(item("x", due: "11:59"), now: now) == .soon)
-        #expect(DueList.urgency(item("x", due: "12:01"), now: now) == .later)
-    }
-
-    @Test func aCompletedItemIsNeverPressing() {
-        let now = try! Date("2026-10-21T10:00:00-04:00", strategy: .iso8601)
-        let done = item("x", due: "09:00").marked(completed: true)
-        #expect(DueList.urgency(done, now: now) == .later)
-    }
-}
-
 /// Chats lists conversations by day, with a dot while an agent runs.
 @Suite struct ChatGroupsTests {
     private let calendar: Calendar = {
@@ -97,12 +40,6 @@ import Testing
         #expect(ChatGroups.days(threads, matching: "zzz", now: now, calendar: calendar).isEmpty)
     }
 
-    @Test func aRowDotsWhileEitherLaneRuns() {
-        #expect(!ChatGroups.isWorking([]))
-        #expect(ChatGroups.isWorking([.work]))
-        #expect(ChatGroups.isWorking([.process]))
-    }
-
     @Test func showsTheTimeTodayThenTheDay() throws {
         #expect(ChatGroups.when(try Date("2026-11-08T20:00:00-05:00", strategy: .iso8601), now: now, calendar: calendar) == "Yesterday")
         #expect(ChatGroups.when(try Date("2026-11-09T14:05:00-05:00", strategy: .iso8601), now: now, calendar: calendar).contains("2:05"))
@@ -111,14 +48,23 @@ import Testing
 
 /// The dock's one composer: who it is for and what a thread's draft keeps.
 @Suite struct DockComposerTests {
-    @Test func theAccessoryIsDadiOnEveryPageButAThread() {
-        #expect(DockDestination.of(openThread: nil, routerComposing: false) == .dadi)
-        #expect(DockDestination.of(openThread: "career", routerComposing: false) == .thread(agentId: "career"))
+    @Test func theDadiBarShowsOnEveryRootPageIncludingChats() {
+        for page in [HomeView.Page.dadi, .planner, .ghar, .chaavi, .system] {
+            #expect(DockPresentation.of(page: page, editing: false) == .dadi)
+            #expect(DockPresentation.of(page: page, editing: true) == .dadi)
+        }
     }
 
-    @Test func dadisComposerOverAThreadTakesTheAccessoryFromTheThreadField() {
-        #expect(DockDestination.of(openThread: "career", routerComposing: true) == .dadi)
-        #expect(DockDestination.of(openThread: nil, routerComposing: true) == .dadi)
+    @Test func theChatsHomeShowsTalkToDadiAndRootsAlwaysShowAnAccessory() {
+        #expect(DockPresentation.of(page: .dadi, editing: false) == .dadi && DockPresentation.dadi.showsAccessory)
+        #expect(!DockPresentation.keyboardBar.showsAccessory)
+    }
+
+    @Test func aThreadsComposerMovesAboveTheKeyboardWhileTyping() {
+        #expect(DockPresentation.of(page: .thread("career"), editing: false) == .threadAccessory)
+        #expect(DockPresentation.of(page: .thread("career"), editing: true) == .keyboardBar)
+        #expect(DockPresentation.threadAccessory.showsAccessory)
+        #expect(!DockPresentation.keyboardBar.showsAccessory)
     }
 
     @Test func aDraftSendsWithWordsOrPhotosAndNotWhileOneIsGoing() {
@@ -135,26 +81,25 @@ import Testing
         #expect(drafts.draft(for: "health").text.isEmpty)
     }
 
-    @MainActor @Test func quotingAMessageAsksTheFieldForTheCursor() throws {
+    @MainActor @Test func quotingAMessageStartsTyping() throws {
         let draft = ThreadDraft()
-        let before = draft.focusRequests
+        #expect(!draft.editing)
         let json = #"{"seq":4,"from_agent_id":"career","to_agent_id":null,"content":"hello","attachments":[],"created_at":"2026-11-09T10:00:00.000Z"}"#
         draft.reply(to: try ServiceJSON.decoder.decode(DurableMessage.self, from: Data(json.utf8)))
         #expect(draft.quote?.seq == 4)
-        #expect(draft.focusRequests == before + 1)
+        #expect(draft.editing)
     }
 }
 
-/// The Needs a time sheet opens over the shown view, and the thread's status pill stays large.
-@Suite struct NeedsTimeAndPillTests {
-    @Test func needsATimeIsASheetNotAViewSoOpeningItLeavesTheDayAlone() {
-        #expect(TimelineMode.allCases == [.day, .week, .month])
-        #expect(!TimelineMode.allCases.map(\.rawValue).contains(TimelineMode.needsTimeTitle))
+/// Someday opens over the Day view, and the thread's status pill stays large.
+@Suite struct SomedayAndPillTests {
+    @Test func somedayIsNotAViewSoOpeningItLeavesTheViewsAlone() {
+        #expect(PlannerMode.allCases == [.day, .week, .month])
+        #expect(!PlannerMode.allCases.map(\.rawValue).contains("Someday"))
     }
 
     @Test func theThreadStatusPillIsAModestStepAboveItsOriginal36() {
-        #expect((39...42).contains(LaneChip.height))
-        #expect(WorkingDot.size == 8)
+        #expect((39...42).contains(ActivityPill.height))
     }
 }
 
@@ -183,5 +128,30 @@ import Testing
     @Test func anAsleepTaskDoesNotOpenItsCard() {
         #expect(!TaskRow.opens("asleep"))
         #expect(TaskRow.opens("idle") && TaskRow.opens("working") && TaskRow.opens("stopped"))
+    }
+}
+
+/// The dock's one re-select rule: a sub-state goes back to its tab's root.
+@Suite struct TabReselectTests {
+    @MainActor @Test func aThreadGoesBackToTheChatsListAndRootsStay() {
+        #expect(TabReselect.root(for: .thread("a")) == .dadi)
+        for page in [HomeView.Page.dadi, .planner, .ghar, .chaavi, .system] { #expect(TabReselect.root(for: page) == nil) }
+    }
+
+    @MainActor @Test func everyTabHasASlotInTheDock() {
+        #expect(TabReselect.order.count == 5 && Set(TabReselect.order).count == 5)
+        let reselect = TabReselect()
+        reselect.fire(.chaavi)
+        #expect(reselect.tick == 1 && reselect.tab == .chaavi)
+    }
+
+    @MainActor @Test func everyTabResetsItsSubStateBeforeItScrolls() {
+        #expect(TabReselect.reset(tab: .dadi, page: .thread("a"), inSubState: false) == .chatsList)
+        #expect(TabReselect.reset(tab: .dadi, page: .dadi, inSubState: false) == .none)
+        #expect(TabReselect.reset(tab: .chaavi, page: .chaavi, inSubState: true) == .chaaviEverything)
+        #expect(TabReselect.reset(tab: .ghar, page: .ghar, inSubState: true) == .gharEverywhere)
+        #expect(TabReselect.reset(tab: .system, page: .system, inSubState: true) == .systemOverview)
+        for tab in TabReselect.order { #expect(TabReselect.reset(tab: tab, page: tab.home, inSubState: false) == .none) }
+        #expect(TabReselect.reset(tab: .planner, page: .planner, inSubState: true) == .none)
     }
 }

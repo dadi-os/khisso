@@ -1,7 +1,7 @@
 import Foundation
 
 /// How Chats lists its conversations, as thaali's sidebar does: under the day of their last message,
-/// each row dotted while a lane of its agent runs.
+/// each row dotted by what its agent is doing.
 enum ChatGroups {
     /// The conversations of one day, under that day's heading.
     struct Day: Identifiable, Equatable {
@@ -33,9 +33,37 @@ enum ChatGroups {
         return days
     }
 
-    /// True while an agent lane runs, work or process: the row opens with a dot.
-    static func isWorking(_ lanes: Set<Lane>) -> Bool {
-        lanes.contains(.work) || lanes.contains(.process)
+    /// The chips that narrow the agents by what they are doing.
+    enum StateFilter: String, CaseIterable, Identifiable {
+        case all = "All"
+        case working = "Working"
+        case waiting = "Waiting"
+        case idle = "Idle"
+
+        var id: String { rawValue }
+
+        /// Whether the filter keeps an agent that is in `state`.
+        func keeps(_ state: AgentState) -> Bool {
+            switch self {
+            case .all: true
+            case .working: state == .working
+            case .waiting: state == .waiting
+            case .idle: state == .idle
+            }
+        }
+    }
+
+    /// A row's one line, as thaali's list says it: the ask while the agent works, what it waits on while it waits, who
+    /// stopped it, else its last message.
+    static func line(_ thread: ThreadSummary, running: AgentRecord.Running, now: Date = .now) -> String {
+        if running.working {
+            guard let ask = running.job?.opened.content else { return "working" }
+            return Agent.preview(ask)
+        }
+        if running.mark(at: now) == .stopped, let stopped = running.job?.stopped {
+            return "Stopped \(AgentTime.relative(stopped.at, now: now))"
+        }
+        return ActivityLabel.text(running, counts: nil) ?? ((thread.fromUser ? "You: " : "") + Agent.preview(thread.lastMessage))
     }
 
     /// A conversation's last activity for the right edge of its row: the time today, "Yesterday", else the day.

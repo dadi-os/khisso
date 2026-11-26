@@ -39,11 +39,13 @@ struct PhoneHome: View {
     @State private var drafts = ThreadDrafts()
     /// The toasts over the page.
     @State private var toaster = Toaster()
+    /// The dock's re-select of the tab already open.
+    @State private var reselect = TabReselect()
     @Namespace private var sheetWordmark
-    /// The Timeline's view, set from its name bubble or its drawer.
-    @State private var timelineMode = TimelineMode.day
-    /// True while the Timeline's Needs a time sheet is up.
-    @State private var needsTime = false
+    /// What the Planner shows, set from its name bubble, its drawer, Week and Month, and a re-tap of its tab.
+    @State private var planner = PlannerRoute()
+    /// Bumped to bring the Planner's Day view to now.
+    @State private var plannerScrollNow = 0
     /// Ghar's devices and tags, which its page and its drawer share.
     @State private var ghar: GharStore
     /// What the Ghar page is narrowed to, set from its chips or its drawer.
@@ -59,7 +61,7 @@ struct PhoneHome: View {
 
     /// The strip along the left edge that opens the drawer. It sits over the
     /// page, so a swipe that starts in it always pulls the drawer instead of
-    /// moving the page, as the Timeline's day swipe would.
+    /// moving the page, as the Planner's day swipe would.
     private let edge: CGFloat = 36
 
     init(services: Services, wordmark: Namespace.ID, store: HomeStore, online: Bool, page: Binding<HomeView.Page>) {
@@ -103,15 +105,11 @@ struct PhoneHome: View {
                             systemFocus = section
                             set(open: false)
                         }
-                    case .timeline:
-                        TimelineDrawer(yaad: services.yaad, mode: timelineMode) { mode in
+                    case .planner:
+                        PlannerDrawer(yaad: services.yaad, route: planner, online: online, message: plannerMessage(_:ready:), reachable: store.isActive, nameOf: store.name(of:)) { next in
                             guard !swiping else { return }
-                            withAnimation(Motion.settle) { timelineMode = mode }
+                            withAnimation(Motion.settle) { planner = next }
                             set(open: false)
-                        } needsTime: {
-                            guard !swiping else { return }
-                            set(open: false)
-                            needsTime = true
                         }
                     default:
                         AgentsDrawer(store: store, page: page) { next in
@@ -150,7 +148,7 @@ struct PhoneHome: View {
         }
         .sheet(isPresented: Binding { agentSheet != nil } set: { if !$0 { agentSheet = nil } }) {
             if let agentId = agentSheet {
-                AgentSheet(services: services, agentId: agentId, name: store.name(of: agentId), lanes: store.lanes(of: agentId), connections: store.connections, wakeChanges: store.wakeChanges[agentId, default: 0], nameOf: store.name(of:), selectAgent: { agentSheet = $0 }) {
+                AgentSheet(services: services, agentId: agentId, name: store.name(of: agentId), agent: store.agents[agentId], counts: store.counts(of: agentId), connections: store.connections, wakeChanges: store.wakeChanges[agentId, default: 0], scheduleChanges: store.scheduleChanges, nameOf: store.name(of:), refreshAgents: { await store.refreshAgents(services.hath) }, selectAgent: { agentSheet = $0 }) {
                     agentSheet = nil
                     show(.thread(agentId))
                 }
@@ -180,6 +178,11 @@ struct PhoneHome: View {
             guard let problem else { return }
             toaster.show(Toast(key: "side-problem", title: "Chats may be out of date", detail: problem, symbol: "exclamationmark.triangle.fill", failure: true))
         }
+        .onChange(of: store.wakeFailure) { _, failure in
+            guard let failure else { return }
+            let name = store.name(of: failure.agentId)
+            toaster.show(Toast(key: "wake-failed-\(failure.agentId)", title: "\(name)'s run failed", detail: "Its activity has the reason.", symbol: "exclamationmark.triangle.fill", failure: true) { agentSheet = failure.agentId })
+        }
         .onChange(of: store.routerFailure) { _, failure in
             guard let failure, !router.sending else { return }
             toaster.show(Toast(key: "router-failed", title: "Dadi could not route a message", detail: failure.message, symbol: "exclamationmark.triangle.fill", failure: true))
@@ -195,16 +198,10 @@ struct PhoneHome: View {
                 Label("Chats", systemImage: "bubble.left.and.bubble.right")
             }
             .badge(chatsBadge)
-            Tab("Yaad", systemImage: "calendar", value: HomeView.Tab.timeline) {
+            Tab("Planner", systemImage: "calendar", value: HomeView.Tab.planner) {
                 chrome(
-                    TimelinePage(yaad: services.yaad, mode: $timelineMode, needsTime: $needsTime) { agentId in
-                        show(.thread(agentId))
-                    } tellDadi: { item in
-                        router.compose("About \u{201C}\(item.title)\u{201D} (\(sessionWhen(item))): ")
-                    } reachable: { agentId in
-                        store.isActive(agentId)
-                    },
-                    tab: .timeline
+                    PlannerPage(yaad: services.yaad, route: $planner, scrollNow: plannerScrollNow, online: online, message: plannerMessage(_:ready:), reachable: store.isActive, nameOf: store.name(of:)),
+                    tab: .planner
                 )
             }
             Tab("Ghar", systemImage: "house", value: HomeView.Tab.ghar) {
@@ -218,10 +215,37 @@ struct PhoneHome: View {
             }
         }
         .tabBarMinimizeBehavior(page.isThread ? .onScrollUp : .onScrollDown)
-        .tabViewBottomAccessory {
-            DockAccessory(router: router, active: store.routing, online: online, thread: openThread)
+        .tabViewBottomAccessory(isEnabled: presentation.showsAccessory) {
+            DockAccessory(presentation: presentation, router: router, active: store.routing, online: online, thread: openThread)
         }
         .tint(.sageDeep)
+        .environment(reselect)
+        .background { TabReselectProbe(reselected: reselected) }
+    }
+
+    /// The dock's re-select, the same for every tab: a page in a sub-state goes back to its root; one already at its
+    /// root is left to scroll to the top. The Planner goes back to Timeline on today, and scrolls to now when it is there.
+    private func reselected(_ tab: HomeView.Tab) {
+        guard tab == page.tab else { return }
+        reselect.fire(tab)
+        let inSubState: Bool
+        switch tab {
+        case .chaavi: inSubState = chaavi.kind != .all || chaavi.scope != nil
+        case .ghar: inSubState = gharFilter != .everywhere
+        case .system: inSubState = systemFocus != nil
+        case .dadi, .planner: inSubState = false
+        }
+        switch TabReselect.reset(tab: tab, page: page, inSubState: inSubState) {
+        case .chatsList: show(.dadi)
+        case .chaaviEverything:
+            withAnimation(Motion.settle) {
+                chaavi.kind = .all
+                chaavi.scope = nil
+            }
+        case .gharEverywhere: withAnimation(Motion.settle) { gharFilter = .everywhere }
+        case .systemOverview: systemFocus = nil
+        case .none: break
+        }
     }
 
     /// Chats, or the thread the Chats tab has open.
@@ -229,7 +253,7 @@ struct PhoneHome: View {
         ZStack {
             switch dadiPage {
             case .thread(let agentId):
-                ThreadView(hath: services.hath, nas: services.nas, agentId: agentId, name: store.name(of: agentId), live: store.live, lanes: store.lanes(of: agentId), connections: store.connections, draft: drafts.draft(for: agentId)) { seq in
+                ThreadView(hath: services.hath, nas: services.nas, agentId: agentId, name: store.name(of: agentId), live: store.live, running: store.running(of: agentId), counts: store.counts(of: agentId), connections: store.connections, draft: drafts.draft(for: agentId)) { seq in
                     Task { await store.markRead(services.hath, agentId: agentId, through: seq) }
                 } details: {
                     agentSheet = agentId
@@ -237,7 +261,7 @@ struct PhoneHome: View {
                     .id(agentId)
                     .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .opacity))
             default:
-                ChatsView(threads: store.threads, lanes: store.lanes(of:), error: store.error, loading: !store.loaded, retry: { Task { await store.load(services.hath) } }) { agentId in
+                ChatsView(threads: store.threads, running: store.running(of:), error: store.error, loading: !store.loaded, retry: { Task { await store.load(services.hath) } }) { agentId in
                     show(.thread(agentId))
                 } details: { agentId in
                     agentSheet = agentId
@@ -251,7 +275,12 @@ struct PhoneHome: View {
     private var openThread: DockThread? {
         guard case .thread(let agentId) = page else { return nil }
         let draft = drafts.draft(for: agentId)
-        return DockThread(agentId: agentId, name: store.name(of: agentId), draft: draft) { draft.send(services.hath, to: agentId) }
+        return DockThread(name: store.name(of: agentId), draft: draft) { draft.send(services.hath, to: agentId) }
+    }
+
+    /// What the dock's accessory shows for the open page.
+    private var presentation: DockPresentation {
+        DockPresentation.of(page: page, editing: openThread?.draft.editing ?? false)
     }
 
     /// The Chats tab's badge: Ankur's unread replies.
@@ -293,16 +322,18 @@ struct PhoneHome: View {
             .buttonBorderShape(.circle)
             .accessibilityLabel("Open sidebar")
             Spacer()
-            if tab == .timeline {
+            if tab == .planner, planner.section == .checklist {
+                NameBubble(title: "Checklist", details: nil)
+            } else if tab == .planner {
                 Menu {
-                    Picker("View", selection: $timelineMode.animation(Motion.settle)) {
-                        ForEach(TimelineMode.allCases, id: \.self) { mode in
+                    Picker("View", selection: Binding(get: { planner.mode }, set: { mode in withAnimation(Motion.settle) { planner.show(mode) } })) {
+                        ForEach(PlannerMode.allCases, id: \.self) { mode in
                             Label(mode.rawValue, systemImage: mode.symbol).tag(mode)
                         }
                     }
                 } label: {
                     HStack(spacing: 5) {
-                        Text(timelineMode.rawValue)
+                        Text(planner.mode.rawValue)
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.ink)
                             .contentTransition(.opacity)
@@ -316,8 +347,8 @@ struct PhoneHome: View {
                 }
                 .buttonStyle(.plain)
                 .glassEffect(.regular.interactive(), in: .capsule)
-                .accessibilityLabel("Timeline view: \(timelineMode.rawValue)")
-                .sensoryFeedback(.selection, trigger: timelineMode)
+                .accessibilityLabel("Planner view: \(planner.mode.rawValue)")
+                .sensoryFeedback(.selection, trigger: planner.mode)
             } else if let title = title(of: shown) {
                 NameBubble(title: title, details: shown.isThread ? { if case .thread(let agentId) = shown { agentSheet = agentId } } : nil)
                     .id(title)
@@ -334,15 +365,6 @@ struct PhoneHome: View {
                 .buttonStyle(.glass)
                 .buttonBorderShape(.circle)
                 .accessibilityLabel("New login or note")
-            } else if tab == .timeline {
-                Button { needsTime = true } label: {
-                    Image(systemName: TimelineMode.needsTimeSymbol)
-                        .font(.body.weight(.semibold))
-                        .frame(width: 22, height: 22)
-                }
-                .buttonStyle(.glass)
-                .buttonBorderShape(.circle)
-                .accessibilityLabel(TimelineMode.needsTimeTitle)
             } else if shown.isThread {
                 RouterMark(active: store.routing)
                     .frame(width: 52, height: 52)
@@ -364,7 +386,7 @@ struct PhoneHome: View {
         switch page {
         case .dadi: "દાદી"
         case .thread(let agentId): store.name(of: agentId)
-        case .timeline: "Timeline"
+        case .planner: "Planner"
         case .ghar: "Ghar"
         case .chaavi: "Chaavi"
         case .system: "System"
@@ -383,6 +405,12 @@ struct PhoneHome: View {
     }
 
     /// Opens `next`, in its own tab.
+    /// Opens the thread of the agent a Planner item belongs to, with Ankur's RSVP ready in its composer when given.
+    private func plannerMessage(_ agentId: String, ready text: String?) {
+        if let text { drafts.draft(for: agentId).text = text }
+        show(.thread(agentId))
+    }
+
     private func show(_ next: HomeView.Page) {
         withAnimation(Motion.settle) {
             if next.tab == .dadi { dadiPage = next }

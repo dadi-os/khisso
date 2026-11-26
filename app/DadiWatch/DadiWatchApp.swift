@@ -15,7 +15,7 @@ struct DadiWatchApp: App {
         WindowGroup {
             TabView {
                 DadiPage(store: store)
-                TodayPage(snapshot: store.snapshot)
+                TodayPage(store: store)
                 AgentsPage(store: store)
                 BoxPage(store: store)
             }

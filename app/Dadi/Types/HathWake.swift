@@ -20,14 +20,6 @@ struct WakeReason: Decodable, Sendable, Hashable {
     let ref: String?
 }
 
-/// Where a wake stands. `waiting` appears only on an agent's latest wake, when its work lane watches a task or agent.
-enum WakeOutcome: String, Decodable, Sendable, Hashable {
-    case running
-    case waiting
-    case yielded
-    case failed
-}
-
 /// Model usage summed over a wake's model calls.
 struct WakeUsage: Decodable, Sendable, Hashable {
     /// How many model calls.
@@ -46,23 +38,14 @@ struct WakeUsage: Decodable, Sendable, Hashable {
     }
 }
 
-/// What a wake did, counted.
-struct WakeCounts: Decodable, Sendable, Hashable {
-    let toolCalls: Int
-    let messagesSent: Int
-    let messagesReceived: Int
-
-    private enum CodingKeys: String, CodingKey {
-        case toolCalls = "tool_calls"
-        case messagesSent = "messages_sent"
-        case messagesReceived = "messages_received"
-    }
-}
-
-/// A message as the wake routes return it; its attachments are not read.
+/// A message as the wake routes return it; its attachments are not read. A `notice` is Hath's note to the agent
+/// (a helper's report, a routine or reminder firing, the answer time, a failed run).
 struct WakeMessage: Decodable, Sendable, Hashable {
     let id: String
     let seq: Int
+    let kind: MessageKind
+    /// What the sender says it leaves open; nil on a note or a message with none.
+    let status: MessageStatus?
     /// Nil when Ankur sent it.
     let fromAgentId: String?
     /// Nil when it was sent to Ankur.
@@ -71,7 +54,7 @@ struct WakeMessage: Decodable, Sendable, Hashable {
     let createdAt: Date
 
     private enum CodingKeys: String, CodingKey {
-        case id, seq, content
+        case id, seq, kind, status, content
         case fromAgentId = "from_agent_id"
         case toAgentId = "to_agent_id"
         case createdAt = "created_at"
@@ -86,7 +69,7 @@ struct WakeSummary: Decodable, Sendable, Hashable, Identifiable {
     /// The message that opened the wake, when one did.
     let openedBy: WakeMessage?
     let startedAt: Date
-    /// Nil while a lane run is queued or running.
+    /// Nil while the wake runs.
     let endedAt: Date?
     let outcome: WakeOutcome
     /// Set when the outcome is `failed`.
@@ -154,7 +137,6 @@ struct WakeMessageEntry: Decodable, Sendable, Hashable {
 struct WakeTurn: Decodable, Sendable, Hashable {
     let ord: Int
     let at: Date
-    let lane: Lane
     let thinking: String?
     let text: String?
     let calls: [WakeToolCall]

@@ -12,16 +12,16 @@ private enum WakeExamples {
       "counts":{"tool_calls":22,"messages_sent":1,"messages_received":1},"activity_trimmed":false},
      "entries":[
       {"ord":0,"at":"2026-11-06T03:54:22.551Z","type":"message","direction":"received","message":{"id":"7c1e2b9a-3d4f-4e55-8a10-5b2f9e000001","seq":23923,"kind":"message","status":null,"from_agent_id":null,"to_agent_id":"networking-specialist","content":"I will close the linkedin premium, as for networking, this continues...","created_at":"2026-11-06T03:54:22.551Z","attachments":[]}},
-      {"ord":1,"at":"2026-11-06T03:54:25.100Z","type":"turn","lane":"process","usage":{"input_tokens":4,"output_tokens":312,"cache_write":1200,"cache_read":22000},"thinking":"Ankur wants LinkedIn replies drafted and sent...","text":null,
-       "calls":[{"id":"toolu_01A","name":"steer_work","input":{"instruction":"Go through LinkedIn backlog..."},"log_id":"a1f0c0de-0000-4000-8000-000000000011","result":{"content":"{\"queued\":true,\"running\":false,\"terminated\":false}","is_error":false,"truncated":false,"chars":52}}]},
-      {"ord":2,"at":"2026-11-06T03:54:27.777Z","type":"message","direction":"sent","message":{"id":"7c1e2b9a-3d4f-4e55-8a10-5b2f9e000002","seq":23924,"kind":"message","status":"running","from_agent_id":"networking-specialist","to_agent_id":null,"content":"Got it. I'm going through the LinkedIn backlog now...","created_at":"2026-11-06T03:54:27.777Z","attachments":[]}},
-      {"ord":3,"at":"2026-11-06T03:55:02.000Z","type":"turn","lane":"work","usage":{"input_tokens":4,"output_tokens":2100,"cache_write":15200,"cache_read":60700},"thinking":"I should read the tracker first...","text":"Starting with the LinkedIn browser task.",
+      {"ord":1,"at":"2026-11-06T03:54:25.100Z","type":"turn","usage":{"input_tokens":4,"output_tokens":312,"cache_write":1200,"cache_read":22000},"thinking":"Ankur wants LinkedIn replies drafted and sent...","text":null,
+       "calls":[{"id":"toolu_01A","name":"read_file","input":{"path":"/tracker.md"},"log_id":"a1f0c0de-0000-4000-8000-000000000011","result":{"content":"{\"queued\":true,\"running\":false,\"terminated\":false}","is_error":false,"truncated":false,"chars":52}}]},
+      {"ord":2,"at":"2026-11-06T03:54:27.777Z","type":"message","direction":"sent","message":{"id":"7c1e2b9a-3d4f-4e55-8a10-5b2f9e000002","seq":23924,"kind":"message","status":"needs_input","from_agent_id":"networking-specialist","to_agent_id":null,"content":"Got it. I'm going through the LinkedIn backlog now...","created_at":"2026-11-06T03:54:27.777Z","attachments":[]}},
+      {"ord":3,"at":"2026-11-06T03:55:02.000Z","type":"turn","usage":{"input_tokens":4,"output_tokens":2100,"cache_write":15200,"cache_read":60700},"thinking":"I should read the tracker first...","text":"Starting with the LinkedIn browser task.",
        "calls":[{"id":"toolu_01B","name":"steer_browser","input":{"id":"task/browser/4fa9b970","message":"Read only..."},"log_id":"a1f0c0de-0000-4000-8000-000000000012","result":null}]}]}
     """#
 
     static let failed = #"""
     {"id":"0b6f7d5e-6a0c-4b1e-9a43-2f1d7c3a1002","agent_id":"efficiency-specialist","reason":{"kind":"schedule","ref":"5e0a7b1c-1111-4c22-9d33-aaaaaaaaaa01"},"opened_by":null,
-     "started_at":"2026-11-08T22:00:00.120Z","ended_at":"2026-11-08T22:06:41.900Z","outcome":"failed","error":"work lane stopped: prompt reached the 96000-token ceiling",
+     "started_at":"2026-11-08T22:00:00.120Z","ended_at":"2026-11-08T22:06:41.900Z","outcome":"failed","error":"prompt reached the 96000-token ceiling",
      "usage":{"calls":31,"input_tokens":120,"output_tokens":64020,"cache_write":910400,"cache_read":2710000},
      "counts":{"tool_calls":44,"messages_sent":0,"messages_received":0},"activity_trimmed":false}
     """#
@@ -61,7 +61,7 @@ struct WakeDecodingTests {
     @Test func decodesTheOtherExampleWakes() throws {
         let failed = try WakeExamples.decode(WakeSummary.self, WakeExamples.failed)
         #expect(failed.outcome == .failed && failed.openedBy == nil)
-        #expect(failed.error == "work lane stopped: prompt reached the 96000-token ceiling")
+        #expect(failed.error == "prompt reached the 96000-token ceiling")
         let trimmed = try WakeExamples.decode(WakeSummary.self, WakeExamples.trimmed)
         #expect(trimmed.activityTrimmed && trimmed.usage.calls == 0)
         let scheduled = try WakeExamples.decode(WakeSummary.self, WakeExamples.scheduleOpened)
@@ -92,17 +92,26 @@ struct WakeDecodingTests {
         #expect([WakeOutcome.running, .waiting, .yielded, .failed].map(WakeFormat.label) == ["Running", "Waiting", "Yielded", "Failed"])
         let names = ["career-manager": "Career manager"]
         let nameOf: (String) -> String = { names[$0] ?? $0 }
-        #expect(WakeFormat.reason(WakeReason(kind: .message, ref: "career-manager"), nameOf: nameOf) == "Opened by Career manager")
-        #expect(WakeFormat.reason(WakeReason(kind: .message, ref: nil), nameOf: nameOf) == "Opened by Ankur")
-        #expect([WakeReasonKind.schedule, .recovery, .steer, .manual].map { WakeFormat.reason(WakeReason(kind: $0, ref: nil), nameOf: nameOf) } == ["Schedule", "Recovery", "Steer", "Manual"])
+        func text(_ kind: WakeReasonKind, _ ref: String?, _ routines: Routines? = nil) -> String {
+            WakeFormat.reasonText(WakeReason(kind: kind, ref: ref), routines: routines, nameOf: nameOf)
+        }
+        let routines = Routines(
+            routines: [Routine(id: "r1", agentId: "a", title: "Morning triage", procedure: "", at: "08:00", days: nil, nextRunAt: .now, lastRunAt: nil, active: true)],
+            reminders: [Reminder(id: "m1", agentId: "a", note: "check the form", runAt: .now)]
+        )
+        #expect(text(.message, "career-manager") == "Opened by Career manager")
+        #expect(text(.message, nil) == "Opened by Ankur")
+        #expect(text(.schedule, "r1", routines) == "Routine Morning triage")
+        #expect(text(.schedule, "m1", routines) == "Reminder check the form")
+        #expect(text(.schedule, "gone", routines) == "Routine or reminder")
+        #expect([WakeReasonKind.recovery, .steer, .manual].map { text($0, nil) } == ["Recovery", "Helper reported back", "Started by hand"])
     }
 
-    @Test func summarisesCountsUsageAndDuration() throws {
+    @Test func summarisesCountsAndDuration() throws {
         let running = try WakeExamples.decode(WakeDetail.self, WakeExamples.running).wake
-        #expect(WakeFormat.counts(running.counts) == "22 tool calls · 1 in · 1 out")
+        #expect(WakeFormat.counts(running.counts) == "22 tool calls · 1 message sent")
         #expect(WakeFormat.counts(WakeCounts(toolCalls: 1, messagesSent: 0, messagesReceived: 0)) == "1 tool call")
         #expect(WakeFormat.counts(WakeCounts(toolCalls: 0, messagesSent: 0, messagesReceived: 0)) == "")
-        #expect(WakeFormat.usage(running.usage) == "21.4k tok · 940.1k cached")
         let failed = try WakeExamples.decode(WakeSummary.self, WakeExamples.failed)
         #expect(WakeFormat.duration(failed, now: .now) == "7m")
         #expect(WakeFormat.duration(running, now: running.startedAt.addingTimeInterval(95)) == "2m")
@@ -110,7 +119,7 @@ struct WakeDecodingTests {
     }
 }
 
-/// An open wake shows its entries oldest to newest under a lane filter, and the Now line reads the work lane.
+/// An open wake shows its entries oldest to newest, and the current call is the latest call.
 struct WakeEntriesTests {
     private func entries() throws -> [WakeEntry] {
         try WakeExamples.decode(WakeDetail.self, WakeExamples.running).entries
@@ -120,17 +129,10 @@ struct WakeEntriesTests {
         #expect(try entries().map(\.ord) == [0, 1, 2, 3])
     }
 
-    @Test func filtersTurnsByLaneAndKeepsEveryMessage() throws {
-        let all = try entries()
-        #expect(LaneFilter.all.apply(to: all).map(\.ord) == [0, 1, 2, 3])
-        #expect(LaneFilter.work.apply(to: all).map(\.ord) == [0, 2, 3])
-        #expect(LaneFilter.process.apply(to: all).map(\.ord) == [0, 1, 2])
-    }
-
-    @Test func derivesTheNowLineFromTheWorkLanesLatestCall() throws {
+    @Test func derivesTheCurrentCallFromTheLatestCall() throws {
         let line = try #require(WakeFormat.currentCall(entries()))
         #expect(line.name == "steer_browser" && line.target == "task/browser/4fa9b970" && line.running)
-        #expect(try WakeFormat.currentCall(Array(entries().prefix(3))) == nil)
+        #expect(try WakeFormat.currentCall(Array(entries().prefix(1))) == nil)
     }
 
     @Test func aFinishedCallIsNotRunning() throws {
@@ -180,7 +182,7 @@ struct HaltTests {
         #expect(WakeFormat.haltSentence(ServiceError(status: 500, type: "other", message: "Hath's words")) == "Hath's words")
     }
 
-    @Test func readsWakeEventsAsOneKindOfChange() async throws {
+    @Test func readsWakeEventsWithTheirOutcomeAndCounts() async throws {
         let lines = AsyncStream<String> { continuation in
             continuation.yield(#"data: {"type":"wake_started","agent_id":"a","wake_id":"w1","reason":{"kind":"message","ref":null},"at":"2026-11-09T13:00:00.000Z"}"#)
             continuation.yield(#"data: {"type":"wake_ended","agent_id":"a","wake_id":"w1","outcome":"yielded","at":"2026-11-09T13:01:00.000Z"}"#)
@@ -189,7 +191,11 @@ struct HaltTests {
         }
         var got: [HathEvent] = []
         for try await event in HathClient.events(from: lines) { got.append(event) }
-        #expect(got == Array(repeating: .wakeChanged(agentId: "a", wakeId: "w1"), count: 3))
+        #expect(got == [
+            .wakeStarted(agentId: "a", wakeId: "w1"),
+            .wakeEnded(agentId: "a", wakeId: "w1", outcome: .yielded),
+            .wakeActivity(agentId: "a", wakeId: "w1", counts: WakeCounts(toolCalls: 1, messagesSent: 0, messagesReceived: 0)),
+        ])
     }
 
     @Test func sendsTheTaskAddressAsOnePathSegment() async throws {
@@ -216,5 +222,30 @@ struct HaltTests {
         configuration.protocolClasses = [Catcher.self]
         try await HathClient(session: URLSession(configuration: configuration)).haltSession(agentId: agentId, taskId: taskId)
         return try #require(Catcher.url)
+    }
+}
+
+/// A wake's one-line facts and the minute groups its entries are drawn under.
+struct WakeCopyTests {
+    @Test func wordsAWakesFactsLine() throws {
+        let running = try WakeExamples.decode(WakeDetail.self, WakeExamples.running).wake
+        let line = WakeFormat.facts(running, now: running.startedAt.addingTimeInterval(95))
+        #expect(line.hasSuffix(" · running for 2m · 22 tool calls · 1 message sent"))
+        let failed = try WakeExamples.decode(WakeSummary.self, WakeExamples.failed)
+        #expect(WakeFormat.facts(failed, now: failed.startedAt.addingTimeInterval(3600)).contains(" · ran 7m"))
+    }
+
+    @Test func groupsEntriesUnderOneClockPerMinute() throws {
+        let entries = try WakeExamples.decode(WakeDetail.self, WakeExamples.running).entries
+        let groups = WakeFormat.inMinutes(entries)
+        #expect(groups.flatMap { $0.entries.map(\.ord) } == entries.map(\.ord))
+        #expect(groups.allSatisfy { group in group.entries.allSatisfy { AgentTime.clock($0.at) == group.clock } })
+        #expect(zip(groups, groups.dropFirst()).allSatisfy { $0.clock != $1.clock })
+        #expect(groups.count < entries.count || entries.count <= 1)
+    }
+
+    @Test func tagsOnlyOpenStatuses() {
+        #expect(StatusTag.text(.needsInput) == "Needs input" && StatusTag.text(.blocked) == "Blocked")
+        #expect(StatusTag.text(.done) == nil && StatusTag.text(nil) == nil)
     }
 }

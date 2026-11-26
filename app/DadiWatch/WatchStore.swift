@@ -25,6 +25,8 @@ final class WatchStore: NSObject {
     /// Why the last request did not get through.
     private(set) var problem: String?
     private(set) var reachable = false
+    /// Ticks asked of the iPhone and not yet in a snapshot, shown at once.
+    private(set) var ticks: [String: Bool] = [:]
 
     private static let saved = "snapshot"
 
@@ -79,6 +81,16 @@ final class WatchStore: NSObject {
         request([WatchLink.op: WatchLink.reply, WatchLink.text: words, WatchLink.agentId: agentId], done: done)
     }
 
+    /// Ticks the task or takes the tick back through the iPhone; shown at once, put back with its reason if it fails.
+    func tick(_ id: String, done: Bool) {
+        ticks[id] = done
+        request([WatchLink.op: WatchLink.tick, WatchLink.taskId: id, WatchLink.done: done]) { [weak self] error in
+            guard let error else { return }
+            self?.ticks[id] = nil
+            self?.problem = error
+        }
+    }
+
     /// Lets a finished hand-off's result go.
     func settle() {
         if case .sent = handoff { handoff = .idle }
@@ -103,6 +115,7 @@ final class WatchStore: NSObject {
     private func apply(_ data: Data) {
         do {
             snapshot = try WatchLink.decoder.decode(WatchSnapshot.self, from: data)
+            ticks = [:]
             UserDefaults.standard.set(data, forKey: Self.saved)
         } catch {
             problem = "Your iPhone sent something this watch can't read; update both."

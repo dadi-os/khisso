@@ -2,13 +2,13 @@ import SwiftUI
 
 /// Home: dadi's pages in the dock, with Chats and every agent thread
 /// live from Hath, and the drawer beside them (PhoneHome). Home owns the event
-/// stream that keeps threads, running lanes and the open thread current.
+/// stream that keeps threads, what each agent is doing and the open thread current.
 struct HomeView: View {
     /// The page Home shows.
     enum Page: Hashable {
         case dadi
         case thread(String)
-        case timeline
+        case planner
         case ghar
         case chaavi
         case system
@@ -17,7 +17,7 @@ struct HomeView: View {
         var tab: Tab {
             switch self {
             case .dadi, .thread: .dadi
-            case .timeline: .timeline
+            case .planner: .planner
             case .ghar: .ghar
             case .chaavi: .chaavi
             case .system: .system
@@ -31,13 +31,13 @@ struct HomeView: View {
 
     /// The dock's five tabs.
     enum Tab: Hashable {
-        case dadi, timeline, ghar, chaavi, system
+        case dadi, planner, ghar, chaavi, system
 
         /// The page a tab opens on.
         var home: Page {
             switch self {
             case .dadi: .dadi
-            case .timeline: .timeline
+            case .planner: .planner
             case .ghar: .ghar
             case .chaavi: .chaavi
             case .system: .system
@@ -70,49 +70,56 @@ struct HomeView: View {
     }
 }
 
-/// One agent thread in a list, led by its name as in thaali: its name, when,
-/// and its last line, which gives way to thaali's flowing dots while the agent
-/// thinks. A thread with replies not yet read shows their count, its name
-/// bolder, as in thaali. A working agent's row runs the sheen, which the list
-/// puts on the row's shape. Agents carry no color of their own.
+/// One agent thread in a list, led by its name as in thaali: its name, when, and its last line, which gives way
+/// to the agent's state while it works or waits. A thread with replies not yet read shows their count, its name
+/// bolder. The state dot leads the name: sage and pulsing for working, a tide ring for waiting, a late ring for an
+/// overdue or stopped job; an agent at rest shows none. Agents carry no color of their own.
 struct ThreadRow: View {
     let thread: ThreadSummary
-    let lanes: Set<Lane>
+    let running: AgentRecord.Running
     let unread: Int
+    let now: Date
 
     var body: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline, spacing: 7) {
+                    if running.state != .idle || running.mark(at: now) != nil {
+                        StateDot(state: running.state, mark: running.mark(at: now))
+                            .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
+                            .transition(.opacity)
+                    }
                     Text(thread.agentName)
                         .font(.subheadline.weight(unread > 0 ? .bold : .semibold))
                         .foregroundStyle(.ink)
                         .lineLimit(1)
+                    if let mark = running.mark(at: now) {
+                        Text(mark.word).font(.caption2.weight(.medium)).foregroundStyle(Color.lateInk)
+                    }
                     Spacer(minLength: 6)
                     Text(thread.lastAt, format: .relative(presentation: .named, unitsStyle: .narrow))
                         .font(.caption2)
                         .foregroundStyle(unread > 0 ? Color.sageText : .inkFaint)
                 }
-                if lanes.contains(.process) {
-                    ProcessingMark()
-                        .frame(height: 18)
-                        .transition(.opacity)
-                } else {
-                    Text((thread.fromUser ? "You: " : "") + Agent.preview(thread.lastMessage))
-                        .font(.footnote)
-                        .foregroundStyle(unread > 0 ? Color.ink : .inkMuted)
-                        .lineLimit(1)
-                        .transition(.opacity)
-                }
+                Text(ChatGroups.line(thread, running: running, now: now))
+                    .font(.footnote)
+                    .foregroundStyle(unread > 0 ? Color.ink : .inkMuted)
+                    .lineLimit(1)
             }
             if unread > 0 {
                 UnreadBadge(count: unread)
             }
         }
-        .animation(Motion.settle, value: lanes)
+        .animation(Motion.settle, value: running.state)
         .animation(Motion.pop, value: unread)
         .contentShape(.rect)
     }
+}
+
+/// A wake that ended failed; its timeline has the reason.
+struct WakeFailure: Identifiable, Equatable {
+    let id = UUID()
+    let agentId: String
 }
 
 /// A router run that failed, with its own message.
@@ -121,16 +128,16 @@ struct RouterFailure: Identifiable, Equatable {
     let message: String
 }
 
-/// Threads, running lanes and live messages for Home, fed by GET /threads,
-/// GET /agents for the lanes already running, and Hath's event stream.
+/// Threads, what each agent is doing and live messages for Home, fed by GET /threads, GET /agents and Hath's
+/// event stream.
 @MainActor
 @Observable
 final class HomeStore {
     private(set) var threads: [ThreadSummary] = []
-    /// Each agent's lanes running right now.
-    private(set) var lanes: [String: Set<Lane>] = [:]
-    /// The agents not retired, which can still be messaged.
-    private(set) var active: Set<String> = []
+    /// Every agent as Hath last listed it, its `running` moved by wake events between reads.
+    private(set) var agents: [String: AgentRecord] = [:]
+    /// What each running wake has done so far, from `wake_activity`.
+    private(set) var liveCounts: [String: WakeCounts] = [:]
     /// The router runs in flight, by id: runs overlap, so the router is active while any is.
     private(set) var routerRuns: Set<String> = []
     /// The newest router failure, so a device that did not send the words can say so.
@@ -142,6 +149,10 @@ final class HomeStore {
     private(set) var connections = 0
     /// Per agent, bumped on each wake event, so an open agent sheet reads its wakes again.
     private(set) var wakeChanges: [String: Int] = [:]
+    /// Bumped when a routine or reminder changes, so an open agent sheet reads them again.
+    private(set) var scheduleChanges = 0
+    /// The newest wake that failed, so the app can say whose run it was.
+    private(set) var wakeFailure: WakeFailure?
     private(set) var error: String?
     /// Why the router's runs could not be read; shown as a toast, not as the chats' error.
     private(set) var sideProblem: String?
@@ -174,7 +185,7 @@ final class HomeStore {
     }
 
     /// Follows Hath's events until the view goes away. Each connect reloads the
-    /// threads and lanes and bumps `connections`, since the stream does not
+    /// threads and agents and bumps `connections`, since the stream does not
     /// replay; a dropped or silent stream is reported and reopened after a
     /// short, growing delay, up to 30 s.
     func follow(_ hath: HathClient) async {
@@ -182,9 +193,7 @@ final class HomeStore {
         while !Task.isCancelled {
             do {
                 let events = try await hath.events()
-                let agents = try await hath.agents()
-                lanes = Dictionary(uniqueKeysWithValues: agents.map { ($0.id, $0.lanes) }).filter { !$0.value.isEmpty }
-                active = Set(agents.filter(\.active).map(\.id))
+                try await loadAgents(hath)
                 await load(hath)
                 await loadRouter(hath)
                 connections += 1
@@ -227,14 +236,38 @@ final class HomeStore {
         threads[index].unread = unread
     }
 
-    /// Agents with any lane running.
-    var running: Set<String> { Set(lanes.keys) }
+    /// Reads the roster, replacing what each agent is doing with what Hath reports.
+    func loadAgents(_ hath: HathClient) async throws {
+        let listed = try await hath.agents()
+        agents = Dictionary(uniqueKeysWithValues: listed.map { ($0.id, $0) })
+        liveCounts = liveCounts.filter { agents[$0.key]?.running.working == true }
+    }
+
+    /// Reads the roster again, saying why it could not be read.
+    func refreshAgents(_ hath: HathClient) async {
+        do {
+            try await loadAgents(hath)
+        } catch is CancellationError {
+            return
+        } catch {
+            sideProblem = "Couldn't read the agents: \(error.localizedDescription)"
+        }
+    }
 
     /// Whether `agentId` is an agent that can still be messaged.
-    func isActive(_ agentId: String) -> Bool { active.contains(agentId) }
+    func isActive(_ agentId: String) -> Bool { agents[agentId]?.active == true }
 
-    /// The lanes `agentId` has running.
-    func lanes(of agentId: String) -> Set<Lane> { lanes[agentId] ?? [] }
+    /// What `agentId` is doing; at rest for an agent not listed.
+    func running(of agentId: String) -> AgentRecord.Running { agents[agentId]?.running ?? .quiet }
+
+    /// What the wake running now on `agentId` has done so far.
+    func counts(of agentId: String) -> WakeCounts? { liveCounts[agentId] }
+
+    private func setWorking(_ agentId: String, _ working: Bool) {
+        guard var agent = agents[agentId] else { return }
+        agent.running = AgentRecord.Running(working: working, waitingOn: agent.running.waitingOn, job: agent.running.job)
+        agents[agentId] = agent
+    }
 
     /// The display name of an agent's thread; the id until the thread is known.
     func name(of agentId: String) -> String {
@@ -243,18 +276,27 @@ final class HomeStore {
 
     private func apply(_ event: HathEvent, _ hath: HathClient) async {
         switch event {
-        case .message:
+        case .message(_, let message):
             live = event
             await load(hath)
+            if !message.fromUser { await refreshAgents(hath) }
         case .threadRead(let agentId, let readSeq, let unread):
             setRead(agentId, readSeq: readSeq, unread: unread)
-        case .laneStarted(let agentId, let lane):
-            lanes[agentId, default: []].insert(lane)
-        case .laneFinished(let agentId, let lane), .laneFailed(let agentId, let lane, _):
-            lanes[agentId]?.remove(lane)
-            if lanes[agentId]?.isEmpty == true { lanes[agentId] = nil }
-        case .wakeChanged(let agentId, _):
+        case .wakeStarted(let agentId, _):
+            setWorking(agentId, true)
+            liveCounts[agentId] = WakeCounts.none
             wakeChanges[agentId, default: 0] += 1
+            await refreshAgents(hath)
+        case .wakeActivity(let agentId, _, let counts):
+            liveCounts[agentId] = counts
+        case .wakeEnded(let agentId, _, let outcome):
+            setWorking(agentId, false)
+            liveCounts[agentId] = nil
+            wakeChanges[agentId, default: 0] += 1
+            if outcome == .failed { wakeFailure = WakeFailure(agentId: agentId) }
+            await refreshAgents(hath)
+        case .schedulesChanged:
+            scheduleChanges += 1
         case .routerStarted(let runId):
             routerRuns.insert(runId)
         case .routerFinished(let runId):

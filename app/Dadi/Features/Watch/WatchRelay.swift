@@ -14,6 +14,7 @@ final class WatchRelay: NSObject {
         case refresh
         case route(String)
         case reply(String, to: String)
+        case tick(String, done: Bool)
     }
 
     /// Why the relay could not answer.
@@ -51,7 +52,7 @@ final class WatchRelay: NSObject {
         guard session.activationState == .activated, session.isPaired, session.isWatchAppInstalled else { return }
         do {
             let snapshot = try await build()
-            if let sent, sent.today == snapshot.today, sent.threads == snapshot.threads, sent.box == snapshot.box { return }
+            if let sent, sent.today == snapshot.today, sent.tasks == snapshot.tasks, sent.threads == snapshot.threads, sent.box == snapshot.box { return }
             try session.updateApplicationContext([WatchLink.snapshot: try WatchLink.encoder.encode(snapshot)])
             sent = snapshot
         } catch {
@@ -86,32 +87,54 @@ final class WatchRelay: NSObject {
         }
         async let threads = services.hath.threads()
         async let agents = services.hath.agents()
-        async let blocks = services.yaad.timeline(.planner, from: start, to: end)
+        async let blocks = services.yaad.plans(from: start, to: end)
+        async let list = services.yaad.tasks(on: TaskLogic.key(start))
         async let status = services.nas.status()
-        let (t, a, b, s) = try await (threads, agents, blocks, status)
-        let lanes = Dictionary(uniqueKeysWithValues: a.map { ($0.id, $0.lanes) })
+        let (t, a, b, l, s) = try await (threads, agents, blocks, list, status)
+        let groups = TaskLogic.groups(l, on: start)
+        let running = Dictionary(uniqueKeysWithValues: a.map { ($0.id, $0.running) })
+        let shown = t.sorted { $0.lastAt > $1.lastAt }.prefix(WatchLink.threadLimit)
+        let attention = try await Self.attention(services.hath, threads: shown.filter { !$0.fromUser && running[$0.agentId]?.working != true }.prefix(WatchLink.attentionLimit).map(\.agentId))
         return WatchSnapshot(
             at: .now,
-            today: b.compactMap { item in
-                guard !item.cancelled, let start = item.startAt, let end = item.endAt else { return nil }
-                return WatchSnapshot.Block(id: item.id, title: item.title, startAt: start, endAt: end, done: item.completed)
-            }
-            .sorted { $0.startAt < $1.startAt },
-            threads: t.sorted { $0.lastAt > $1.lastAt }.prefix(WatchLink.threadLimit).map { thread in
-                let running = lanes[thread.agentId] ?? []
-                return WatchSnapshot.Thread(
+            today: WidgetLogic.tilePlans(b, on: start).compactMap { plan in
+                plan.endAt.map { WatchSnapshot.Block(id: plan.id, title: plan.title, startAt: plan.startAt, endAt: $0, declined: plan.declined) }
+            },
+            tasks: ((groups.pastDue + groups.open).prefix(WatchLink.taskLimit) + groups.done).map { task in
+                WatchSnapshot.Task(id: task.id, title: task.title, done: task.done, pastDue: !task.done && (task.pastDue || task.closesAt.map { $0 < start } == true), closesAt: task.closesAt)
+            },
+            threads: shown.map { thread in
+                WatchSnapshot.Thread(
                     agentId: thread.agentId,
                     name: thread.agentName,
                     lastMessage: String(thread.lastMessage.prefix(WatchLink.messageLimit)),
                     lastAt: thread.lastAt,
                     fromUser: thread.fromUser,
-                    processing: running.contains(.process),
-                    working: running.contains(.work),
+                    state: running[thread.agentId]?.state ?? .idle,
+                    attention: attention[thread.agentId],
                     unread: thread.unread
                 )
             },
             box: WatchSnapshot.Box(down: s.services.filter { !$0.healthy }.map(\.name))
         )
+    }
+
+    /// What each of `agentIds` leaves open for Ankur, read from its newest messages and wakes.
+    private static func attention(_ hath: HathClient, threads agentIds: [String]) async throws -> [String: WatchSnapshot.Thread.Attention] {
+        try await withThrowingTaskGroup(of: (String, WatchSnapshot.Thread.Attention?).self) { group in
+            for agentId in agentIds {
+                group.addTask {
+                    switch try await Standing.read(hath: hath, agentId: agentId)?.kind {
+                    case .needsInput: (agentId, .needsInput)
+                    case .blocked: (agentId, .blocked)
+                    case nil: (agentId, nil)
+                    }
+                }
+            }
+            var found: [String: WatchSnapshot.Thread.Attention] = [:]
+            for try await (agentId, kind) in group { found[agentId] = kind }
+            return found
+        }
     }
 
     private func handle(_ request: Request, reply: Reply) async {
@@ -123,6 +146,14 @@ final class WatchRelay: NSObject {
                 let snapshot = try await build()
                 sent = snapshot
                 reply.send([WatchLink.snapshot: try WatchLink.encoder.encode(snapshot)])
+            } catch {
+                reply.send([WatchLink.error: error.localizedDescription])
+            }
+        case .tick(let taskId, let done):
+            do {
+                _ = try await services().yaad.setDone(done, task: taskId)
+                reply.send([:])
+                await push()
             } catch {
                 reply.send([WatchLink.error: error.localizedDescription])
             }
@@ -202,6 +233,11 @@ extension WatchRelay: WCSessionDelegate {
                 return reply.send([WatchLink.error: "The reply didn't arrive."])
             }
             request = .reply(text, to: agentId)
+        case WatchLink.tick:
+            guard let taskId = message[WatchLink.taskId] as? String, let done = message[WatchLink.done] as? Bool else {
+                return reply.send([WatchLink.error: "The task didn't arrive."])
+            }
+            request = .tick(taskId, done: done)
         default:
             return reply.send([WatchLink.error: "This iPhone's dadi doesn't know that request; update it."])
         }

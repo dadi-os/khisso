@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The entries of an open wake, oldest to newest: messages as bubbles aligned by direction, model turns
-/// as quiet blocks tagged by lane.
+/// as quiet blocks, and Hath's own notes to the agent as dashed bubbles.
 struct WakeEntryList: View {
     let hath: HathClient
     /// The agent whose wake it is; a truncated result is fetched under its id.
@@ -14,19 +14,31 @@ struct WakeEntryList: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            ForEach(entries) { entry in
-                switch entry {
-                case .message(let message): MessageBubble(entry: message, nameOf: nameOf, selectAgent: selectAgent)
-                case .turn(let turn): TurnBlock(hath: hath, agentId: agentId, turn: turn)
+            ForEach(WakeFormat.inMinutes(entries)) { group in
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(group.clock).font(.system(size: 11.5)).monospacedDigit().foregroundStyle(.inkFaint)
+                    ForEach(group.entries) { entry in
+                        switch entry {
+                        case .message(let message): MessageBubble(entry: message, nameOf: nameOf, selectAgent: selectAgent)
+                        case .turn(let turn): TurnBlock(hath: hath, agentId: agentId, turn: turn)
+                        }
+                    }
                 }
             }
         }
     }
 }
 
-/// The time of day an entry happened.
-private func clock(_ date: Date) -> Text {
-    Text(date, format: .dateTime.hour().minute())
+/// What a message's status says it leaves open, as a tag.
+enum StatusTag {
+    /// "Needs input" or "Blocked"; nil for `done` and no status.
+    static func text(_ status: MessageStatus?) -> String? {
+        switch status {
+        case .needsInput: "Needs input"
+        case .blocked: "Blocked"
+        case .done, nil: nil
+        }
+    }
 }
 
 /// One message of the wake: received at the left, sent at the right, under its counterpart's name and the time.
@@ -42,21 +54,30 @@ private struct MessageBubble: View {
 
     private var received: Bool { entry.direction == .received }
 
+    /// Hath's own note to the agent, not something anyone wrote.
+    private var note: Bool { entry.message.kind == .notice }
+
     private var counterpartId: String? { received ? entry.message.fromAgentId : entry.message.toAgentId }
 
     var body: some View {
         VStack(alignment: received ? .leading : .trailing, spacing: 4) {
             HStack(spacing: 0) {
-                Text(received ? "From " : "To ")
-                AgentLink(agentId: counterpartId, name: counterpartId.map(nameOf) ?? "Ankur", select: selectAgent)
-                Text(" · ")
-                clock(entry.at)
+                if note {
+                    Text("Note from hath")
+                } else {
+                    Text(received ? "From " : "To ")
+                    AgentLink(agentId: counterpartId, name: counterpartId.map(nameOf) ?? "Ankur", select: selectAgent)
+                }
+                if let tag = StatusTag.text(entry.message.status) {
+                    Text(" · ")
+                    Text(tag.lowercased()).fontWeight(.medium).foregroundStyle(entry.message.status == .blocked ? Color.lateInk : .tideText)
+                }
             }
-            .font(.caption2)
+            .font(.system(size: 11.5))
             .foregroundStyle(.inkMuted)
             VStack(alignment: .leading, spacing: 4) {
                 Text(entry.message.content)
-                    .font(.footnote)
+                    .font(.system(size: 13))
                     .foregroundStyle(.ink)
                     .lineLimit(open ? nil : 5)
                     .textSelection(.enabled)
@@ -68,15 +89,21 @@ private struct MessageBubble: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(received ? Color.sage.opacity(0.12) : Color.ink.opacity(0.04), in: .rect(cornerRadius: 14, style: .continuous))
-            .overlay { if !received { RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.rule, lineWidth: 1) } }
+            .background(note ? .clear : received ? Color.sage.opacity(0.12) : Color.ink.opacity(0.04), in: .rect(cornerRadius: 14, style: .continuous))
+            .overlay {
+                if note {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.sageLine, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                } else if !received {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.rule, lineWidth: 1)
+                }
+            }
         }
         .frame(maxWidth: .infinity, alignment: received ? .leading : .trailing)
         .accessibilityElement(children: .contain)
     }
 }
 
-/// One model turn: its lane and time, what it said, its thinking folded, and a line per tool call.
+/// One model turn: what it said, its thinking in a compact expandable row, and a row per tool call.
 private struct TurnBlock: View {
     let hath: HathClient
     let agentId: String
@@ -92,35 +119,19 @@ private struct TurnBlock: View {
         HStack(alignment: .top, spacing: 10) {
             Rectangle().fill(.rule).frame(width: 1)
             VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 8) {
-                    Text(turn.lane == .work ? "WORK" : "PROCESS").font(.caption2.weight(.semibold)).tracking(1)
-                    clock(turn.at)
-                }
-                .font(.caption2)
-                .foregroundStyle(.inkMuted)
                 if let text = turn.text {
                     AgentMarkdown(source: text, compact: true)
                 }
                 if let thinking = turn.thinking {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Button { thinkingOpen.toggle() } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: "chevron.right").font(.caption2.weight(.bold)).rotationEffect(.degrees(thinkingOpen ? 90 : 0))
-                                Text("Thinking").fontWeight(.semibold)
-                                if !thinkingOpen { Text(firstLine).italic().lineLimit(1) }
-                                Spacer(minLength: 0)
-                            }
-                            .font(.caption)
-                            .foregroundStyle(.inkMuted)
-                            .frame(minHeight: 32)
-                            .contentShape(.rect)
-                        }
-                        .buttonStyle(.plain)
-                        if thinkingOpen {
-                            Text(thinking).font(.caption).foregroundStyle(.inkMuted).textSelection(.enabled).transition(.reveal)
-                        }
+                    Expandable(isOpen: $thinkingOpen, look: .row) {
+                        Text("Thinking").fontWeight(.semibold)
+                    } secondary: {
+                        if !thinkingOpen { Text(firstLine).italic().lineLimit(1) }
+                    } trailing: {
+                        EmptyView()
+                    } content: {
+                        Text(thinking).font(.system(size: 12)).foregroundStyle(.inkMuted).textSelection(.enabled)
                     }
-                    .reveals(on: thinkingOpen)
                 }
                 ForEach(turn.calls) { call in
                     CallRow(hath: hath, agentId: agentId, call: call)
@@ -146,40 +157,23 @@ private struct CallRow: View {
     @State private var open = false
     @State private var full = Full.idle
 
-    private var dot: Color {
-        guard let result = call.result else { return .sage }
-        return result.isError ? .danger : .sage
-    }
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Button { open.toggle() } label: { line }
-                .buttonStyle(.plain)
-            if open { details.transition(.reveal) }
-        }
-        .reveals(on: open)
-    }
-
-    private var line: some View {
-        HStack(spacing: 8) {
-            Circle().fill(dot).frame(width: 6, height: 6).opacity(call.result == nil ? 0.5 : 1)
-            Text(call.name).font(.system(.caption, design: .monospaced)).foregroundStyle(call.result?.isError == true ? Color.danger : .ink)
-            Text(WakeFormat.target(call.input)).font(.system(.caption2, design: .monospaced)).foregroundStyle(.inkMuted).lineLimit(1)
-            Spacer(minLength: 4)
-            if call.result == nil { Text("running").font(.caption2).foregroundStyle(.sageText) }
-            if call.result?.isError == true { Text("error").font(.caption2).foregroundStyle(.danger) }
-            if call.result?.truncated == true {
-                Text("cut")
-                    .font(.caption2)
-                    .foregroundStyle(.inkMuted)
-                    .padding(.horizontal, 6)
-                    .overlay { Capsule().strokeBorder(Color.sageLine, style: StrokeStyle(lineWidth: 1, dash: [3, 2])) }
+        Expandable(isOpen: $open, look: .row) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(call.name).font(.system(size: 12, design: .monospaced)).foregroundStyle(call.result?.isError == true ? Color.lateInk : .ink).lineLimit(1).fixedSize()
+                Text(WakeFormat.target(call.input)).font(.system(size: 11, design: .monospaced)).foregroundStyle(.inkMuted).lineLimit(1)
             }
+        } trailing: {
+            if call.result == nil {
+                Text("running").foregroundStyle(.sageText)
+            } else if call.result?.isError == true {
+                Text("error").foregroundStyle(.lateInk)
+            } else if call.result?.truncated == true {
+                Text("cut short").foregroundStyle(.inkFaint)
+            }
+        } content: {
+            details
         }
-        .frame(minHeight: 32)
-        .contentShape(.rect)
-        .accessibilityElement(children: .combine)
-        .accessibilityHint(open ? "Hides the call's input and result" : "Shows the call's input and result")
     }
 
     private var details: some View {
@@ -200,10 +194,6 @@ private struct CallRow: View {
             case .failed(let message): Label(message, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.danger)
             }
         }
-        .padding(.leading, 12)
-        .padding(.vertical, 6)
-        .overlay(alignment: .leading) { Rectangle().fill(.rule).frame(width: 1) }
-        .padding(.leading, 6)
     }
 
     private func block(_ title: String, text: String, failed: Bool = false) -> some View {
@@ -211,7 +201,7 @@ private struct CallRow: View {
             Text(title).font(.caption2.weight(.semibold)).tracking(1).foregroundStyle(.inkFaint)
             Text(text)
                 .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(failed ? Color.danger : .ink)
+                .foregroundStyle(failed ? Color.lateInk : .ink)
                 .textSelection(.enabled)
         }
     }

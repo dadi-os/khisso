@@ -3,26 +3,42 @@ import Foundation
 /// What the iPhone tells the watch: today's plan, the latest threads and the
 /// box's health, small enough to send whole and keep on the watch.
 struct WatchSnapshot: Codable, Sendable, Equatable {
-    /// One session on today's planner.
+    /// One timed plan on today's planner.
     struct Block: Codable, Sendable, Hashable, Identifiable {
         let id: String
         let title: String
         let startAt: Date
         let endAt: Date
-        /// Ankur marked it completed.
-        let done: Bool
+        /// Ankur declined it: shown muted.
+        let declined: Bool
     }
 
-    /// One agent thread with its agent's lanes.
+    /// One task on today's checklist.
+    struct Task: Codable, Sendable, Hashable, Identifiable {
+        let id: String
+        let title: String
+        let done: Bool
+        let pastDue: Bool
+        /// When it closes; nil when open-ended.
+        let closesAt: Date?
+    }
+
+    /// One agent thread with what its agent is doing.
     struct Thread: Codable, Sendable, Hashable, Identifiable {
+        /// What the agent's newest message to Ankur leaves open.
+        enum Attention: String, Codable, Sendable, Hashable {
+            case needsInput, blocked
+        }
+
         let agentId: String
         let name: String
         /// The agent's latest message, or Ankur's when he spoke last.
         let lastMessage: String
         let lastAt: Date
         let fromUser: Bool
-        let processing: Bool
-        let working: Bool
+        let state: AgentState
+        /// Set when the agent is parked on Ankur's answer or blocked.
+        let attention: Attention?
         /// The agent's messages Ankur has not read.
         let unread: Int
 
@@ -36,6 +52,8 @@ struct WatchSnapshot: Codable, Sendable, Equatable {
 
     let at: Date
     let today: [Block]
+    /// Today's tasks not done, past due first, then the ones ticked.
+    let tasks: [Task]
     let threads: [Thread]
     let box: Box
 }
@@ -48,6 +66,8 @@ enum WatchLink {
     static let snapshot = "snapshot"
     static let text = "text"
     static let agentId = "agentId"
+    static let taskId = "taskId"
+    static let done = "done"
     static let name = "name"
     static let error = "error"
 
@@ -57,11 +77,17 @@ enum WatchLink {
     static let route = "route"
     /// Watch to iPhone: send `text` to `agentId`.
     static let reply = "reply"
+    /// Watch to iPhone: set the task `taskId` done or not (`done`).
+    static let tick = "tick"
     /// iPhone to watch: the router sent the words to `agentId`, named `name`, or failed with `error`.
     static let routed = "routed"
 
+    /// How many open tasks the watch carries.
+    static let taskLimit = 12
     /// How many threads the watch shows.
     static let threadLimit = 8
+    /// How many idle or waiting threads the phone reads for what they leave open.
+    static let attentionLimit = 4
     /// The most of a message the watch keeps.
     static let messageLimit = 600
 

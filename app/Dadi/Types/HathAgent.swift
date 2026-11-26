@@ -23,7 +23,6 @@ enum LogEvent: String, Decodable, Sendable, Hashable {
 struct LogRecord: Decodable, Sendable, Hashable, Identifiable {
     let id: String
     let agentId: String
-    let lane: Lane
     let event: LogEvent
     let payload: [String: JSONValue]
     /// The wake that wrote the row; nil for rows from before wake ids.
@@ -31,49 +30,100 @@ struct LogRecord: Decodable, Sendable, Hashable, Identifiable {
     let createdAt: Date
 
     private enum CodingKeys: String, CodingKey {
-        case id, lane, event, payload
+        case id, event, payload
         case agentId = "agent_id"
         case wakeId = "wake_id"
         case createdAt = "created_at"
     }
 }
 
-/// A message Hath delivers from one agent to another at `runAt`, optionally
-/// repeating.
-struct ScheduledMessage: Decodable, Sendable, Hashable, Identifiable {
-    let id: String
-    let fromAgentId: String
-    let toAgentId: String
-    let content: String
-    /// The next delivery.
-    let runAt: Date
-    /// Nil delivers once.
-    let intervalMinutes: Int?
-    let createdAt: Date
+/// Weekday names as a routine's `days` carry them.
+enum Weekday: String, Decodable, Sendable, Hashable, CaseIterable {
+    case mon, tue, wed, thu, fri, sat, sun
 }
 
-/// Body of PATCH /schedules/:id: only what changes.
-struct PatchScheduleRequest: Encodable, Sendable {
-    /// How a schedule repeats after the change.
-    enum Repeat: Sendable, Equatable {
-        case once
-        case every(minutes: Int)
+/// An agent's own standing duty: it runs at `at` on `days` and the agent changes it (`set_routine`); Ankur can
+/// only cancel it.
+struct Routine: Decodable, Sendable, Hashable, Identifiable {
+    let id: String
+    let agentId: String
+    let title: String
+    let procedure: String
+    /// `HH:MM` in the box's zone.
+    let at: String
+    /// Nil is every day.
+    let days: [Weekday]?
+    let nextRunAt: Date
+    let lastRunAt: Date?
+    let active: Bool
+
+    private enum CodingKeys: String, CodingKey { case id, agentId, title, procedure, at, days, nextRunAt, lastRunAt, active }
+
+    init(id: String, agentId: String, title: String, procedure: String, at: String, days: [Weekday]?, nextRunAt: Date, lastRunAt: Date?, active: Bool) {
+        self.id = id
+        self.agentId = agentId
+        self.title = title
+        self.procedure = procedure
+        self.at = at
+        self.days = days
+        self.nextRunAt = nextRunAt
+        self.lastRunAt = lastRunAt
+        self.active = active
     }
 
-    var runAt: Date?
-    var content: String?
-    var repeats: Repeat?
-
-    private enum Keys: String, CodingKey { case runAt, content, intervalMinutes }
-
-    func encode(to encoder: Encoder) throws {
-        var c = encoder.container(keyedBy: Keys.self)
-        try c.encodeIfPresent(runAt, forKey: .runAt)
-        try c.encodeIfPresent(content, forKey: .content)
-        switch repeats {
-        case .once: try c.encodeNil(forKey: .intervalMinutes)
-        case .every(let minutes): try c.encode(minutes, forKey: .intervalMinutes)
-        case nil: break
-        }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        agentId = try c.decode(String.self, forKey: .agentId)
+        title = try c.decode(String.self, forKey: .title)
+        procedure = try c.decode(String.self, forKey: .procedure)
+        at = try c.decode(String.self, forKey: .at)
+        days = try c.decodeIfPresent([Weekday].self, forKey: .days)
+        nextRunAt = try c.decodeInstant(forKey: .nextRunAt)
+        lastRunAt = try c.decodeInstantIfPresent(forKey: .lastRunAt)
+        active = try c.decode(Bool.self, forKey: .active)
     }
+}
+
+/// A one-shot "check back at" that belongs to a job.
+struct Reminder: Decodable, Sendable, Hashable, Identifiable {
+    let id: String
+    let agentId: String
+    let note: String
+    let runAt: Date
+
+    private enum CodingKeys: String, CodingKey { case id, agentId, note, runAt }
+
+    init(id: String, agentId: String, note: String, runAt: Date) {
+        self.id = id
+        self.agentId = agentId
+        self.note = note
+        self.runAt = runAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        agentId = try c.decode(String.self, forKey: .agentId)
+        note = try c.decode(String.self, forKey: .note)
+        runAt = try c.decodeInstant(forKey: .runAt)
+    }
+}
+
+/// GET /agents/:id/routines: the agent's routines and reminders, next run first.
+struct Routines: Decodable, Sendable, Hashable {
+    let routines: [Routine]
+    let reminders: [Reminder]
+}
+
+/// POST /agents/:id/stop: what Hath ended. `haltFailed` names each helper task it could not halt.
+struct StopResult: Decodable, Sendable, Hashable {
+    struct HaltFailure: Decodable, Sendable, Hashable {
+        let task: String
+        let error: String
+    }
+
+    let endedRun: Bool
+    let stoppedTasks: [String]
+    let haltFailed: [HaltFailure]
 }

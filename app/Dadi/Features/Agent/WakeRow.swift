@@ -1,56 +1,38 @@
 import SwiftUI
 
-/// A wake's outcome as a chip: running pulses in sage, waiting in tide, yielded stays quiet and dashed,
-/// and failed takes the danger tone.
-struct OutcomeChip: View {
+/// A wake's outcome as plain type with a dot: running pulses in sage, waiting is tide, yielded stays quiet and
+/// failed takes the late tone.
+struct OutcomeWord: View {
     let outcome: WakeOutcome
 
     @State private var pulsing = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        HStack(spacing: 5) {
-            if outcome == .running || outcome == .waiting {
-                Circle()
-                    .fill(outcome == .running ? Color.sage : .tide)
-                    .frame(width: 6, height: 6)
-                    .opacity(pulsing ? 0.35 : 1)
-            }
-            Text(WakeFormat.label(outcome)).font(.caption2.weight(.semibold))
+        HStack(spacing: 6) {
+            Circle().fill(dot).frame(width: 6, height: 6).opacity(outcome == .running && pulsing ? 0.35 : 1)
+            Text(WakeFormat.label(outcome)).fontWeight(.medium)
         }
-        .foregroundStyle(ink)
-        .padding(.horizontal, 9)
-        .padding(.vertical, 3)
-        .background(fill, in: .capsule)
-        .overlay { Capsule().strokeBorder(Color.sageLine, style: StrokeStyle(lineWidth: 1, dash: [3, 2])).opacity(outcome == .yielded ? 1 : 0) }
+        .foregroundStyle(outcome == .failed ? Color.lateInk : .inkMuted)
         .onAppear {
-            guard !reduceMotion, outcome == .running || outcome == .waiting else { return }
+            guard !reduceMotion, outcome == .running else { return }
             withAnimation(Motion.breath) { pulsing = true }
         }
         .accessibilityElement(children: .combine)
     }
 
-    private var ink: Color {
+    private var dot: Color {
         switch outcome {
-        case .running: .sageText
-        case .waiting: .tideText
-        case .yielded: .inkMuted
-        case .failed: .danger
-        }
-    }
-
-    private var fill: Color {
-        switch outcome {
-        case .running: .sage.opacity(0.26)
-        case .waiting: .tide.opacity(0.2)
-        case .yielded: .clear
-        case .failed: .danger.opacity(0.12)
+        case .running: .sage
+        case .waiting: .tide
+        case .yielded: .inkFaint.opacity(0.7)
+        case .failed: .lateInk
         }
     }
 }
 
-/// One wake of the timeline: why it began, when and for how long, its outcome (with the error of a failed
-/// one), what it did and what it cost. Opened, it lists its entries under a lane filter.
+/// One wake of the timeline in the shared Expandable: why it began and how it ended on the first line, when and for
+/// how long and what it did on the second. Opened, it lists its entries.
 struct WakeRow: View {
     let hath: HathClient
     let wake: WakeSummary
@@ -60,6 +42,8 @@ struct WakeRow: View {
     let detail: WakeDetail?
     /// Why the wake could not be read, when it could not.
     let detailError: String?
+    /// The agent's routines and reminders, to name the wake one fired.
+    let routines: Routines?
     let nameOf: (String) -> String
     /// The time the row's durations are measured to while the wake runs.
     let now: Date
@@ -69,70 +53,24 @@ struct WakeRow: View {
     /// Reads the wake's entries again.
     let retry: () -> Void
 
-    @State private var filter = LaneFilter.all
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            head
-                .contentShape(.rect)
-                .onTapGesture(perform: toggle)
-                .accessibilityAddTraits(.isButton)
-                .accessibilityAction(named: open ? "Collapse" : "Expand", toggle)
-            if open { entries.transition(.reveal) }
-        }
-        .reveals(on: open)
-        .background(open ? Color.sage.opacity(0.1) : .clear, in: .rect(cornerRadius: 14, style: .continuous))
-        .overlay { if wake.outcome == .failed { RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.danger.opacity(0.4), lineWidth: 1) } }
-    }
-
-    private var head: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 8) {
-                Image(systemName: "chevron.right").font(.caption2.weight(.bold)).foregroundStyle(.inkMuted).rotationEffect(.degrees(open ? 90 : 0))
-                reason
-                Spacer(minLength: 4)
-                OutcomeChip(outcome: wake.outcome)
+        Expandable(isOpen: Binding { open } set: { _ in toggle() }, late: wake.outcome == .failed) {
+            Text(WakeFormat.reasonText(wake.reason, routines: routines, nameOf: nameOf))
+        } secondary: {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(WakeFormat.facts(wake, now: now))
+                if let error = wake.error {
+                    Text(error).font(.system(size: 12.5)).foregroundStyle(.lateInk).textSelection(.enabled)
+                }
             }
-            HStack(spacing: 8) {
-                Text(wake.startedAt, format: .relative(presentation: .named, unitsStyle: .abbreviated))
-                Text(WakeFormat.duration(wake, now: now))
-                let counts = WakeFormat.counts(wake.counts)
-                if !counts.isEmpty { Text(counts) }
-                if wake.usage.calls > 0 { Text(WakeFormat.usage(wake.usage)).monospacedDigit() }
-            }
-            .font(.caption)
-            .foregroundStyle(.inkMuted)
-            .lineLimit(1)
-            .padding(.leading, 20)
-            if let opener = wake.openedBy {
-                Text(opener.content).font(.caption).foregroundStyle(.inkMuted).lineLimit(open ? 3 : 1).multilineTextAlignment(.leading).padding(.leading, 20)
-            }
-            if let error = wake.error {
-                Text(error).font(.caption).foregroundStyle(.danger).multilineTextAlignment(.leading).textSelection(.enabled).padding(.leading, 20)
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(.rect)
-    }
-
-    /// Why the wake began; the agent that opened it is a link to its sheet.
-    @ViewBuilder
-    private var reason: some View {
-        if wake.reason.kind == .message {
-            HStack(spacing: 0) {
-                Text("Opened by ")
-                AgentLink(agentId: wake.reason.ref, name: wake.reason.ref.map(nameOf) ?? "Ankur", select: selectAgent)
-            }
-            .font(.footnote.weight(.semibold))
-            .foregroundStyle(.ink)
-        } else {
-            Text(WakeFormat.reason(wake.reason, nameOf: nameOf)).font(.footnote.weight(.semibold)).foregroundStyle(.ink).lineLimit(2).multilineTextAlignment(.leading)
+        } trailing: {
+            OutcomeWord(outcome: wake.outcome)
+        } content: {
+            entries
         }
     }
 
-    /// The entries of an open wake under the lane filter, or why they are not there: loading, failed, or aged out.
+    /// The entries of an open wake, or why they are not there: loading, failed, or aged out.
     @ViewBuilder
     private var entries: some View {
         if let detailError, detail == nil {
@@ -140,16 +78,12 @@ struct WakeRow: View {
                 Label("Could not read this wake: \(detailError)", systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(.danger)
                 Button("Try again", action: retry).font(.footnote.weight(.semibold)).foregroundStyle(.sageDeep)
             }
-            .padding(.horizontal, 12)
-            .padding(.bottom, 12)
         } else {
             Arrive(ready: detail != nil) {
                 WakeSkeleton()
             } content: {
                 if let detail { loaded(detail) }
             }
-            .padding(.horizontal, 12)
-            .padding(.bottom, 12)
         }
     }
 
@@ -157,18 +91,11 @@ struct WakeRow: View {
         VStack(alignment: .leading, spacing: 12) {
             if wake.activityTrimmed {
                 Text("Details expired").font(.footnote).foregroundStyle(.inkMuted)
-            } else {
-                Picker("Lane", selection: $filter) {
-                    ForEach(LaneFilter.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .fixedSize()
             }
-            let shown = filter.apply(to: detail.entries)
-            if shown.isEmpty {
+            if detail.entries.isEmpty {
                 Text(wake.activityTrimmed ? "No messages were kept." : "Nothing recorded yet.").font(.footnote).foregroundStyle(.inkMuted)
             } else {
-                WakeEntryList(hath: hath, agentId: wake.agentId, entries: shown, nameOf: nameOf, selectAgent: selectAgent)
+                WakeEntryList(hath: hath, agentId: wake.agentId, entries: detail.entries, nameOf: nameOf, selectAgent: selectAgent)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

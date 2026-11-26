@@ -6,7 +6,7 @@ enum Agent {
     /// A message's first line without markdown, its math read as Unicode,
     /// for previews.
     static func preview(_ content: String) -> String {
-        let line = UnicodeMath.text(content)
+        let line = UnicodeMath.text(LinkFormat.normalize(content))
             .split(whereSeparator: \.isNewline)
             .first { !$0.allSatisfy(\.isWhitespace) }
             .map { $0.trimmingCharacters(in: .whitespaces) } ?? ""

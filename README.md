@@ -23,9 +23,9 @@ khisso/
   app/                the dadi app for iPhone and its watch app (XcodeGen project.yml)
     Dadi/Types/       Hath, Yaad timeline, Ghar, Chaavi and Nas contracts
     Dadi/Shared/      API clients, Connection (setup code, in-app node), design, components, the watch link
-    Dadi/Features/    Join, Home (the dock and the drawer), Dadi, Thread, Agent (the sheet behind an agent's name: status block, live browser, schedules, prompt, activity), Timeline, Ghar, Chaavi, System (status, drives, helper tasks with their live screens, devices, errors), Watch (the relay)
+    Dadi/Features/    Join, Home (the dock and the drawer), Dadi, Thread, Agent (the sheet behind an agent's name: situation, facts, Stop, helper tasks with their live screens, wakes, routines and reminders, charter), Timeline, Ghar, Chaavi, System (status, drives, helper tasks with their live screens, devices, errors), Watch (the relay)
     DadiWatch/        the watch app: Talk to Dadi, Today, Agents, Box
-    DadiTests/        setup codes, errors, events, planner layout, timeline items, folders, new Chaavi items, Nas status, agent status block, math as Unicode
+    DadiTests/        setup codes, errors, events, planner layout, timeline items, folders, new Chaavi items, Nas status, agent sheet facts, wakes, routines, links, math as Unicode
   scripts/            build-xcframework.sh
 ```
 

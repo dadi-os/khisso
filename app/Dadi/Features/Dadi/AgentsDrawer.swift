@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// The Dadi tab's drawer: Talk to Dadi, a search over the agents, the agents
-/// working now, then every other thread, newest first, each with its unread
+/// The Dadi tab's drawer: Talk to Dadi, a search over the agents, chips that narrow them by what they are doing
+/// (All, Working, Waiting, Idle), the agents working now, then every other thread, newest first, each with its unread
 /// count. A long press on a row offers its thread and the agent's details.
 /// Rows take no swipes: a sideways drag in the drawer closes it.
 struct AgentsDrawer: View {
@@ -12,6 +12,7 @@ struct AgentsDrawer: View {
     let details: (String) -> Void
 
     @State private var query = ""
+    @State private var filter = ChatGroups.StateFilter.all
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -20,6 +21,9 @@ struct AgentsDrawer: View {
             search
                 .padding(.horizontal, 14)
                 .padding(.top, 12)
+            chips
+                .padding(.horizontal, 14)
+                .padding(.top, 10)
             if let error = store.error {
                 Label(error, systemImage: "exclamationmark.triangle")
                     .font(.footnote)
@@ -34,8 +38,8 @@ struct AgentsDrawer: View {
             if !rest.isEmpty {
                 section(working.isEmpty ? "AGENTS" : "EVERYONE ELSE", rest)
             }
-            if !query.isEmpty && working.isEmpty && rest.isEmpty {
-                Text("No agent matches \u{201C}\(query)\u{201D}.")
+            if (!query.isEmpty || filter != .all) && working.isEmpty && rest.isEmpty {
+                Text(query.isEmpty ? "No agent is \(filter.rawValue.lowercased())." : "No agent matches \u{201C}\(query)\u{201D}.")
                     .font(.footnote)
                     .foregroundStyle(.inkMuted)
                     .padding(.horizontal, 20)
@@ -43,15 +47,39 @@ struct AgentsDrawer: View {
             }
         }
         .animation(Motion.settle, value: store.threads.map(\.agentId))
-        .animation(Motion.settle, value: store.running)
+        .animation(Motion.settle, value: store.agents.mapValues(\.running.state))
         .animation(Motion.snap, value: query)
+        .animation(Motion.snap, value: filter)
+        .sensoryFeedback(.selection, trigger: filter)
     }
 
-    /// The threads matching the search, split into agents working now and the rest.
+    /// The threads matching the search and the chip, split into agents working now and the rest.
     private var sections: ([ThreadSummary], [ThreadSummary]) {
         let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
-        let shown = store.threads.filter { needle.isEmpty || $0.agentName.lowercased().contains(needle) }
-        return (shown.filter { store.running.contains($0.agentId) }, shown.filter { !store.running.contains($0.agentId) })
+        let shown = store.threads.filter { thread in
+            (needle.isEmpty || thread.agentName.lowercased().contains(needle)) && filter.keeps(store.running(of: thread.agentId).state)
+        }
+        return (shown.filter { store.running(of: $0.agentId).working }, shown.filter { !store.running(of: $0.agentId).working })
+    }
+
+    /// The state chips: the chosen one is sage, the rest quiet.
+    private var chips: some View {
+        HStack(spacing: 6) {
+            ForEach(ChatGroups.StateFilter.allCases) { option in
+                Button { filter = option } label: {
+                    Text(option.rawValue)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(filter == option ? Color.bone : .inkMuted)
+                        .padding(.horizontal, 12)
+                        .frame(minHeight: 32)
+                        .background(filter == option ? Color.sageDeep : Color.ink.opacity(0.06), in: .capsule)
+                        .contentShape(.capsule)
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(filter == option ? .isSelected : [])
+            }
+            Spacer(minLength: 0)
+        }
     }
 
     private var talkToDadi: some View {
@@ -141,13 +169,13 @@ struct AgentsDrawer: View {
 
     private func row(_ thread: ThreadSummary) -> some View {
         let selected = page == .thread(thread.agentId)
-        let lanes = store.lanes(of: thread.agentId)
+        let running = store.running(of: thread.agentId)
         return Button { choose(.thread(thread.agentId)) } label: {
-            ThreadRow(thread: thread, lanes: lanes, unread: thread.unread)
+            ThreadRow(thread: thread, running: running, unread: thread.unread, now: .now)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .background(selected ? Color.sage.opacity(0.14) : .clear, in: .rect(cornerRadius: 16))
-                .laneSheen(lanes.contains(.work), in: .rect(cornerRadius: 16))
+                .workingSheen(running.working, in: .rect(cornerRadius: 16))
                 .contentShape(.rect(cornerRadius: 16))
         }
         .buttonStyle(.plain)
@@ -155,7 +183,7 @@ struct AgentsDrawer: View {
             Button { choose(.thread(thread.agentId)) } label: { Label("Open thread", systemImage: "bubble.left.and.text.bubble.right") }
             Button { details(thread.agentId) } label: { Label("Agent details", systemImage: "info.circle") }
         } preview: {
-            ThreadRow(thread: thread, lanes: lanes, unread: thread.unread)
+            ThreadRow(thread: thread, running: running, unread: thread.unread, now: .now)
                 .padding(16)
                 .frame(width: 300)
                 .background(Color.boneRaised)

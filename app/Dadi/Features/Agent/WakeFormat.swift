@@ -1,26 +1,6 @@
 import Foundation
 
-/// The lane filter of an open wake: both lanes, or one.
-enum LaneFilter: String, CaseIterable, Sendable {
-    case all = "All"
-    case process = "Process"
-    case work = "Work"
-
-    /// The entries an open wake shows under this filter: every message, and the turns of the chosen lane (every turn for All).
-    func apply(to entries: [WakeEntry]) -> [WakeEntry] {
-        let lane: Lane
-        switch self {
-        case .all: return entries
-        case .work: lane = .work
-        case .process: lane = .process
-        }
-        return entries.filter {
-            if case .turn(let turn) = $0 { turn.lane == lane } else { true }
-        }
-    }
-}
-
-/// What the agent is doing this moment: its work lane's latest call.
+/// What the agent is doing this moment: the latest call of its running wake.
 struct CurrentCall: Equatable, Sendable {
     let name: String
     let target: String
@@ -28,6 +8,24 @@ struct CurrentCall: Equatable, Sendable {
     let running: Bool
     /// When the turn that made the call happened.
     let at: Date
+}
+
+/// The entries of one clock minute.
+struct MinuteGroup: Identifiable, Equatable {
+    let clock: String
+    var entries: [WakeEntry]
+
+    var id: String { clock + String(entries.first?.ord ?? 0) }
+}
+
+extension WakeEntry {
+    /// When the entry happened.
+    var at: Date {
+        switch self {
+        case .message(let entry): entry.at
+        case .turn(let turn): turn.at
+        }
+    }
 }
 
 /// The words the wake rows and entries use, and what they derive from a wake.
@@ -42,15 +40,25 @@ enum WakeFormat {
         }
     }
 
-    /// The reason a wake began as a sentence. A message wake names its sender, and no sender is Ankur.
-    static func reason(_ reason: WakeReason, nameOf: (String) -> String) -> String {
+    /// The reason a wake began as a sentence and the agent it names: a `message` wake names its sender (no sender is
+    /// Ankur), a `schedule` wake the routine or reminder when the sheet still knows it.
+    static func reason(_ reason: WakeReason, routines: Routines?, nameOf: (String) -> String) -> (lead: String, name: String?, agentId: String?) {
         switch reason.kind {
-        case .message: "Opened by \(reason.ref.map(nameOf) ?? "Ankur")"
-        case .schedule: "Schedule"
-        case .recovery: "Recovery"
-        case .steer: "Steer"
-        case .manual: "Manual"
+        case .message: ("Opened by", reason.ref.map(nameOf) ?? "Ankur", reason.ref)
+        case .schedule:
+            if let routine = routines?.routines.first(where: { $0.id == reason.ref }) { ("Routine", routine.title, nil) }
+            else if let reminder = routines?.reminders.first(where: { $0.id == reason.ref }) { ("Reminder", reminder.note, nil) }
+            else { ("Routine or reminder", nil, nil) }
+        case .recovery: ("Recovery", nil, nil)
+        case .steer: ("Helper reported back", nil, nil)
+        case .manual: ("Started by hand", nil, nil)
         }
+    }
+
+    /// The reason as one string: "Opened by Ankur", "Routine Morning triage", "Recovery".
+    static func reasonText(_ reason: WakeReason, routines: Routines?, nameOf: (String) -> String) -> String {
+        let line = Self.reason(reason, routines: routines, nameOf: nameOf)
+        return [line.lead, line.name].compactMap { $0 }.joined(separator: " ")
     }
 
     /// A count of thousands as `1.2k`, of millions as `3.4M`, below that the number.
@@ -59,20 +67,40 @@ enum WakeFormat {
         return n >= 1000 ? String(format: "%.1fk", Double(n) / 1000) : String(n)
     }
 
-    /// A wake's usage as its chip says it: tokens read and written, and how many of the prompt came from cache.
-    static func usage(_ usage: WakeUsage) -> String {
-        "\(compact(usage.inputTokens + usage.outputTokens)) tok · \(compact(usage.cacheRead)) cached"
-    }
-
-    /// A wake's counts as one line, leaving out what is zero; empty when it did nothing.
+    /// A wake's counts as one line, leaving out what is zero; empty when it did nothing: "6 tool calls · 1 message sent".
     static func counts(_ counts: WakeCounts) -> String {
         [
             counts.toolCalls > 0 ? "\(counts.toolCalls) tool \(counts.toolCalls == 1 ? "call" : "calls")" : nil,
-            counts.messagesReceived > 0 ? "\(counts.messagesReceived) in" : nil,
-            counts.messagesSent > 0 ? "\(counts.messagesSent) out" : nil,
+            counts.messagesSent > 0 ? "\(counts.messagesSent) \(counts.messagesSent == 1 ? "message" : "messages") sent" : nil,
         ]
         .compactMap { $0 }
         .joined(separator: " · ")
+    }
+
+    /// A wake's second line: when it began, how long it ran, and what it did. "4 minutes ago · ran 2m · 6 tool calls · 1 message sent".
+    static func facts(_ wake: WakeSummary, now: Date) -> String {
+        let counts = counts(wake.counts)
+        return [
+            AgentTime.ago(wake.startedAt, now: now),
+            wake.endedAt == nil ? "running for \(duration(wake, now: now))" : "ran \(duration(wake, now: now))",
+            counts.isEmpty ? nil : counts,
+        ]
+        .compactMap { $0 }
+        .joined(separator: " · ")
+    }
+
+    /// The entries in runs that share a minute, each run with the one clock time it is drawn under.
+    static func inMinutes(_ entries: [WakeEntry]) -> [MinuteGroup] {
+        var groups: [MinuteGroup] = []
+        for entry in entries {
+            let clock = AgentTime.clock(entry.at)
+            if let last = groups.last, last.clock == clock {
+                groups[groups.count - 1].entries.append(entry)
+            } else {
+                groups.append(MinuteGroup(clock: clock, entries: [entry]))
+            }
+        }
+        return groups
     }
 
     /// A duration at the coarsest unit that still says something: "12s", "3m", "1h 5m".
@@ -104,10 +132,10 @@ enum WakeFormat {
         return oneLine.count > targetMax ? String(oneLine.prefix(targetMax - 1)) + "…" : oneLine
     }
 
-    /// The last call of the work lane's latest turn that made one, in a running wake's entries; nil when the lane has not called anything.
+    /// The last call of the latest turn that made one, in a running wake's entries; nil when it has not called anything.
     static func currentCall(_ entries: [WakeEntry]) -> CurrentCall? {
         for entry in entries.reversed() {
-            guard case .turn(let turn) = entry, turn.lane == .work, let call = turn.calls.last else { continue }
+            guard case .turn(let turn) = entry, let call = turn.calls.last else { continue }
             return CurrentCall(name: call.name, target: target(call.input), running: call.result == nil, at: turn.at)
         }
         return nil

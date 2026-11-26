@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// What the agent is doing and has done: the Now line (the work lane's latest call while a wake runs) over
+/// What the agent is doing and has done: the current call (the latest call while a wake runs) over
 /// the wake timeline, newest first, a page at a time. The running or latest wake is open until another is
 /// chosen; one wake is open at a time. It reads again when Hath's event stream reconnects or reports a
 /// wake changing.
@@ -12,6 +12,8 @@ struct WakeTimeline: View {
     let selectAgent: (String) -> Void
     /// Changes when the wakes must be read again.
     let refresh: Refresh
+    /// The agent's routines and reminders, to name the wake one fired.
+    let routines: Routines?
 
     /// What makes the timeline read again.
     struct Refresh: Hashable {
@@ -38,15 +40,12 @@ struct WakeTimeline: View {
     private var latest: WakeSummary? { wakes?.first }
     private var runningId: String? { latest?.outcome == .running ? latest?.id : nil }
     private var openId: String? { chosen ?? latest?.id }
-    private var now: CurrentCall? { runningId.flatMap { details[$0] }.flatMap { WakeFormat.currentCall($0.entries) } }
+    private var currentCall: CurrentCall? { runningId.flatMap { details[$0] }.flatMap { WakeFormat.currentCall($0.entries) } }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            if let now { nowCard(now) }
-            VStack(alignment: .leading, spacing: 8) {
-                Text("WAKES").font(.caption2.weight(.semibold)).tracking(1.4).foregroundStyle(.inkFaint)
-                list
-            }
+        InsetCard(title: "Wakes") {
+            if let currentCall { callFact(currentCall) }
+            list
         }
         .task(id: refresh) {
             await loadFirst()
@@ -66,11 +65,11 @@ struct WakeTimeline: View {
                 EmptyState(title: "No wakes yet", detail: "Its activity shows here once it wakes.").padding(.vertical, 12)
             } else {
                 TimelineView(.periodic(from: .now, by: 15)) { context in
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: 6) {
                         ForEach(wakes) { wake in
                             WakeRow(
                                 hath: hath, wake: wake, open: openId == wake.id, detail: details[wake.id], detailError: detailErrors[wake.id],
-                                nameOf: nameOf, now: context.date,
+                                routines: routines, nameOf: nameOf, now: context.date,
                                 toggle: { chosen = .some(openId == wake.id ? nil : wake.id) }, selectAgent: selectAgent,
                                 retry: { Task { await loadDetails([wake.id]) } }
                             )
@@ -92,22 +91,10 @@ struct WakeTimeline: View {
         }
     }
 
-    private func nowCard(_ now: CurrentCall) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("NOW").font(.caption2.weight(.semibold)).tracking(1.4).foregroundStyle(.inkFaint)
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(now.name).font(.system(.footnote, design: .monospaced).weight(.semibold)).foregroundStyle(.ink)
-                Text(now.target).font(.system(.caption, design: .monospaced)).foregroundStyle(.inkMuted).lineLimit(1)
-                Spacer(minLength: 4)
-                Text("\(now.running ? "running " : "")\(now.at.formatted(.relative(presentation: .named, unitsStyle: .abbreviated)))")
-                    .font(.caption)
-                    .foregroundStyle(.inkMuted)
-            }
+    private func callFact(_ call: CurrentCall) -> some View {
+        FactRow(label: "Current call", hint: "\(call.running ? "running " : "")\(call.at.formatted(.relative(presentation: .named, unitsStyle: .abbreviated)))", wrap: true) {
+            Text(call.target.isEmpty ? call.name : "\(call.name) \(call.target)")
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.sage.opacity(0.12), in: .rect(cornerRadius: 16, style: .continuous))
-        .accessibilityElement(children: .combine)
     }
 
     /// Reads the newest page, keeping the older wakes already loaded below it.

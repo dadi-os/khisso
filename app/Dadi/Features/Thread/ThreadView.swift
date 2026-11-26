@@ -1,9 +1,9 @@
 import SwiftUI
 
 /// One agent's thread: its history by day, live replies from Hath's events,
-/// thaali's lane pill above the dock while the agent thinks or works, a
+/// thaali's activity pill above the dock while the agent works or waits, a
 /// caret beside it that returns to the newest message once the thread is
-/// scrolled up. Replies are written in the dock's accessory, which holds the thread's draft. Agent text runs the full
+/// scrolled up. Replies are written in the thread's one composer, which sits in the dock until typing starts and then above the keyboard. Agent text runs the full
 /// width on the field as rendered markdown and scrolls up under the bars;
 /// Ankur's words are sage bubbles. Holding a message lifts it with Copy,
 /// Reply with quote, Share and, for the agent's, its activity; swiping one
@@ -18,12 +18,14 @@ struct ThreadView: View {
     let name: String
     /// The newest event from Home's stream; messages for this agent are added.
     let live: HathEvent?
-    /// The agent's lanes running now.
-    let lanes: Set<Lane>
+    /// What the agent is doing now.
+    let running: AgentRecord.Running
+    /// What the running wake has done so far.
+    let counts: WakeCounts?
     /// Changes each time Home's event stream reconnects; the thread reloads to
     /// catch what arrived while it was down.
     let connections: Int
-    /// The thread's draft, which the dock's accessory writes into.
+    /// The thread's draft, which its composer writes into.
     let draft: ThreadDraft
     /// Ankur has seen the thread through this message.
     let read: (Int) -> Void
@@ -39,6 +41,15 @@ struct ThreadView: View {
     @State private var position = ScrollPosition(edge: .bottom)
     /// True while the end of the thread is off screen.
     @State private var awayFromBottom = false
+    /// What the agent's newest message leaves open, for the tag on that message.
+    @State private var standing: Standing?
+
+    /// What makes the standing read again: a reconnect, a new message, or the agent starting or ending a wake.
+    private struct StandingKey: Hashable {
+        let connections: Int
+        let working: Bool
+        let newest: Int?
+    }
 
     var body: some View {
         ScrollView {
@@ -57,8 +68,8 @@ struct ThreadView: View {
                     if previous.map({ !Calendar.current.isDate($0.createdAt, inSameDayAs: message.createdAt) }) ?? true {
                         DayMark(date: message.createdAt)
                     }
-                    row(message, opensGroup: previous.map { $0.fromUser != message.fromUser || $0.kind == .notice } ?? true)
-                        .modifier(QuoteSwipe(enabled: message.kind != .notice, fromUser: message.fromUser) { reply(to: message) })
+                    row(message, opensGroup: previous.map { $0.fromUser != message.fromUser } ?? true)
+                        .modifier(QuoteSwipe(enabled: true, fromUser: message.fromUser) { reply(to: message) })
                         .transition(.asymmetric(insertion: .move(edge: .bottom).combined(with: .opacity).combined(with: .scale(scale: 0.96, anchor: message.fromUser ? .bottomTrailing : .bottomLeading)), removal: .opacity))
                 }
                 Color.clear
@@ -76,7 +87,11 @@ struct ThreadView: View {
         .defaultScrollAnchor(.bottom)
         .scrollPosition($position)
         .scrollDismissesKeyboard(.interactively)
+        .simultaneousGesture(draft.editing ? TapGesture().onEnded { draft.editing = false } : nil)
         .scrollEdgeEffectHidden(true, for: .bottom)
+        .scrollEdgeEffectHidden(true, for: .top)
+        .scrollEdge(.top, size: ScrollEdge.threadTop)
+        .scrollEdge(.bottom, size: ScrollEdge.threadBottom)
         .safeAreaInset(edge: .top, spacing: 0) {
             HostPin(hath: hath, nas: nas, agentId: agentId, owner: name)
         }
@@ -91,7 +106,7 @@ struct ThreadView: View {
                                 Image(systemName: "chevron.down")
                                     .font(.system(size: 15, weight: .bold))
                                     .foregroundStyle(.sageText)
-                                    .frame(width: LaneChip.height, height: LaneChip.height)
+                                    .frame(width: ActivityPill.height, height: ActivityPill.height)
                                     .contentShape(.circle)
                             }
                             .buttonStyle(.plain)
@@ -99,7 +114,7 @@ struct ThreadView: View {
                             .glassEffectID("caret", in: glass)
                             .accessibilityLabel("Scroll to newest message")
                         }
-                        LaneChip(lanes: lanes, glass: glass)
+                        ActivityPill(running: running, counts: counts, glass: glass)
                     }
                 }
                 .animation(.spring(response: 0.42, dampingFraction: 0.82), value: awayFromBottom)
@@ -120,6 +135,10 @@ struct ThreadView: View {
                     PhotoStrip(photos: $draft.photos)
                         .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .bottomLeading)))
                 }
+                if draft.editing {
+                    ThreadComposerBar(name: name, draft: draft, placement: .keyboard) { draft.send(hath, to: agentId) }
+                        .transition(.opacity)
+                }
             }
             .animation(Motion.settle, value: draft.photos)
             .padding(.horizontal, 16)
@@ -127,12 +146,17 @@ struct ThreadView: View {
             .padding(.bottom, 8)
         }
         .navigationTitle(name)
+        .threadAttachments(draft)
+        .animation(Motion.snap, value: draft.editing)
         .animation(Motion.snap, value: draft.quote)
         .animation(Motion.snap, value: draft.sendError)
         .sensoryFeedback(.impact(weight: .light), trigger: draft.sent)
         .sensoryFeedback(.impact(flexibility: .soft), trigger: quoted)
         .sensoryFeedback(.impact(flexibility: .soft), trigger: received)
         .task(id: connections) { await load() }
+        .task(id: StandingKey(connections: connections, working: running.working, newest: messages.last?.seq)) {
+            standing = try? await Standing.read(hath: hath, agentId: agentId)
+        }
         .onChange(of: live) { _, event in
             guard case .message(let id, let message)? = event, id == agentId else { return }
             if insert(message), !message.fromUser { received += 1 }
@@ -154,37 +178,22 @@ struct ThreadView: View {
         .padding(.top, 80)
     }
 
-    @ViewBuilder
     private func row(_ message: DurableMessage, opensGroup: Bool) -> some View {
-        if message.kind == .notice {
-            bubble(message, opensGroup: opensGroup)
-        } else {
-            bubble(message, opensGroup: opensGroup)
-                .contextMenu {
-                    Button { UIPasteboard.general.string = plainText(message.content) } label: { Label("Copy", systemImage: "doc.on.doc") }
-                    Button { UIPasteboard.general.string = message.content } label: { Label("Copy as Markdown", systemImage: "doc.on.doc.fill") }
-                    Button { reply(to: message) } label: { Label("Reply with quote", systemImage: "arrowshape.turn.up.left") }
-                    ShareLink(item: message.content) { Label("Share", systemImage: "square.and.arrow.up") }
-                    if !message.fromUser {
-                        Button(action: details) { Label("Show activity", systemImage: "clock.arrow.circlepath") }
-                    }
+        bubble(message, opensGroup: opensGroup)
+            .contextMenu {
+                Button { UIPasteboard.general.string = plainText(message.content) } label: { Label("Copy", systemImage: "doc.on.doc") }
+                Button { UIPasteboard.general.string = message.content } label: { Label("Copy as Markdown", systemImage: "doc.on.doc.fill") }
+                Button { reply(to: message) } label: { Label("Reply with quote", systemImage: "arrowshape.turn.up.left") }
+                ShareLink(item: message.content) { Label("Share", systemImage: "square.and.arrow.up") }
+                if !message.fromUser {
+                    Button(action: details) { Label("Show activity", systemImage: "clock.arrow.circlepath") }
                 }
-        }
+            }
     }
 
     @ViewBuilder
     private func bubble(_ message: DurableMessage, opensGroup: Bool) -> some View {
-        if message.kind == .notice {
-            Text(message.content)
-                .font(.footnote)
-                .foregroundStyle(.inkMuted)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 6)
-                .background(.sage.opacity(0.08), in: .capsule)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
-        } else if message.fromUser {
+        if message.fromUser {
             VStack(alignment: .trailing, spacing: 6) {
                 if !message.content.isEmpty {
                     Text(InlineMarkdown.attributed(message.content))
@@ -209,11 +218,23 @@ struct ThreadView: View {
                 }
                 AgentMarkdown(source: message.content)
                 attachments(message.attachments)
-                time(message)
+                HStack(spacing: 8) {
+                    time(message)
+                    if let tag = standingTag(message) { tag }
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, opensGroup ? 24 : 16)
         }
+    }
+
+    /// The tag on the agent's newest message when it is parked on Ankur's answer or blocked.
+    private func standingTag(_ message: DurableMessage) -> Text? {
+        guard let standing, standing.seq == message.seq else { return nil }
+        let blocked = standing.kind == .blocked
+        return Text(blocked ? "Blocked" : "Needs your input")
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(blocked ? Color.lateInk : Color.tideText)
     }
 
     /// A message's time under it, as thaali marks each message, so one message
@@ -237,7 +258,7 @@ struct ThreadView: View {
 
     private func load() async {
         do {
-            messages = try await hath.messages(agentId: agentId)
+            messages = try await hath.messages(agentId: agentId).filter { $0.kind != .notice && $0.kind != .utterance }
             loadError = nil
             if let newest = messages.last { read(newest.seq) }
         } catch is CancellationError {
@@ -251,7 +272,7 @@ struct ThreadView: View {
     /// Adds `message` in seq order unless it is already shown; true when added.
     @discardableResult
     private func insert(_ message: DurableMessage) -> Bool {
-        guard !messages.contains(where: { $0.seq == message.seq }) else { return false }
+        guard message.kind != .notice, message.kind != .utterance, !messages.contains(where: { $0.seq == message.seq }) else { return false }
         messages.append(message)
         messages.sort { $0.seq < $1.seq }
         return true

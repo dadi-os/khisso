@@ -45,14 +45,23 @@ struct ThreadReadRequest: Encodable, Sendable {
     let seq: Int
 }
 
+/// What a message is: `notice` is Hath's note to an agent and `utterance` is Ankur's words to the router.
+enum MessageKind: String, Decodable, Sendable, Hashable {
+    case message
+    case notice
+    case utterance
+}
+
+/// What the sender says a message to the job's requester leaves open: `done` answered it, `blocked` cannot
+/// proceed, `needs_input` is parked on Ankur's answer.
+enum MessageStatus: String, Decodable, Sendable, Hashable {
+    case done
+    case blocked
+    case needsInput = "needs_input"
+}
+
 /// One durable message in a human thread, from GET /agents/:id/messages.
 struct DurableMessage: Decodable, Sendable, Hashable, Identifiable {
-    /// A notice is Hath's word that an agent's work stopped, shown as a system line.
-    enum Kind: String, Decodable, Sendable {
-        case message
-        case notice
-    }
-
     /// Hath's ordering of messages; also identifies a message across history and events.
     let seq: Int
     /// Nil when Ankur sent it.
@@ -61,8 +70,11 @@ struct DurableMessage: Decodable, Sendable, Hashable, Identifiable {
     let toAgentId: String?
     let content: String
     let attachments: [AttachmentSummary]
-    /// Absent from an older Hath; treated as a message.
-    let kind: Kind?
+    /// Hath's own notes to agents are not part of the thread; a message is `message` or absent.
+    let kind: MessageKind?
+    /// What the sender says the message leaves open, set on a message to the job's requester. Hath's thread
+    /// route and event do not carry it yet, so it is nil there and `Standing` reads it from the wakes.
+    let status: MessageStatus?
     let createdAt: Date
 
     var id: Int { seq }
@@ -122,11 +134,52 @@ struct MessageRequest: Encodable, Sendable {
     var attachments: [OutboundAttachment]?
 }
 
-/// An agent's two lanes: process is it reading what arrived and answering
-/// it, work is it doing the job in the background.
-enum Lane: String, Decodable, Sendable, Hashable {
-    case process
-    case work
+/// Where a wake stands. `waiting` appears only on an agent's latest wake, when the agent watches a task or agent.
+enum WakeOutcome: String, Decodable, Sendable, Hashable {
+    case running
+    case waiting
+    case yielded
+    case failed
+}
+
+/// What a wake did, counted.
+struct WakeCounts: Decodable, Sendable, Hashable {
+    static let none = WakeCounts(toolCalls: 0, messagesSent: 0, messagesReceived: 0)
+
+    let toolCalls: Int
+    let messagesSent: Int
+    let messagesReceived: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case toolCalls = "tool_calls"
+        case messagesSent = "messages_sent"
+        case messagesReceived = "messages_received"
+    }
+}
+
+extension Date {
+    /// A time as Hath writes it: an ISO 8601 instant with or without fractional seconds. The job ledger and
+    /// routines carry whole seconds with an offset, the rest of Hath's payloads milliseconds.
+    static func hathInstant(_ text: String) -> Date? {
+        (try? Date(text, strategy: Date.ISO8601FormatStyle(includingFractionalSeconds: true)))
+            ?? (try? Date(text, strategy: Date.ISO8601FormatStyle()))
+    }
+}
+
+extension KeyedDecodingContainer {
+    /// The instant at `key`, read with `Date.hathInstant`.
+    func decodeInstant(forKey key: Key) throws -> Date {
+        let text = try decode(String.self, forKey: key)
+        guard let date = Date.hathInstant(text) else {
+            throw DecodingError.dataCorruptedError(forKey: key, in: self, debugDescription: "not an ISO 8601 date: \(text)")
+        }
+        return date
+    }
+
+    /// The instant at `key`, nil when absent or null.
+    func decodeInstantIfPresent(forKey key: Key) throws -> Date? {
+        try contains(key) && !(try decodeNil(forKey: key)) ? decodeInstant(forKey: key) : nil
+    }
 }
 
 /// One event from Hath's GET /events stream. Event types this app does not act
@@ -134,11 +187,14 @@ enum Lane: String, Decodable, Sendable, Hashable {
 enum HathEvent: Decodable, Sendable, Equatable {
     /// A message entered a human thread.
     case message(agentId: String, message: DurableMessage)
-    case laneStarted(agentId: String, lane: Lane)
-    case laneFinished(agentId: String, lane: Lane)
-    case laneFailed(agentId: String, lane: Lane, message: String)
-    /// A wake began, ended or did more work; the agent's open wakes read again.
-    case wakeChanged(agentId: String, wakeId: String)
+    /// A wake began: the agent's loop is working.
+    case wakeStarted(agentId: String, wakeId: String)
+    /// A running wake did more; `counts` are its totals so far.
+    case wakeActivity(agentId: String, wakeId: String, counts: WakeCounts)
+    /// A wake ended; the agent is no longer working, and a failed one has a reason in its timeline.
+    case wakeEnded(agentId: String, wakeId: String, outcome: WakeOutcome)
+    /// A routine or reminder was created, ended, cancelled or fired; the lists read again.
+    case schedulesChanged
     /// A router run began; its `runId` ties it to its finish or failure, and runs can overlap.
     case routerStarted(runId: String)
     case routerFinished(runId: String)
@@ -148,8 +204,11 @@ enum HathEvent: Decodable, Sendable, Equatable {
     case unhandled(type: String)
 
     private enum Keys: String, CodingKey {
-        case type, agentId, fromAgentId, toAgentId, content, attachments, seq, kind, at, message, lane, readSeq, unread, runId, wakeId
+        case type, agentId, fromAgentId, toAgentId, content, attachments, seq, kind, status, at, message, readSeq, unread, runId, wakeId, outcome, counts
     }
+
+    /// The counts as the stream's snake-case decoder hands them over.
+    private enum CountKeys: String, CodingKey { case toolCalls, messagesSent, messagesReceived }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
@@ -164,21 +223,27 @@ enum HathEvent: Decodable, Sendable, Equatable {
                 toAgentId: try c.decodeIfPresent(String.self, forKey: .toAgentId),
                 content: try c.decode(String.self, forKey: .content),
                 attachments: try c.decode([AttachmentSummary].self, forKey: .attachments),
-                kind: try c.decodeIfPresent(DurableMessage.Kind.self, forKey: .kind),
+                kind: try c.decodeIfPresent(MessageKind.self, forKey: .kind),
+                status: try c.decodeIfPresent(MessageStatus.self, forKey: .status),
                 createdAt: try c.decode(Date.self, forKey: .at)
             ))
-        case "lane_started":
-            self = .laneStarted(agentId: try c.decode(String.self, forKey: .agentId), lane: try c.decode(Lane.self, forKey: .lane))
-        case "lane_finished":
-            self = .laneFinished(agentId: try c.decode(String.self, forKey: .agentId), lane: try c.decode(Lane.self, forKey: .lane))
-        case "lane_failed":
-            self = .laneFailed(
+        case "wake_started":
+            self = .wakeStarted(agentId: try c.decode(String.self, forKey: .agentId), wakeId: try c.decode(String.self, forKey: .wakeId))
+        case "wake_activity":
+            let counts = try c.nestedContainer(keyedBy: CountKeys.self, forKey: .counts)
+            self = .wakeActivity(
                 agentId: try c.decode(String.self, forKey: .agentId),
-                lane: try c.decode(Lane.self, forKey: .lane),
-                message: try c.decode(String.self, forKey: .message)
+                wakeId: try c.decode(String.self, forKey: .wakeId),
+                counts: WakeCounts(
+                    toolCalls: try counts.decode(Int.self, forKey: .toolCalls),
+                    messagesSent: try counts.decode(Int.self, forKey: .messagesSent),
+                    messagesReceived: try counts.decode(Int.self, forKey: .messagesReceived)
+                )
             )
-        case "wake_started", "wake_ended", "wake_activity":
-            self = .wakeChanged(agentId: try c.decode(String.self, forKey: .agentId), wakeId: try c.decode(String.self, forKey: .wakeId))
+        case "wake_ended":
+            self = .wakeEnded(agentId: try c.decode(String.self, forKey: .agentId), wakeId: try c.decode(String.self, forKey: .wakeId), outcome: try c.decode(WakeOutcome.self, forKey: .outcome))
+        case "schedules_changed":
+            self = .schedulesChanged
         case "router_started":
             self = .routerStarted(runId: try c.decode(String.self, forKey: .runId))
         case "router_finished":
@@ -200,77 +265,38 @@ enum HathEvent: Decodable, Sendable, Equatable {
 /// One agent from GET /agents: the flat roster, each naming the agent that
 /// made it.
 struct AgentRecord: Decodable, Sendable, Hashable, Identifiable {
-    /// Which of an agent's lanes are running: work, process, or both.
+    /// What the agent's one loop is doing: running a step, waiting on a helper or another agent after its
+    /// wake ended, or at rest; and the job its current wake is on.
     struct Running: Decodable, Sendable, Hashable {
-        /// What the work lane waits on and since when.
+        /// What the agent waits on and since when.
         struct Waiting: Decodable, Sendable, Hashable {
             let targets: [String]
             let since: Date
             let wakesBy: Date
+
+            private enum CodingKeys: String, CodingKey { case targets, since, wakesBy }
+
+            init(targets: [String], since: Date, wakesBy: Date) {
+                self.targets = targets
+                self.since = since
+                self.wakesBy = wakesBy
+            }
+
+            init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                targets = try c.decode([String].self, forKey: .targets)
+                since = try c.decodeInstant(forKey: .since)
+                wakesBy = try c.decodeInstant(forKey: .wakesBy)
+            }
         }
 
-        /// Where the agent's work stands, rendered by Hath with no model call. Its times are
-        /// ISO strings without fractions, which the shared date decoder does not read, so they
-        /// stay text and `AgentStatusView` formats them.
-        struct Status: Decodable, Sendable, Hashable {
-            struct Job: Decodable, Sendable, Hashable {
-                /// The agent that gave the job; nil for Ankur.
-                let from: String?
-                let at: String
-                let content: String
-            }
-
-            struct Work: Decodable, Sendable, Hashable {
-                enum State: String, Decodable, Sendable, Hashable {
-                    case running, waiting, idle
-                }
-
-                let state: State
-                /// When it began waiting, or its last step while running; nil while idle.
-                let since: String?
-                let waitingOn: [String]
-            }
-
-            /// One of the work lane's last tool calls; `ok` is nil while it has no result.
-            struct Call: Decodable, Sendable, Hashable {
-                let name: String
-                let arg: String
-                let ok: Bool?
-            }
-
-            /// A helper task in flight.
-            struct InFlight: Decodable, Sendable, Hashable {
-                let id: String
-                let status: String
-                let current: String
-            }
-
-            /// A message work queued that the process lane has not sent.
-            struct Pending: Decodable, Sendable, Hashable {
-                let id: Int
-                /// The recipient; nil for Ankur.
-                let to: String?
-                let expectsReply: Bool
-                let preview: String
-            }
-
-            let job: Job?
-            let work: Work
-            /// The work lane's last tool call with a short argument; nil before it has acted.
-            let step: String?
-            /// The last five tool calls, oldest first.
-            let recent: [Call]
-            let tasks: [InFlight]
-            /// Why Nas could not be read for the tasks; nil when it could.
-            let tasksUnreadable: String?
-            let pending: [Pending]
-        }
-
-        let work: Bool
-        let process: Bool
+        /// The agent's loop is running a step now.
+        let working: Bool
         let waitingOn: Waiting?
-        /// Nil when no lane runs and work is not waiting.
-        let status: Status?
+        /// The job of the agent's current wake; nil when it has none.
+        let job: JobLedger?
+
+        static let quiet = Running(working: false, waitingOn: nil, job: nil)
     }
 
     /// The browser and terminal tasks an agent owns or last steered, most recently active first.
@@ -290,15 +316,116 @@ struct AgentRecord: Decodable, Sendable, Hashable, Identifiable {
     let parentAgentId: String?
     /// False once retired.
     let active: Bool
-    let running: Running
+    var running: Running
     let sessions: Sessions
     let createdAt: Date
     let updatedAt: Date
+}
 
-    var isRunning: Bool { running.work || running.process }
+/// One piece of work an agent is on, as its wake sees it (`running.job` on GET /agents): opened by a
+/// message, closed when the requester has been told.
+struct JobLedger: Decodable, Sendable, Hashable {
+    struct Opened: Decodable, Sendable, Hashable {
+        let seq: Int
+        let at: Date
+        /// The opening message, clipped.
+        let content: String
 
-    /// The lanes running now.
-    var lanes: Set<Lane> {
-        Set([running.process ? Lane.process : nil, running.work ? Lane.work : nil].compactMap { $0 })
+        private enum CodingKeys: String, CodingKey { case seq, at, content }
+
+        init(seq: Int, at: Date, content: String) {
+            self.seq = seq
+            self.at = at
+            self.content = content
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            seq = try c.decode(Int.self, forKey: .seq)
+            at = try c.decodeInstant(forKey: .at)
+            content = try c.decode(String.self, forKey: .content)
+        }
+    }
+
+    /// An agent it asked, and the seq of that agent's first reply (nil while none).
+    struct Ask: Decodable, Sendable, Hashable {
+        let to: String
+        let seq: Int
+        let answeredSeq: Int?
+    }
+
+    /// Something it already sent the requester.
+    struct Told: Decodable, Sendable, Hashable {
+        let seq: Int
+        let preview: String
+    }
+
+    struct Stopped: Decodable, Sendable, Hashable {
+        let at: Date
+        /// `ankur` for Ankur's own stop, else the agent id.
+        let by: String
+
+        private enum CodingKeys: String, CodingKey { case at, by }
+
+        init(at: Date, by: String) {
+            self.at = at
+            self.by = by
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            at = try c.decodeInstant(forKey: .at)
+            by = try c.decode(String.self, forKey: .by)
+        }
+    }
+
+    /// The job's number: its opening message's seq.
+    let job: Int
+    /// Who asked: an agent id, nil for Ankur, the agent's own id for a routine run.
+    let requester: String?
+    let opened: Opened
+    /// When the answer is due; only Ankur's jobs have one.
+    let answerBy: Date?
+    let asks: [Ask]
+    /// The helper tasks steered in the job.
+    let helpers: [String]
+    /// Titles of what the job stored in memory.
+    let stored: [String]
+    /// What the agent already sent the requester, oldest first.
+    let told: [Told]
+    /// When the agent will check back, soonest first.
+    let reminders: [Date]
+    let stopped: Stopped?
+
+    private enum CodingKeys: String, CodingKey { case job, requester, opened, answerBy, asks, helpers, stored, told, reminders, stopped }
+
+    init(job: Int, requester: String?, opened: Opened, answerBy: Date?, asks: [Ask] = [], helpers: [String] = [], stored: [String] = [], told: [Told] = [], reminders: [Date] = [], stopped: Stopped? = nil) {
+        self.job = job
+        self.requester = requester
+        self.opened = opened
+        self.answerBy = answerBy
+        self.asks = asks
+        self.helpers = helpers
+        self.stored = stored
+        self.told = told
+        self.reminders = reminders
+        self.stopped = stopped
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        job = try c.decode(Int.self, forKey: .job)
+        requester = try c.decodeIfPresent(String.self, forKey: .requester)
+        opened = try c.decode(Opened.self, forKey: .opened)
+        answerBy = try c.decodeInstantIfPresent(forKey: .answerBy)
+        asks = try c.decode([Ask].self, forKey: .asks)
+        helpers = try c.decode([String].self, forKey: .helpers)
+        stored = try c.decode([String].self, forKey: .stored)
+        told = try c.decode([Told].self, forKey: .told)
+        reminders = try c.decode([String].self, forKey: .reminders).map { text in
+            guard let date = Date.hathInstant(text) else { throw DecodingError.dataCorruptedError(forKey: .reminders, in: c, debugDescription: "not an ISO 8601 date: \(text)") }
+            return date
+        }
+        stopped = try c.decodeIfPresent(Stopped.self, forKey: .stopped)
     }
 }

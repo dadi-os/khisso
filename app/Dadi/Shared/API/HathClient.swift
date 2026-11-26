@@ -34,10 +34,10 @@ struct HathClient: Sendable {
         return response.threads
     }
 
-    /// GET /agents/:id/messages: a thread's history, oldest first.
-    func messages(agentId: String) async throws -> [DurableMessage] {
+    /// GET /agents/:id/messages: a thread's history, oldest first; `limit` keeps only the newest messages.
+    func messages(agentId: String, limit: Int? = nil) async throws -> [DurableMessage] {
         struct Response: Decodable { let messages: [DurableMessage] }
-        let response: Response = try await client.get("/agents/\(agentId)/messages")
+        let response: Response = try await client.get("/agents/\(agentId)/messages", query: limit.map { [URLQueryItem(name: "limit", value: String($0))] } ?? [])
         return response.messages
     }
 
@@ -89,21 +89,25 @@ struct HathClient: Sendable {
         let _: Halted = try await client.post("/agents/\(agentId)/sessions/\(segment)/halt", body: Body())
     }
 
-    /// GET /agents/:id/schedules: what the agent sends or receives, next run first.
-    func schedules(agentId: String) async throws -> [ScheduledMessage] {
-        struct Response: Decodable { let schedules: [ScheduledMessage] }
-        let response: Response = try await client.get("/agents/\(agentId)/schedules")
-        return response.schedules
+    /// GET /agents/:id/routines: the agent's routines and reminders, next run first.
+    func routines(agentId: String) async throws -> Routines {
+        try await client.get("/agents/\(agentId)/routines")
     }
 
-    /// PATCH /schedules/:id: change a schedule's time, repeat or message.
-    func patchSchedule(_ id: String, _ change: PatchScheduleRequest) async throws -> ScheduledMessage {
-        try await client.patch("/schedules/\(id)", body: change)
+    /// DELETE /routines/:id: Ankur cancels a routine; its agent can set it again.
+    func cancelRoutine(_ id: String) async throws {
+        try await client.delete("/routines/\(id)")
     }
 
-    /// DELETE /schedules/:id: cancel a schedule.
-    func cancelSchedule(_ id: String) async throws {
-        try await client.delete("/schedules/\(id)")
+    /// DELETE /reminders/:id: Ankur cancels a reminder.
+    func cancelReminder(_ id: String) async throws {
+        try await client.delete("/reminders/\(id)")
+    }
+
+    /// POST /agents/:id/stop: ends the agent's run, halts its job's helper tasks and marks the job stopped.
+    func stop(agentId: String) async throws -> StopResult {
+        struct Body: Encodable {}
+        return try await client.post("/agents/\(agentId)/stop", body: Body())
     }
 
     /// POST /agents/:id/read: Ankur has read `agentId`'s thread through `seq`.

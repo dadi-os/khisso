@@ -42,10 +42,14 @@ struct TaskRow: View {
                 Image(systemName: task.kind == "browser" ? "globe" : "terminal")
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(task.status == "asking" ? Color.tideText : .inkMuted)
-                Text(task.route).font(.footnote.monospaced().weight(.medium)).foregroundStyle(.ink).lineLimit(1).layoutPriority(1)
+                if showsOwner {
+                    Text(task.route).font(.footnote.monospaced().weight(.medium)).foregroundStyle(.ink).lineLimit(1).layoutPriority(1)
+                } else {
+                    Text(task.kind.capitalized).font(.footnote.weight(.semibold)).foregroundStyle(.ink).lineLimit(1).layoutPriority(1)
+                }
                 if showsOwner { Text(owner).font(.footnote).foregroundStyle(.inkMuted).lineLimit(1).truncationMode(.tail) }
                 Spacer(minLength: 4)
-                TaskStateCapsule(status: task.status).layoutPriority(2)
+                TaskStateWord(status: task.status).layoutPriority(2)
                 Text(task.lastActivity, format: .relative(presentation: .numeric, unitsStyle: .narrow))
                     .font(.caption2)
                     .foregroundStyle(.inkFaint)
@@ -82,49 +86,29 @@ struct TaskRow: View {
     }
 }
 
-/// A task's state word as a capsule: working in sage, paused and waiting in tide (waiting dashed),
-/// idle and asleep outlined (asleep dashed).
-struct TaskStateCapsule: View {
+/// A task's state as plain type with a dot: working in sage, paused and waiting in tide, stopped in the late tone,
+/// idle and asleep quiet.
+struct TaskStateWord: View {
     let status: String
 
     var body: some View {
-        HStack(spacing: 5) {
-            if status == "paused" { Image(systemName: "pause.fill").font(.system(size: 9)) }
-            Text(label).font(.caption.weight(.semibold))
+        HStack(spacing: 6) {
+            Circle().fill(dot).frame(width: 6, height: 6)
+            Text(label).font(.caption.weight(.medium))
         }
-        .foregroundStyle(ink)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 3)
-        .background(fill, in: .capsule)
-        .overlay { Capsule().strokeBorder(line, style: StrokeStyle(lineWidth: 1, dash: dashed ? [3, 2] : [])) }
+        .foregroundStyle(status == "stopped" ? Color.lateInk : .inkMuted)
+        .accessibilityElement(children: .combine)
     }
 
     /// An `asking` task is waiting on its agent; the rest say what Nas says.
     private var label: String { status == "asking" ? "waiting" : status }
-    private var dashed: Bool { status == "asking" || status == "asleep" }
 
-    private var ink: Color {
+    private var dot: Color {
         switch status {
-        case "working": .sageText
-        case "paused", "asking": .tideText
-        default: .inkMuted
-        }
-    }
-
-    private var fill: Color {
-        switch status {
-        case "working": .sage.opacity(0.26)
-        case "paused": .tide.opacity(0.2)
-        case "asking": .tide.opacity(0.1)
-        default: .clear
-        }
-    }
-
-    private var line: Color {
-        switch status {
-        case "asking": .tide.opacity(0.6)
-        case "idle", "asleep": .sageLine
-        default: .clear
+        case "working": .sage
+        case "paused", "asking": .tide
+        case "stopped": .lateInk
+        default: .inkFaint.opacity(0.7)
         }
     }
 }

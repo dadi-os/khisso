@@ -55,17 +55,17 @@ struct HathEventTests {
         return out
     }
 
-    @Test func parsesMessagesAndLanes() async throws {
+    @Test func parsesMessagesAndWakes() async throws {
         let got = try await events([
             ": connected",
             "",
-            #"data: {"type":"lane_started","agent_id":"finance-specialist","lane":"work","at":"2026-10-21T16:00:00.000Z"}"#,
+            #"data: {"type":"wake_started","agent_id":"finance-specialist","wake_id":"w1","reason":{"kind":"message","ref":null},"at":"2026-10-21T16:00:00.000Z"}"#,
             #"data: {"type":"message","agent_id":"finance-specialist","from_agent_id":"finance-specialist","to_agent_id":null,"content":"$412 left","attachments":[],"seq":42,"at":"2026-10-21T16:00:01.250Z"}"#,
             #"data: {"type":"agent_spawned","agent_id":"x","parent_agent_id":null,"name":"x","at":"2026-10-21T16:00:02.000Z"}"#,
             ": ping",
         ])
         #expect(got.count == 3)
-        #expect(got[0] == .laneStarted(agentId: "finance-specialist", lane: .work))
+        #expect(got[0] == .wakeStarted(agentId: "finance-specialist", wakeId: "w1"))
         guard case .message(let agentId, let message) = got[1] else {
             Issue.record("second event is \(got[1])")
             return
@@ -96,115 +96,6 @@ private struct LineSequence: AsyncSequence, Sendable {
 
 private extension Array where Element == String {
     var async: LineSequence { LineSequence(lines: self) }
-}
-
-/// The planner lays a day out as thaali does: lanes for overlaps, open time
-/// between blocks, and what is now and next.
-struct PlannerLayoutTests {
-    private let calendar: Calendar = {
-        var c = Calendar(identifier: .gregorian)
-        c.timeZone = TimeZone(identifier: "America/Detroit")!
-        return c
-    }()
-
-    private func block(_ id: String, _ start: String, _ end: String) -> TimelineItem {
-        let day = "2026-10-21T"
-        func date(_ time: String) -> Date { try! Date("\(day)\(time):00-04:00", strategy: .iso8601) }
-        return TimelineItem(
-            planId: id, occurrenceDate: "2026-10-21", title: id, body: nil, kind: .study, status: .confirmed,
-            startAt: date(start), endAt: date(end), dueAt: nil, opensAt: nil, allDay: false, hideFromPlanner: false,
-            state: "scheduled", outcome: nil, recurrence: nil, series: nil, place: nil, owner: "schedule-specialist", notes: []
-        )
-    }
-
-    private var day: Date { try! Date("2026-10-21T12:00:00-04:00", strategy: .iso8601) }
-
-    @Test func overlapsGetSideBySideLanes() {
-        let segments = PlannerLayout.segments([block("a", "09:00", "10:00"), block("b", "09:30", "10:30"), block("c", "11:00", "12:00")], on: day, calendar: calendar)
-        #expect(segments.map(\.block.planId) == ["a", "b", "c"])
-        #expect(segments.map(\.lane) == [0, 1, 0])
-        #expect(segments.map(\.lanes) == [2, 2, 1])
-        #expect(segments[0].startMin == 540)
-    }
-
-    @Test func countsWallClockMinutesOnTheFallBackSunday() throws {
-        let sunday = try Date("2026-11-01T12:00:00-05:00", strategy: .iso8601)
-        func at(_ time: String) throws -> Date { try Date("2026-11-01T\(time):00-05:00", strategy: .iso8601) }
-        let item = TimelineItem(
-            planId: "p", occurrenceDate: "2026-11-01", title: "p", body: nil, kind: .study, status: .confirmed,
-            startAt: try at("07:30"), endAt: try at("08:30"), dueAt: nil, opensAt: nil, allDay: false, hideFromPlanner: false,
-            state: "scheduled", outcome: nil, recurrence: nil, series: nil, place: nil, owner: "schedule-specialist", notes: []
-        )
-        let segment = try #require(PlannerLayout.segments([item], on: sunday, calendar: calendar).first)
-        #expect(segment.startMin == 450)
-        #expect(segment.endMin == 510)
-    }
-
-    @Test func aShortSessionIsDrawnForItsMinimumHeight() throws {
-        let segments = PlannerLayout.segments([block("a", "09:00", "09:20"), block("b", "09:30", "10:00")], on: day, calendar: calendar)
-        #expect(segments[0].drawnEndMin == 540 + PlannerLayout.minimumSpan)
-        #expect(segments.map(\.lane) == [0, 1])
-    }
-
-    @Test func openTimeOfTenMinutesOrMoreIsAGap() {
-        let segments = PlannerLayout.segments([block("a", "09:00", "10:00"), block("b", "10:05", "10:30"), block("c", "11:00", "12:00")], on: day, calendar: calendar)
-        #expect(PlannerLayout.gaps(segments) == [PlannerLayout.Gap(startMin: 639, endMin: 660)])
-    }
-
-    @Test func findsNowAndNext() {
-        let segments = PlannerLayout.segments([block("a", "09:00", "10:00"), block("b", "11:00", "12:00")], on: day, calendar: calendar)
-        let during = PlannerLayout.nowAndNext(segments, at: 570)
-        #expect(during.current?.block.planId == "a" && during.next?.block.planId == "b")
-        let between = PlannerLayout.nowAndNext(segments, at: 630)
-        #expect(between.current == nil && between.next?.block.planId == "b")
-    }
-
-    @Test func aSessionSettlesWhenCompletedCancelledOrOver() throws {
-        let ahead = block("a", "13:00", "14:00")
-        let noon = try Date("2026-10-21T12:00:00-04:00", strategy: .iso8601)
-        #expect(!PlannerLayout.isSettled(ahead, now: noon))
-        #expect(PlannerLayout.isSettled(ahead.marked(completed: true), now: noon))
-        #expect(PlannerLayout.isSettled(block("b", "09:00", "10:00"), now: noon))
-    }
-
-    @Test func spansReadAsHoursAndMinutes() {
-        #expect(PlannerLayout.span(80) == "1 h 20 min")
-        #expect(PlannerLayout.span(45) == "45 min")
-        #expect(PlannerLayout.span(120) == "2 h")
-    }
-}
-
-/// Yaad's timeline items decode as sent, a session is named by its plan and
-/// date, and Ankur's Completed mark sends null to take it back.
-struct TimelineItemTests {
-    private let json = """
-    {"id": "p1", "occurrence_date": "2026-10-29", "title": "CSE 431 lecture", "body": null, "kind": "class",
-     "status": "confirmed", "start_at": "2026-10-29T17:00:00.000Z", "end_at": "2026-10-29T18:20:00.000Z",
-     "due_at": null, "opens_at": null, "all_day": false, "time_zone": null, "hide_from_planner": false,
-     "state": "scheduled", "outcome": "done", "outcome_at": "2026-10-29T18:30:00.000Z", "actual_start": null,
-     "actual_end": null, "recurrence": "every Tue and Thu", "series": {"completed": 16, "total": 17},
-     "place": {"id": "pl", "title": "Engineering Building", "address": "428 S Shaw Ln, East Lansing, MI 48824", "room": "1345"},
-     "owner": "cse-431-specialist", "notes": [{"id": "n1", "title": "BFS and DFS", "body": null}]}
-    """
-
-    @Test func decodesAndNamesTheSession() throws {
-        let item = try ServiceJSON.decoder.decode(TimelineItem.self, from: Data(json.utf8))
-        #expect(item.id == "p1:2026-10-29")
-        #expect(item.kind == .class && item.completed && item.series?.total == 17)
-        #expect(item.ownerAgent == "cse-431-specialist")
-        #expect(!item.marked(completed: false).completed)
-        let directions = try #require(Directions.url(to: item.place))
-        #expect(directions.scheme == "maps")
-        #expect(URLComponents(url: directions, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "daddr" }?.value == item.place?.address)
-    }
-
-    @Test func takingTheMarkBackSendsNull() throws {
-        let body = try ServiceJSON.encoder.encode(OutcomeRequest(planId: "p1", occurrenceDate: "2026-10-29", outcome: nil))
-        let fields = try JSONSerialization.jsonObject(with: body) as? [String: Any]
-        #expect(fields?["plan_id"] as? String == "p1")
-        #expect(fields?["occurrence_date"] as? String == "2026-10-29")
-        #expect(fields?["outcome"] is NSNull)
-    }
 }
 
 /// Chaavi's flat folders nest by slash, as in thaali, and counts roll up.
@@ -514,19 +405,6 @@ struct H264SplitterTests {
     }
 }
 
-/// A schedule edit sends only what changed, and "once" is an explicit null.
-struct PatchScheduleTests {
-    @Test func sendsOnlyChangesAndNullsAOneShot() throws {
-        var request = PatchScheduleRequest()
-        request.content = "later"
-        request.repeats = .once
-        let json = try JSONSerialization.jsonObject(with: ServiceJSON.encoder.encode(request)) as? [String: Any]
-        #expect(json?["content"] as? String == "later")
-        #expect(json?["interval_minutes"] is NSNull)
-        #expect(json?["run_at"] == nil)
-    }
-}
-
 /// New Chaavi items go out with Chaavi's camelCase keys, leaving unset
 /// fields out, since Chaavi's schema refuses unknown keys.
 struct ChaaviNewItemTests {
@@ -543,48 +421,6 @@ struct ChaaviNewItemTests {
         #expect(login["password"] as? String == "pw")
         #expect(login["totp"] == nil)
         #expect((login["uris"] as? [[String: String]])?.first?["uri"] == "github.com")
-    }
-}
-
-/// The status Hath sends on an agent: decoded as it comes (times without fractions stay
-/// text) and put into the chips and job line the agent sheet shows.
-struct AgentStatusTests {
-    private let body = #"""
-    {"id":"a","name":"Planner","system_prompt":"","parent_agent_id":null,"active":true,
-     "running":{"work":true,"process":false,
-       "waiting_on":{"targets":["task/browser/3"],"since":"2026-10-29T10:20:00.000Z","wakes_by":"2026-10-29T10:50:00.000Z"},
-       "status":{"job":{"from":null,"at":"2026-10-29T09:05:00Z","content":"book the flight"},
-         "work":{"state":"waiting","since":"2026-10-29T10:20:00Z","waiting_on":["task/browser/3"]},
-         "step":"web_fetch https://x.test",
-         "recent":[{"name":"read_file","arg":"/a.txt","ok":true},{"name":"web_fetch","arg":"","ok":false},{"name":"wait","arg":"","ok":null}],
-         "tasks":[{"id":"task/browser/3","status":"working","current":"on x.test"}],
-         "tasks_unreadable":null,
-         "pending":[{"id":7,"to":"planner","expects_reply":true,"preview":"which date?"}]}},
-     "sessions":{"tasks":[{"id":"task/browser/3"}]},
-     "created_at":"2026-10-01T00:00:00.000Z","updated_at":"2026-10-29T10:00:00.000Z"}
-    """#
-
-    @Test func decodesTheStatusAndWhatWorkWaitsOn() throws {
-        let agent = try ServiceJSON.decoder.decode(AgentRecord.self, from: Data(body.utf8))
-        #expect(agent.running.waitingOn?.targets == ["task/browser/3"])
-        #expect(agent.running.status?.work.state == .waiting)
-        #expect(agent.running.status?.pending.first?.expectsReply == true)
-    }
-
-    @Test func putsTheStateIntoChipsAndAJobLine() throws {
-        let agent = try ServiceJSON.decoder.decode(AgentRecord.self, from: Data(body.utf8))
-        let chips = AgentState.chips(agent, lanes: [.work, .process])
-        #expect(chips.map(\.text) == ["Working", "Processing", "Waiting on task/browser/3"])
-        #expect(chips.map(\.tone) == [.sage, .tide, .tide])
-        #expect(AgentState.chips(agent, lanes: []).map(\.text) == ["Waiting on task/browser/3"])
-        let job = AgentState.job(try #require(agent.running.status), nameOf: { $0 }, timeZone: TimeZone(identifier: "UTC")!)
-        #expect(job == "Ankur asked at 9:05 AM: book the flight")
-    }
-
-    @Test func summarisesTheStateInOneLine() throws {
-        let agent = try ServiceJSON.decoder.decode(AgentRecord.self, from: Data(body.utf8))
-        #expect(AgentState.summary(agent, lanes: [.work, .process], tasks: 2).hasPrefix("Working + Processing · 2 helper tasks · "))
-        #expect(AgentState.summary(agent, lanes: [], tasks: 0).hasPrefix("Waiting on a task · "))
     }
 }
 

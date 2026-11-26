@@ -75,7 +75,7 @@ struct TaskSheet: View {
                 Text("\(task.route) \u{00B7} \(owner)").font(.caption.monospaced()).foregroundStyle(.inkMuted).lineLimit(1)
             }
             Spacer(minLength: 4)
-            TaskStateCapsule(status: task.status)
+            TaskStateWord(status: task.status)
             if task.stoppable { menu }
             Button("Close", systemImage: "xmark") { dismiss() }
                 .labelStyle(.iconOnly)

@@ -14,11 +14,10 @@ struct AgentMarkdown: View {
     var compact = false
 
     var body: some View {
-        MarkdownView(MathDelimiters.normalize(source))
+        MarkdownView(LinkFormat.normalize(MathDelimiters.normalize(source)))
             .markdownMathRenderingEnabled()
             .markdownFontGroup(AgentMarkdownFonts(compact: compact))
-            .markdownLinksUnderlined()
-            .tint(.sageDeep, for: .link)
+            .chatLinks()
             .tint(.sageDeep, for: .inlineCodeBlock)
             .tint(.sageDeep, for: .blockQuote)
             .markdownBlockQuoteStyle(SageQuoteStyle())
@@ -32,20 +31,21 @@ struct AgentMarkdown: View {
 }
 
 /// Inline Markdown alone (emphasis, code and links), for Ankur's own words in
-/// his bubbles, which are plain text far more often than not.
+/// his bubbles, which are plain text far more often than not. Links keep the bubble's bone ink, underlined, since blue
+/// does not read on the sage fill.
 enum InlineMarkdown {
     /// `text` with its inline Markdown, links and code in dadi's colors.
     static func attributed(_ text: String) -> AttributedString {
         let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace, failurePolicy: .returnPartiallyParsedIfPossible)
         var attributed: AttributedString
         do {
-            attributed = try AttributedString(markdown: text, options: options)
+            attributed = try AttributedString(markdown: LinkFormat.normalize(text), options: options)
         } catch {
             return AttributedString(text)
         }
         for run in attributed.runs {
             if run.link != nil {
-                attributed[run.range].foregroundColor = .sageDeep
+                attributed[run.range].foregroundColor = .bone
                 attributed[run.range].underlineStyle = .single
             }
             if run.inlinePresentationIntent?.contains(.code) == true {

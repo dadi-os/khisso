@@ -1,8 +1,7 @@
 import SwiftUI
 
-/// The latest agent threads: a processing agent shows thaali's flowing dots in
-/// place of its last line, a working one says so. A thread opens on its
-/// latest message with a dictated reply.
+/// The latest agent threads: a working or waiting agent says so in place of its last line, and one parked on
+/// Ankur's answer or blocked says that. A thread opens on its latest message with a dictated reply.
 struct AgentsPage: View {
     let store: WatchStore
 
@@ -35,6 +34,9 @@ private struct Row: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
             HStack(spacing: 6) {
+                if thread.state != .idle {
+                    StateDot(state: thread.state, mark: nil)
+                }
                 Text(thread.name).font(.footnote.weight(thread.unread > 0 ? .bold : .semibold)).lineLimit(1)
                 if thread.unread > 0 {
                     Spacer(minLength: 2)
@@ -45,10 +47,12 @@ private struct Row: View {
                         .background(.sage, in: .capsule)
                 }
             }
-            if thread.processing {
-                ProcessingMark().frame(height: 14)
-            } else if thread.working {
-                Text("working").font(.caption2).foregroundStyle(.sage)
+            if let attention = thread.attention {
+                Text(attention == .blocked ? "Blocked" : "Needs your input")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(attention == .blocked ? Color.lateInk : .tide)
+            } else if thread.state != .idle {
+                Text(thread.state == .working ? "working" : "waiting").font(.caption2).foregroundStyle(thread.state == .working ? Color.sage : .tide)
             } else {
                 Text((thread.fromUser ? "You: " : "") + Agent.preview(thread.lastMessage))
                     .font(.caption2)
@@ -70,6 +74,13 @@ private struct ThreadPage: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
+                if let attention = thread.attention {
+                    Text(attention == .blocked ? "\(thread.name) is blocked" : "\(thread.name) needs your input")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(attention == .blocked ? Color.lateInk : .tide)
+                } else if thread.state != .idle {
+                    Text(thread.state.label).font(.caption.weight(.semibold)).foregroundStyle(thread.state == .working ? Color.sage : .tide)
+                }
                 Text(thread.lastAt, format: .relative(presentation: .named))
                     .font(.caption2)
                     .foregroundStyle(.secondary)

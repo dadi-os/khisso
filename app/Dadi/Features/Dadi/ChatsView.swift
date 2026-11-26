@@ -3,12 +3,11 @@ import SwiftUI
 /// Chats: every conversation as a glass card under the day of its last
 /// message (Today, Yesterday, then the date), as thaali's sidebar lists them,
 /// under a search field. A row has the agent's name, when it last spoke, its
-/// last words and its unread count, and opens with a dot while a lane
-/// of the agent runs. Talking to Dadi is the dock, not this page.
+/// last words and its unread count, and opens with the agent's state dot. Talking to Dadi is the dock, not this page.
 struct ChatsView: View {
     let threads: [ThreadSummary]
-    /// Each agent's running lanes.
-    let lanes: (String) -> Set<Lane>
+    /// What each agent is doing.
+    let running: (String) -> AgentRecord.Running
     /// Why the threads could not be read, if they could not.
     let error: String?
     /// True until the first answer.
@@ -67,6 +66,9 @@ struct ChatsView: View {
             .frame(maxWidth: .infinity)
         }
         .scrollDismissesKeyboard(.interactively)
+        .scrollEdgeEffectHidden(true, for: .all)
+        .scrollEdge(.top, size: ScrollEdge.listTop)
+        .scrollEdge(.bottom, size: ScrollEdge.listBottom)
         .animation(Motion.settle, value: days.map(\.id))
     }
 
@@ -93,24 +95,27 @@ struct ChatsView: View {
     }
 
     private func card(_ thread: ThreadSummary) -> some View {
-        let working = ChatGroups.isWorking(lanes(thread.agentId))
+        let state = running(thread.agentId)
         return Button { open(thread.agentId) } label: {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 8) {
-                    if working {
-                        WorkingDot()
+                    if state.state != .idle || state.mark(at: .now) != nil {
+                        StateDot(state: state.state, mark: state.mark(at: .now))
                     }
                     Text(thread.agentName)
                         .font(.subheadline.weight(thread.unread > 0 ? .bold : .semibold))
                         .foregroundStyle(.ink)
                         .lineLimit(1)
+                    if let mark = state.mark(at: .now) {
+                        Text(mark.word).font(.caption2.weight(.medium)).foregroundStyle(Color.lateInk)
+                    }
                     Spacer(minLength: 6)
                     Text(ChatGroups.when(thread.lastAt))
                         .font(.caption2)
                         .foregroundStyle(thread.unread > 0 ? Color.sageText : .inkFaint)
                 }
                 HStack(alignment: .top, spacing: 8) {
-                    Text((thread.fromUser ? "You: " : "") + Agent.preview(thread.lastMessage))
+                    Text(ChatGroups.line(thread, running: state))
                         .font(.footnote)
                         .foregroundStyle(thread.unread > 0 ? Color.ink : .inkMuted)
                         .lineLimit(2)
@@ -120,7 +125,7 @@ struct ChatsView: View {
                     }
                 }
             }
-            .animation(Motion.settle, value: working)
+            .animation(Motion.settle, value: state.state)
             .animation(Motion.pop, value: thread.unread)
             .padding(.horizontal, 16)
             .padding(.vertical, 11)
