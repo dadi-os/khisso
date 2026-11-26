@@ -321,15 +321,13 @@ struct ChecklistView: View {
 
     private func load() async {
         let key = TaskLogic.key(day)
-        let today = Calendar.current.startOfDay(for: .now)
         do {
             async let dayTasks = yaad.tasks(on: key)
-            async let windowless = yaad.somedayTasks()
-            async let dated = yaad.plans(from: today, to: Calendar.current.date(byAdding: .day, value: SomedaySheet.lookAheadDays, to: today)!)
-            let (fetched, fetchedSomeday, fetchedPlans) = try await (dayTasks, windowless, dated)
+            async let somedayTotal = SomedayCount.of(yaad)
+            let (fetched, total) = try await (dayTasks, somedayTotal)
             actions.ticker.settle()
             tasks = fetched
-            somedayCount = fetchedSomeday.count + PlanFilter.loose(fetchedPlans).count
+            somedayCount = total
             error = nil
             readAt = .now
             if settledAtLoad == nil {

@@ -50,21 +50,14 @@ import Testing
 @Suite struct DockComposerTests {
     @Test func theDadiBarShowsOnEveryRootPageIncludingChats() {
         for page in [HomeView.Page.dadi, .planner, .ghar, .chaavi, .system] {
-            #expect(DockPresentation.of(page: page, editing: false) == .dadi)
-            #expect(DockPresentation.of(page: page, editing: true) == .dadi)
+            #expect(DockPresentation.of(page: page) == .dadi)
         }
+        #expect(DockPresentation.dadi.showsAccessory)
     }
 
-    @Test func theChatsHomeShowsTalkToDadiAndRootsAlwaysShowAnAccessory() {
-        #expect(DockPresentation.of(page: .dadi, editing: false) == .dadi && DockPresentation.dadi.showsAccessory)
-        #expect(!DockPresentation.keyboardBar.showsAccessory)
-    }
-
-    @Test func aThreadsComposerMovesAboveTheKeyboardWhileTyping() {
-        #expect(DockPresentation.of(page: .thread("career"), editing: false) == .threadAccessory)
-        #expect(DockPresentation.of(page: .thread("career"), editing: true) == .keyboardBar)
-        #expect(DockPresentation.threadAccessory.showsAccessory)
-        #expect(!DockPresentation.keyboardBar.showsAccessory)
+    @Test func anOpenThreadCarriesItsOwnComposerSoTheDockAccessoryStepsAside() {
+        #expect(DockPresentation.of(page: .thread("career")) == .none)
+        #expect(!DockPresentation.none.showsAccessory)
     }
 
     @Test func aDraftSendsWithWordsOrPhotosAndNotWhileOneIsGoing() {
@@ -81,13 +74,12 @@ import Testing
         #expect(drafts.draft(for: "health").text.isEmpty)
     }
 
-    @MainActor @Test func quotingAMessageStartsTyping() throws {
+    @MainActor @Test func quotingAMessageKeepsItWithThatAgentsDraft() throws {
         let draft = ThreadDraft()
-        #expect(!draft.editing)
+        #expect(draft.quote == nil)
         let json = #"{"seq":4,"from_agent_id":"career","to_agent_id":null,"content":"hello","attachments":[],"created_at":"2026-11-09T10:00:00.000Z"}"#
         draft.reply(to: try ServiceJSON.decoder.decode(DurableMessage.self, from: Data(json.utf8)))
         #expect(draft.quote?.seq == 4)
-        #expect(draft.editing)
     }
 }
 
@@ -153,5 +145,38 @@ import Testing
         #expect(TabReselect.reset(tab: .system, page: .system, inSubState: true) == .systemOverview)
         for tab in TabReselect.order { #expect(TabReselect.reset(tab: tab, page: tab.home, inSubState: false) == .none) }
         #expect(TabReselect.reset(tab: .planner, page: .planner, inSubState: true) == .none)
+    }
+}
+
+/// The Chats tab's stack follows Home's page, and the drawer's filters are true counts of the list.
+@Suite struct ChatsNavigationTests {
+    @Test func aThreadIsOneAgentPushedOnTheListAndTheListIsAnEmptyStack() {
+        #expect(ChatsRoute.path(for: .thread("career")) == ["career"])
+        #expect(ChatsRoute.path(for: .dadi).isEmpty)
+        #expect(ChatsRoute.page(for: ["career"]) == .thread("career"))
+        #expect(ChatsRoute.page(for: []) == .dadi)
+    }
+
+    @MainActor @Test func aReselectPopsTheStackTheSameWayABackSwipeDoes() {
+        let reset = TabReselect.reset(tab: .dadi, page: .thread("career"), inSubState: false)
+        #expect(reset == .chatsList)
+        #expect(ChatsRoute.path(for: TabReselect.root(for: .thread("career")) ?? .dadi).isEmpty)
+    }
+
+    private func thread(_ id: String, unread: Int) throws -> ThreadSummary {
+        let body = #"{"agent_id":"\#(id)","agent_name":"\#(id)","last_message":"hi","last_at":"2026-11-09T14:00:00-05:00","from_user":false,"unread":\#(unread),"read_seq":null}"#
+        return try ServiceJSON.decoder.decode(ThreadSummary.self, from: Data(body.utf8))
+    }
+
+    @Test func eachFilterCountsExactlyTheChatsItKeeps() throws {
+        let threads = [try thread("a", unread: 2), try thread("b", unread: 0), try thread("c", unread: 0), try thread("d", unread: 1)]
+        let states: [String: AgentState] = ["a": .working, "b": .waiting, "c": .idle, "d": .idle]
+        let state = { states[$0] ?? .idle }
+        #expect(ChatGroups.Filter.all.count(in: threads, state: state) == 4)
+        #expect(ChatGroups.Filter.unread.count(in: threads, state: state) == 2)
+        #expect(ChatGroups.Filter.working.count(in: threads, state: state) == 1)
+        #expect(ChatGroups.Filter.waiting.count(in: threads, state: state) == 1)
+        #expect(ChatGroups.Filter.idle.count(in: threads, state: state) == 2)
+        #expect(threads.filter { ChatGroups.Filter.unread.keeps($0, state: state($0.agentId)) }.map(\.agentId) == ["a", "d"])
     }
 }

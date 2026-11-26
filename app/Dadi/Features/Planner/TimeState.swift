@@ -78,21 +78,6 @@ enum PlanTime {
         return free
     }
 
-    /// One true line about a day: its plans, the free time between them and the tasks left (with how many are
-    /// past due). Parts that are zero are left out.
-    static func daySummary(_ plans: [Plan], tasks: (open: Int, pastDue: Int)?) -> String {
-        let counted = plans.filter { !$0.declined }
-        var parts: [String] = []
-        if !counted.isEmpty { parts.append("\(counted.count) \(counted.count == 1 ? "plan" : "plans")") }
-        let free = freeBetween(plans, minimum: 30 * 60)
-        if free > 0 { parts.append("\(Phrase.duration(free)) free between plans") }
-        if let tasks, tasks.open + tasks.pastDue > 0 {
-            let left = tasks.open + tasks.pastDue
-            parts.append("\(left) \(left == 1 ? "task" : "tasks") to do\(tasks.pastDue > 0 ? ", \(tasks.pastDue) past due" : "")")
-        }
-        return parts.isEmpty ? "Nothing planned" : parts.joined(separator: " · ")
-    }
-
     /// A task's situation in words: "Done", "Past due by 5 days", "Closes today 11:59 PM · in 17 min",
     /// "Closes Fri 11:59 PM · in 2 days", "No close date".
     static func taskStatus(_ task: PlanTask, now: Date, calendar: Calendar = .current) -> TaskStatus {

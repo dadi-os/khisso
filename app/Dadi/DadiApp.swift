@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// dadi for iPhone. The root moves through Join, Connecting and Home as the
-/// connection changes, carrying the દાદી wordmark between them, and the app
+/// connection changes, carrying the દાદી wordmark from Join to Connecting, and the app
 /// relays for the watch app.
 @main
 struct DadiApp: App {
@@ -28,7 +28,7 @@ struct DadiApp: App {
                         .transition(.opacity)
                 case .connecting, .failed:
                     if let services = connection.services, let since = connection.offlineSince {
-                        HomeView(services: services, wordmark: wordmark, online: false)
+                        HomeView(services: services, online: false)
                             .saturation(0.5)
                             .overlay(alignment: .top) {
                                 OfflinePill(since: since)
@@ -41,7 +41,7 @@ struct DadiApp: App {
                     }
                 case .online:
                     if let services = connection.services {
-                        HomeView(services: services, wordmark: wordmark, online: true)
+                        HomeView(services: services, online: true)
                             .transition(.opacity)
                     }
                 }

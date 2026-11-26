@@ -26,8 +26,10 @@ private struct Viewfinder: UIViewRepresentable {
 /// surface the composer gives it. Pinch to zoom, double-tap to turn to the
 /// front camera, the shutter in the middle with a plus for the photo library
 /// on its left and the camera's light on its right; swipe down or tap the
-/// grabber to close. Photos go to the composer as they are taken or picked,
-/// and it stays open for more. The composer lays it out at its open size
+/// grabber to close. By default the first picture goes to the message and the
+/// viewfinder closes; the button at the top right switches to several, which
+/// stay open with a strip of what was taken until Done. Photos picked from the
+/// library are added as they are picked. The composer lays it out at its open size
 /// while its surface grows and shrinks around it, so the live preview mounts
 /// at once and fades in with its first frames, and the controls rise into
 /// place just behind it; closing, the controls fade as the surface shrinks.
@@ -38,7 +40,12 @@ struct CameraPanel: View {
     /// The composer is closing: the content leaves before the surface shrinks.
     let dismissing: Bool
     let add: (DraftPhoto) -> Void
+    /// Says why a photo taken just before the viewfinder closed was not added.
+    let report: (String) -> Void
     let close: () -> Void
+
+    /// How tall the viewfinder is where the message gives it room.
+    static let height: CGFloat = 340
 
     /// Side buttons and the shutter's slot share this size, so the shutter sits centered.
     private static let button: CGFloat = 46
@@ -47,6 +54,7 @@ struct CameraPanel: View {
     @State private var libraryOpen = false
     @State private var picked: [PhotosPickerItem] = []
     @State private var problem: String?
+    @State private var batch = CaptureBatch<DraftPhoto>()
     @State private var taking = false
     @State private var shutter = 0
     @State private var arrived = false
@@ -62,6 +70,7 @@ struct CameraPanel: View {
                 .allowsHitTesting(false)
             grabber
             zoomLabel
+            multiButton
             controls
                 .offset(y: arrived ? 0 : 28)
                 .opacity(arrived ? 1 : 0)
@@ -77,6 +86,8 @@ struct CameraPanel: View {
         }
         .sensoryFeedback(.impact(weight: .medium), trigger: shutter)
         .sensoryFeedback(.impact(flexibility: .rigid), trigger: flips)
+        .task { await camera.start() }
+        .onDisappear { camera.release() }
         .onAppear { withAnimation(.spring(response: 0.38, dampingFraction: 0.86).delay(0.06)) { arrived = true } }
         .onChange(of: dismissing) { _, leaving in
             guard leaving else { return }
@@ -121,8 +132,8 @@ struct CameraPanel: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: 40)
                 .contentShape(.rect)
-                .onTapGesture(perform: close)
-                .gesture(DragGesture(minimumDistance: 12).onEnded { if $0.translation.height > 50 { close() } })
+                .onTapGesture(perform: finish)
+                .gesture(DragGesture(minimumDistance: 12).onEnded { if $0.translation.height > 50 { finish() } })
                 .accessibilityLabel("Close camera")
                 .accessibilityAddTraits(.isButton)
             Spacer()
@@ -146,6 +157,48 @@ struct CameraPanel: View {
         .allowsHitTesting(false)
     }
 
+    private var multiButton: some View {
+        VStack {
+            HStack {
+                Spacer()
+                sideButton("square.on.square", label: batch.mode == .multi ? "Take one photo at a time" : "Take several photos", lit: batch.mode == .multi) {
+                    withAnimation(Motion.snap) { batch.toggle() }
+                }
+            }
+            .padding(.top, 8)
+            .padding(.trailing, 14)
+            Spacer()
+        }
+        .opacity(arrived ? 1 : 0)
+    }
+
+    /// What was taken in several-photo mode, with Done to attach it.
+    private var held: some View {
+        HStack(spacing: 10) {
+            ScrollView(.horizontal) {
+                HStack(spacing: 6) {
+                    ForEach(batch.held) { photo in
+                        Image(uiImage: photo.thumbnail)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 44, height: 44)
+                            .clipShape(.rect(cornerRadius: 10, style: .continuous))
+                    }
+                }
+            }
+            .scrollIndicators(.hidden)
+            Button(action: finish) {
+                Text("Done \(batch.held.count)")
+                    .font(.subheadline.weight(.semibold).monospacedDigit())
+                    .padding(.horizontal, 6)
+            }
+            .buttonStyle(.glassProminent)
+            .tint(.sageDeep)
+            .accessibilityLabel("Attach \(batch.held.count) photos")
+        }
+        .transition(.opacity.combined(with: .offset(y: 6)))
+    }
+
     private var controls: some View {
         VStack(spacing: 14) {
             Spacer()
@@ -158,6 +211,7 @@ struct CameraPanel: View {
                     .background(.black.opacity(0.5), in: .capsule)
                     .transition(.opacity.combined(with: .offset(y: 6)))
             }
+            if !batch.held.isEmpty { held }
             HStack {
                 sideButton("photo.on.rectangle", label: "Choose from library") { libraryOpen = true }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -182,6 +236,7 @@ struct CameraPanel: View {
         .padding(.horizontal, 22)
         .padding(.bottom, 22)
         .animation(Motion.snap, value: problem)
+        .animation(Motion.snap, value: batch.held.count)
         .animation(.spring(response: 0.25, dampingFraction: 0.7), value: taking)
     }
 
@@ -223,7 +278,7 @@ struct CameraPanel: View {
         Task {
             withAnimation(.easeIn(duration: 0.2)) { turning = true }
             do { try await Task.sleep(for: .milliseconds(220)) } catch { return }
-            camera.flip()
+            await camera.flip()
             do { try await Task.sleep(for: .milliseconds(420)) } catch { return }
             withAnimation(.easeOut(duration: 0.4)) { turning = false }
         }
@@ -242,7 +297,7 @@ struct CameraPanel: View {
     }
 
     private func take() {
-        guard count < DraftPhoto.limit else {
+        guard count + batch.held.count < DraftPhoto.limit else {
             problem = "A message holds up to \(DraftPhoto.limit) photos."
             return
         }
@@ -251,12 +306,25 @@ struct CameraPanel: View {
         Task {
             defer { taking = false }
             do {
-                add(try DraftPhoto(data: try await camera.capture()))
+                let data = try await camera.capture()
                 shutter += 1
+                if batch.mode == .single, batch.held.isEmpty {
+                    close()
+                    do { add(try await DraftPhoto.make(data: data)) } catch { report(error.localizedDescription) }
+                } else if let photos = batch.take(try await DraftPhoto.make(data: data)) {
+                    photos.forEach(add)
+                    close()
+                }
             } catch {
                 problem = error.localizedDescription
             }
         }
+    }
+
+    /// Attaches whatever was taken and closes.
+    private func finish() {
+        batch.finish().forEach(add)
+        close()
     }
 
     /// Adds the picked library items, as many as the message has room for.

@@ -6,6 +6,8 @@ import SwiftUI
 /// last words and its unread count, and opens with the agent's state dot. Talking to Dadi is the dock, not this page.
 struct ChatsView: View {
     let threads: [ThreadSummary]
+    /// What the drawer narrowed the list to.
+    @Binding var filter: ChatGroups.Filter
     /// What each agent is doing.
     let running: (String) -> AgentRecord.Running
     /// Why the threads could not be read, if they could not.
@@ -25,6 +27,17 @@ struct ChatsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 search
+                if filter != .all {
+                    Button { filter = .all } label: {
+                        Label("Showing \(filter.rawValue.lowercased()) chats. Show all", systemImage: "line.3.horizontal.decrease")
+                            .font(.footnote.weight(.medium))
+                            .foregroundStyle(.sageText)
+                            .padding(.horizontal, 6)
+                            .frame(minHeight: 32)
+                            .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                }
                 if let error {
                     VStack(alignment: .leading, spacing: 12) {
                         Label(error, systemImage: "exclamationmark.circle")
@@ -39,7 +52,7 @@ struct ChatsView: View {
                     EmptyState(title: "No chats yet", detail: "Tell Dadi what you need. It lands with the agent who owns it, and that chat opens.")
                         .padding(.top, 96)
                 } else if days.isEmpty {
-                    Text("No chat matches \u{201C}\(query)\u{201D}.")
+                    Text(query.isEmpty ? "No chat is \(filter.rawValue.lowercased())." : "No chat matches \u{201C}\(query)\u{201D}.")
                         .font(.subheadline)
                         .foregroundStyle(.inkMuted)
                         .padding(.vertical, 18)
@@ -70,6 +83,7 @@ struct ChatsView: View {
         .scrollEdge(.top, size: ScrollEdge.listTop)
         .scrollEdge(.bottom, size: ScrollEdge.listBottom)
         .animation(Motion.settle, value: days.map(\.id))
+        .animation(Motion.snap, value: filter)
     }
 
     private var search: some View {
@@ -91,7 +105,7 @@ struct ChatsView: View {
     }
 
     private var days: [ChatGroups.Day] {
-        ChatGroups.days(threads, matching: query)
+        ChatGroups.days(threads.filter { filter.keeps($0, state: running($0.agentId).state) }, matching: query)
     }
 
     private func card(_ thread: ThreadSummary) -> some View {

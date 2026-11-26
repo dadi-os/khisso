@@ -6,14 +6,24 @@ import SwiftUI
 /// LaTeX math inline (`$…$`, `\(…\)`) and on its own line (`$$…$$`, `\[…\]`),
 /// highlighted code, links, images, quotes and headings, in dadi's ink with
 /// sage links and accents. Single-dollar math follows thaali's rule
-/// (``MathDelimiters``), so prices are never typeset. Text stays selectable.
+/// (``MathDelimiters``), so prices are never typeset. Text is selectable unless `selectable` is off, which a message
+/// needs so that holding it lifts it with its actions instead of starting a selection.
 /// Compact sets it at footnote size, for reference text such as a system
 /// prompt rather than a message.
 struct AgentMarkdown: View {
     let source: String
     var compact = false
+    var selectable = true
 
     var body: some View {
+        if selectable {
+            markdown.textSelection(.enabled)
+        } else {
+            markdown.textSelection(.disabled)
+        }
+    }
+
+    private var markdown: some View {
         MarkdownView(LinkFormat.normalize(MathDelimiters.normalize(source)))
             .markdownMathRenderingEnabled()
             .markdownFontGroup(AgentMarkdownFonts(compact: compact))
@@ -26,7 +36,6 @@ struct AgentMarkdown: View {
             .backgroundStyle(.boneRaised)
             .foregroundStyle(.ink)
             .lineSpacing(3)
-            .textSelection(.enabled)
     }
 }
 

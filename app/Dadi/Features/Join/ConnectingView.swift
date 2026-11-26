@@ -1,15 +1,16 @@
 import SwiftUI
 
-/// Between joining and Home: the wordmark breathes on the field while the node
-/// logs in and Hath answers, or a glass card says why dadi can't be reached.
+/// Between joining and Home: the wordmark rests centred on the field with one
+/// quiet status line under it while the node logs in and Hath answers, or the
+/// shared error card says why dadi can't be reached. Nothing moves when the
+/// status changes, and Home fades in over it when dadi answers.
 struct ConnectingView: View {
     let connection: Connection
     let wordmark: Namespace.ID
 
-    /// The wordmark's size, which Home's Chats bubble takes over from.
     private static let wordmarkSize: CGFloat = 84
 
-    @State private var glow = false
+    @State private var breathing = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -26,43 +27,45 @@ struct ConnectingView: View {
         }
     }
 
+    /// The line under the mark: Hath's own progress words when it has any.
+    nonisolated static func status(detail: String?) -> String {
+        detail ?? "Connecting to dadi"
+    }
+
     private func connecting(_ detail: String?) -> some View {
-        VStack(spacing: 28) {
-            Spacer()
+        ZStack {
             Text("દાદી")
                 .font(.wordmark(Self.wordmarkSize))
                 .inkCentered(.word, size: Self.wordmarkSize)
                 .foregroundStyle(.sageDeep)
-                .shadow(color: .sage.opacity(glow ? 0.55 : 0.05), radius: glow ? 28 : 6)
-                .scaleEffect(glow ? 1.02 : 0.98)
+                .opacity(breathing ? 1 : 0.62)
                 .matchedGeometryEffect(id: "wordmark", in: wordmark)
                 .onAppear {
-                    guard !reduceMotion else { return }
-                    withAnimation(Motion.breath) { glow = true }
+                    guard !reduceMotion else { breathing = true; return }
+                    withAnimation(Motion.breath) { breathing = true }
                 }
-            VStack(spacing: 10) {
-                Text("Connecting to dadi")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.ink)
-                Text(detail ?? "Logging in to your box…")
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay {
+            VStack(spacing: 4) {
+                Text(Self.status(detail: detail))
                     .font(.callout)
                     .foregroundStyle(.inkMuted)
                     .multilineTextAlignment(.center)
-                    .lineLimit(4)
+                    .lineLimit(3)
                     .contentTransition(.opacity)
                     .animation(Motion.settle, value: detail)
-                    .frame(maxWidth: 340)
                 if let name = connection.nodeName {
-                    Label(name, systemImage: "iphone.gen3.radiowaves.left.and.right")
-                        .font(.footnote.weight(.medium))
-                        .foregroundStyle(.sageText)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(.sage.opacity(0.12), in: .capsule)
-                        .padding(.top, 6)
+                    Text(name)
+                        .font(.footnote)
+                        .foregroundStyle(.inkFaint)
                 }
             }
-            Spacer()
+            .frame(maxWidth: 320, alignment: .top)
+            .frame(height: 80, alignment: .top)
+            .offset(y: Self.wordmarkSize + 8)
+        }
+        .overlay(alignment: .bottom) {
             Button("Forget this device") { connection.forget() }
                 .buttonStyle(.plain)
                 .font(.footnote)
@@ -75,37 +78,18 @@ struct ConnectingView: View {
     }
 
     private func failure(_ message: String) -> some View {
-        VStack(spacing: 18) {
-            Image(systemName: "wifi.exclamationmark")
-                .font(.system(size: 44, weight: .medium))
-                .foregroundStyle(.clay)
-                .symbolEffect(.wiggle, options: .nonRepeating)
-            Text("Can't reach dadi")
-                .font(.title2.weight(.semibold))
-                .foregroundStyle(.ink)
-            Text(message)
-                .font(.callout)
-                .foregroundStyle(.inkMuted)
-                .multilineTextAlignment(.center)
-                .textSelection(.enabled)
-            HStack(spacing: 12) {
-                Button("Forget this device", role: .destructive) { connection.forget() }
-                    .buttonStyle(.glass)
-                Button {
-                    withAnimation(Motion.settle) { connection.retry() }
-                } label: {
-                    Label("Try again", systemImage: "arrow.clockwise")
-                        .font(.body.weight(.semibold))
-                }
-                .buttonStyle(.glassProminent)
+        VStack(spacing: 14) {
+            ErrorCard(service: "dadi", status: nil, message: message) {
+                withAnimation(Motion.settle) { connection.retry() }
             }
-            .controlSize(.large)
-            .padding(.top, 6)
+            Button("Forget this device", role: .destructive) { connection.forget() }
+                .buttonStyle(.plain)
+                .font(.footnote)
+                .foregroundStyle(.inkFaint)
+                .focusEffectDisabled()
         }
-        .padding(32)
         .frame(maxWidth: 460)
-        .glassEffect(.regular, in: .rect(cornerRadius: 32))
         .padding(24)
-        .transition(.scale(scale: 0.96).combined(with: .opacity))
+        .transition(.opacity)
     }
 }

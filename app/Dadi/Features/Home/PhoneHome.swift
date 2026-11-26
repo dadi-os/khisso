@@ -14,7 +14,6 @@ import SwiftUI
 /// dock, softening as it goes under either so nothing reads through the glass.
 struct PhoneHome: View {
     let services: Services
-    let wordmark: Namespace.ID
     let store: HomeStore
     let online: Bool
     @Binding var page: HomeView.Page
@@ -25,8 +24,10 @@ struct PhoneHome: View {
     /// What the Chats tab shows: the list or a thread, kept while another
     /// tab is open.
     @State private var dadiPage: HomeView.Page = .dadi
+    /// What the drawer narrowed the chat list to.
+    @State private var chatsFilter = ChatGroups.Filter.all
     /// False until Home has settled in from Connecting, so the bar fades in
-    /// around the wordmark instead of arriving with it.
+    /// after Connecting rather than arriving with it.
     @State private var arrived = false
     /// True while a sideways drag is moving the drawer and just after, so the
     /// row a swipe ends on is not taken as a tap.
@@ -64,9 +65,8 @@ struct PhoneHome: View {
     /// moving the page, as the Planner's day swipe would.
     private let edge: CGFloat = 36
 
-    init(services: Services, wordmark: Namespace.ID, store: HomeStore, online: Bool, page: Binding<HomeView.Page>) {
+    init(services: Services, store: HomeStore, online: Bool, page: Binding<HomeView.Page>) {
         self.services = services
-        self.wordmark = wordmark
         self.store = store
         self.online = online
         _page = page
@@ -111,13 +111,16 @@ struct PhoneHome: View {
                             withAnimation(Motion.settle) { planner = next }
                             set(open: false)
                         }
-                    default:
-                        AgentsDrawer(store: store, page: page) { next in
+                    case .dadi:
+                        ChatsDrawer(store: store, filter: chatsFilter) {
                             guard !swiping else { return }
-                            choose(next)
-                        } details: { agentId in
                             set(open: false)
-                            agentSheet = agentId
+                            router.compose()
+                        } choose: { next in
+                            guard !swiping else { return }
+                            withAnimation(Motion.snap) { chatsFilter = next }
+                            show(.dadi)
+                            set(open: false)
                         }
                     }
                 }
@@ -131,7 +134,7 @@ struct PhoneHome: View {
                             .onTapGesture { set(open: false) }
                     }
                     .overlay(alignment: .leading) {
-                        if !open {
+                        if !open && !page.isThread {
                             Color.clear
                                 .frame(width: edge)
                                 .contentShape(.rect)
@@ -164,15 +167,12 @@ struct PhoneHome: View {
             if page.tab == .dadi { dadiPage = page }
         }
         .overlay {
-            if router.composing {
-                RouterCompose(dock: router, active: store.routing, send: sendToRouter)
-            }
+            RouterCompose(dock: router, active: store.routing, send: sendToRouter)
         }
         .overlay(alignment: .top) {
             ToastStack(toaster: toaster)
                 .padding(.top, 64)
         }
-        .animation(Motion.snap, value: router.composing)
         .sensoryFeedback(.success, trigger: router.handedOff)
         .onChange(of: store.sideProblem) { _, problem in
             guard let problem else { return }
@@ -216,7 +216,7 @@ struct PhoneHome: View {
         }
         .tabBarMinimizeBehavior(page.isThread ? .onScrollUp : .onScrollDown)
         .tabViewBottomAccessory(isEnabled: presentation.showsAccessory) {
-            DockAccessory(presentation: presentation, router: router, active: store.routing, online: online, thread: openThread)
+            DockAccessory(presentation: presentation, router: router, active: store.routing, online: online)
         }
         .tint(.sageDeep)
         .environment(reselect)
@@ -248,39 +248,38 @@ struct PhoneHome: View {
         }
     }
 
-    /// Chats, or the thread the Chats tab has open.
+    /// Chats, with the open thread pushed on it. The stack follows `dadiPage`, so opening a thread, the edge-swipe back and a
+    /// re-tap of the Chats tab are all the system's push and pop, and a thread brings its own composer with its page.
     private var dadiContent: some View {
-        ZStack {
-            switch dadiPage {
-            case .thread(let agentId):
+        NavigationStack(path: Binding {
+            ChatsRoute.path(for: dadiPage)
+        } set: { path in
+            let next = ChatsRoute.page(for: path)
+            dadiPage = next
+            if page.tab == .dadi { page = next }
+        }) {
+            ChatsView(threads: store.threads, filter: $chatsFilter, running: store.running(of:), error: store.error, loading: !store.loaded, retry: { Task { await store.load(services.hath) } }) { agentId in
+                show(.thread(agentId))
+            } details: { agentId in
+                agentSheet = agentId
+            }
+            .background { FieldBloom() }
+            .toolbar(.hidden, for: .navigationBar)
+            .navigationDestination(for: String.self) { agentId in
                 ThreadView(hath: services.hath, nas: services.nas, agentId: agentId, name: store.name(of: agentId), live: store.live, running: store.running(of: agentId), counts: store.counts(of: agentId), connections: store.connections, draft: drafts.draft(for: agentId)) { seq in
                     Task { await store.markRead(services.hath, agentId: agentId, through: seq) }
                 } details: {
                     agentSheet = agentId
                 }
-                    .id(agentId)
-                    .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .opacity))
-            default:
-                ChatsView(threads: store.threads, running: store.running(of:), error: store.error, loading: !store.loaded, retry: { Task { await store.load(services.hath) } }) { agentId in
-                    show(.thread(agentId))
-                } details: { agentId in
-                    agentSheet = agentId
-                }
-                .transition(.opacity)
+                .background { FieldBloom() }
+                .toolbar(.hidden, for: .navigationBar)
             }
         }
     }
 
-    /// The open thread, with its draft and how it sends, for the dock's accessory.
-    private var openThread: DockThread? {
-        guard case .thread(let agentId) = page else { return nil }
-        let draft = drafts.draft(for: agentId)
-        return DockThread(name: store.name(of: agentId), draft: draft) { draft.send(services.hath, to: agentId) }
-    }
-
     /// What the dock's accessory shows for the open page.
     private var presentation: DockPresentation {
-        DockPresentation.of(page: page, editing: openThread?.draft.editing ?? false)
+        DockPresentation.of(page: page)
     }
 
     /// The Chats tab's badge: Ankur's unread replies.
@@ -352,7 +351,6 @@ struct PhoneHome: View {
             } else if let title = title(of: shown) {
                 NameBubble(title: title, details: shown.isThread ? { if case .thread(let agentId) = shown { agentSheet = agentId } } : nil)
                     .id(title)
-                    .matchedGeometryEffect(id: "wordmark", in: wordmark, isSource: shown == .dadi)
                     .transition(.opacity.combined(with: .scale(scale: 0.92)))
             }
             Spacer()
@@ -416,12 +414,6 @@ struct PhoneHome: View {
             if next.tab == .dadi { dadiPage = next }
             page = next
         }
-    }
-
-    /// Shows `next` and closes the drawer.
-    private func choose(_ next: HomeView.Page) {
-        show(next)
-        set(open: false)
     }
 
     private func set(open next: Bool) {

@@ -20,8 +20,41 @@ private struct MonthTaskBadge: View {
     }
 }
 
-/// The month as tiles, a week to a row: each day's plans as tinted pills with whole-word titles ("+N more" past two) and a small badge of the
-/// tasks closing that day. A tile opens its day.
+/// What the month pager decides without drawing.
+enum MonthPaging {
+    /// How many months either side of the current one the pager reaches.
+    static let reach = 24
+
+    /// The first day of every month the pager reaches, around the month holding `now`.
+    static func months(around now: Date, calendar: Calendar = .current) -> [Date] {
+        let current = first(of: now, calendar: calendar)
+        return (-reach...reach).compactMap { calendar.date(byAdding: .month, value: $0, to: current) }
+    }
+
+    /// Local midnight of the first day of the month holding `date`.
+    static func first(of date: Date, calendar: Calendar = .current) -> Date {
+        calendar.dateInterval(of: .month, for: date)!.start
+    }
+
+    /// True when `day` belongs to `month`: its page draws it at full strength; the head and tail days of the
+    /// neighbouring months are dimmed.
+    static func isFocused(_ day: Date, in month: Date, calendar: Calendar = .current) -> Bool {
+        calendar.isDate(day, equalTo: month, toGranularity: .month)
+    }
+
+    /// What one read covers: the whole-week grids of `month` and both neighbours, so a swipe shows plans at once.
+    static func window(of month: Date, calendar: Calendar = .current) -> (from: Date, to: Date)? {
+        guard let before = calendar.date(byAdding: .month, value: -1, to: month), let after = calendar.date(byAdding: .month, value: 1, to: month),
+              let from = PlannerLayout.monthGrid(before, calendar: calendar).first, let last = PlannerLayout.monthGrid(after, calendar: calendar).last,
+              let to = calendar.date(byAdding: .day, value: 1, to: last) else { return nil }
+        return (from, to)
+    }
+}
+
+/// The months as a pager: one page to a month, swiped sideways with a snap or moved by the arrows, each page the whole
+/// weeks that touch the month with the neighbouring months' head and tail days dimmed. Each day is a tile of its plans
+/// as tinted pills with whole-word titles ("+N more" past two) and a small badge of the tasks closing that day; a tile,
+/// dimmed or not, opens its day.
 struct MonthView: View {
     let yaad: YaadClient
     let actions: PlannerActions
@@ -33,7 +66,7 @@ struct MonthView: View {
     static let tilePlans = 2
 
     @Environment(LiveData.self) private var live: LiveData?
-    @State private var month = MonthView.first(of: .now)
+    @State private var month: Date? = MonthPaging.first(of: .now)
     @State private var plans: [Plan] = []
     @State private var lists: [String: [PlanTask]] = [:]
     @State private var loaded = false
@@ -41,70 +74,81 @@ struct MonthView: View {
     @State private var readAt: Date?
     @State private var retries = 0
 
-    /// Local midnight of the first day of the month holding `date`.
-    static func first(of date: Date) -> Date {
-        Calendar.current.dateInterval(of: .month, for: date)!.start
-    }
+    private var focus: Date { month ?? MonthPaging.first(of: .now) }
 
     var body: some View {
         VStack(spacing: 10) {
-            PeriodBar(title: month.formatted(.dateTime.month(.wide).year()), summary: loaded ? PlanTime.periodSummary(actions.shown(plans), days: PlannerLayout.monthGrid(month).filter { Calendar.current.isDate($0, equalTo: month, toGranularity: .month) }, noun: "month") : nil, previousLabel: "Previous month", nextLabel: "Next month", previous: { move(by: -1) }, next: { move(by: 1) }, current: { jump(to: Self.first(of: .now)) })
-            if loaded { FeedBanner(online: online, error: error, readAt: readAt) }
+            PeriodBar(title: focus.formatted(.dateTime.month(.wide).year()), summary: loaded ? PlanTime.periodSummary(actions.shown(plans), days: PlannerLayout.monthGrid(focus).filter { MonthPaging.isFocused($0, in: focus) }, noun: "month") : nil, previousLabel: "Previous month", nextLabel: "Next month", previous: { move(by: -1) }, next: { move(by: 1) }, current: { jump(to: MonthPaging.first(of: .now)) })
+                .padding(.horizontal, 12)
+            if loaded { FeedBanner(online: online, error: error, readAt: readAt).padding(.horizontal, 12) }
             if !loaded && error == nil {
-                MonthSkeleton().frame(maxHeight: .infinity, alignment: .top)
+                MonthSkeleton().padding(.horizontal, 12).frame(maxHeight: .infinity, alignment: .top)
             } else if !loaded, let error {
-                ErrorCard(service: "Yaad", status: nil, message: error) { retries += 1 }.frame(maxHeight: .infinity, alignment: .top)
+                ErrorCard(service: "Yaad", status: nil, message: error) { retries += 1 }.padding(.horizontal, 12).frame(maxHeight: .infinity, alignment: .top)
             } else {
-                grid.opacity(online ? 1 : 0.6)
+                pager.opacity(online ? 1 : 0.6)
             }
         }
-        .padding(.horizontal, 12)
-        .task(id: PeriodReload(start: month, change: live?.yaad ?? 0, retry: retries)) { await load() }
+        .task(id: PeriodReload(start: focus, change: live?.yaad ?? 0, retry: retries)) { await load() }
         .sensoryFeedback(.selection, trigger: month)
     }
 
     private func move(by months: Int) {
-        guard let next = Calendar.current.date(byAdding: .month, value: months, to: month) else { return }
+        guard let next = Calendar.current.date(byAdding: .month, value: months, to: focus) else { return }
         jump(to: next)
     }
 
     private func jump(to next: Date) {
         guard next != month else { return }
-        withAnimation(Motion.settle) {
-            plans = []
-            lists = [:]
-            loaded = false
-            error = nil
-            month = next
-        }
+        withAnimation(Motion.settle) { month = next }
     }
 
-    private var grid: some View {
-        let days = PlannerLayout.monthGrid(month)
+    private var pager: some View {
+        ScrollView(.horizontal) {
+            LazyHStack(spacing: 0) {
+                ForEach(MonthPaging.months(around: .now), id: \.self) { first in
+                    page(of: first)
+                        .containerRelativeFrame([.horizontal, .vertical])
+                }
+            }
+            .scrollTargetLayout()
+        }
+        .scrollIndicators(.hidden)
+        .scrollTargetBehavior(.paging)
+        .scrollPosition(id: $month)
+    }
+
+    /// One month's page: the weekday row over the whole-week grid, its tiles sharing the page's height.
+    private func page(of first: Date) -> some View {
+        let days = PlannerLayout.monthGrid(first)
         let shown = actions.shown(plans)
         let now = Date.now
-        return ScrollView {
-            VStack(spacing: 4) {
-                HStack(spacing: 4) {
-                    ForEach(Array(days.prefix(7)), id: \.self) { day in
-                        Text(day, format: .dateTime.weekday(.abbreviated)).font(.caption2.weight(.semibold)).foregroundStyle(.inkMuted).frame(maxWidth: .infinity)
-                    }
+        let rows = days.count / 7
+        return VStack(spacing: 4) {
+            HStack(spacing: 4) {
+                ForEach(Array(days.prefix(7)), id: \.self) { day in
+                    Text(day, format: .dateTime.weekday(.abbreviated)).font(.caption2.weight(.semibold)).foregroundStyle(.inkMuted).frame(maxWidth: .infinity)
                 }
+            }
+            GeometryReader { proxy in
+                let tile = max(Self.minimumTile, (proxy.size.height - CGFloat(rows - 1) * 4) / CGFloat(rows))
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 7), spacing: 4) {
                     ForEach(days, id: \.self) { day in
-                        tileView(day, plans: shown, now: now)
+                        tileView(day, month: first, height: tile, plans: shown, now: now)
                     }
                 }
             }
-            .padding(.bottom, 24)
         }
-        .scrollIndicators(.hidden)
-        .refreshable { retries += 1 }
+        .padding(.horizontal, 12)
+        .padding(.bottom, 12)
     }
 
-    private func tileView(_ day: Date, plans: [Plan], now: Date) -> some View {
+    /// The least height of a tile, so its day and two plans always fit.
+    static let minimumTile: CGFloat = 72
+
+    private func tileView(_ day: Date, month: Date, height: CGFloat, plans: [Plan], now: Date) -> some View {
         let today = Calendar.current.isDate(day, inSameDayAs: now)
-        let inMonth = Calendar.current.isDate(day, equalTo: month, toGranularity: .month)
+        let inMonth = MonthPaging.isFocused(day, in: month)
         let (shown, more) = PlanFilter.monthTile(plans, day: day, limit: Self.tilePlans)
         let badge = lists[TaskLogic.key(day)].map { TaskLogic.monthBadge(actions.ticker.shown($0), on: day) }
         return VStack(alignment: .leading, spacing: 2) {
@@ -157,7 +201,7 @@ struct MonthView: View {
                 Spacer(minLength: 0)
             }
             .padding(4)
-            .frame(maxWidth: .infinity, minHeight: 104, maxHeight: 104, alignment: .topLeading)
+            .frame(maxWidth: .infinity, minHeight: height, maxHeight: height, alignment: .topLeading)
             .background(today ? Color.boneRaised : Color.boneRaised.opacity(0.5), in: .rect(cornerRadius: 10, style: .continuous))
             .overlay { RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(today ? Color.sageDeep : .rule, lineWidth: today ? 1.5 : 1) }
             .opacity(inMonth ? 1 : 0.4)
@@ -169,17 +213,17 @@ struct MonthView: View {
     }
 
     private func load() async {
-        let days = PlannerLayout.monthGrid(month)
-        guard let first = days.first, let last = days.last, let end = Calendar.current.date(byAdding: .day, value: 1, to: last) else { return }
+        let days = PlannerLayout.monthGrid(focus)
+        guard let window = MonthPaging.window(of: focus) else { return }
         do {
-            async let monthly = yaad.plans(from: first, to: end)
+            async let monthly = yaad.plans(from: window.from, to: window.to)
             async let tasks = yaad.taskLists(for: days)
             let (fetched, t) = try await (monthly, tasks)
             actions.settle(fetched)
             actions.ticker.settle()
             withAnimation(Motion.settle) {
                 plans = fetched
-                lists = t
+                lists.merge(t) { _, new in new }
             }
             error = nil
             readAt = .now

@@ -127,6 +127,12 @@ struct PlannerPage: View {
                 .animation(Motion.settle, value: actions.attendedFailure)
         }
         .plannerSheets(actions: actions, yaad: yaad)
+        .onAppear {
+            actions.openDay = { day in
+                actions.sheet = nil
+                show(day)
+            }
+        }
         .sensoryFeedback(.selection, trigger: route)
         .navigationTitle("Planner")
     }

@@ -33,23 +33,30 @@ enum ChatGroups {
         return days
     }
 
-    /// The chips that narrow the agents by what they are doing.
-    enum StateFilter: String, CaseIterable, Identifiable {
+    /// How the drawer narrows the chat list: by unread replies or by what the agent is doing.
+    enum Filter: String, CaseIterable, Identifiable {
         case all = "All"
+        case unread = "Unread"
         case working = "Working"
         case waiting = "Waiting"
         case idle = "Idle"
 
         var id: String { rawValue }
 
-        /// Whether the filter keeps an agent that is in `state`.
-        func keeps(_ state: AgentState) -> Bool {
+        /// Whether the filter keeps `thread`, whose agent is in `state`.
+        func keeps(_ thread: ThreadSummary, state: AgentState) -> Bool {
             switch self {
             case .all: true
+            case .unread: thread.unread > 0
             case .working: state == .working
             case .waiting: state == .waiting
             case .idle: state == .idle
             }
+        }
+
+        /// How many of `threads` the filter keeps, whatever the search says.
+        func count(in threads: [ThreadSummary], state: (String) -> AgentState) -> Int {
+            threads.filter { keeps($0, state: state($0.agentId)) }.count
         }
     }
 

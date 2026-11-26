@@ -42,8 +42,8 @@ struct PeriodBar: View {
     }
 }
 
-/// The week from Monday as the Day timesheet widened: day columns about 130 pt wide in one horizontal scroll that snaps
-/// to a day, one shared vertical scroll, a sticky 64 pt hour axis on the left and a sticky header of one 36 pt line per
+/// The week from Monday as the Day timesheet widened: three day columns in view in one horizontal scroll that pages
+/// one day at a time, one shared vertical scroll, a sticky 64 pt hour axis on the left and a sticky header of one 36 pt line per
 /// day on top (weekday, numeral, task dot and count; today a small filled pill, past days quiet; a tap opens Day).
 /// There is no all-day rail: an all-day or multi-day plan is a hairline at the foot of that day's header, continuous
 /// across joined days. The grid runs edge to edge at 64 pt an hour to the bottom of its container, opens one hour
@@ -132,6 +132,15 @@ struct WeekView: View {
     }
 }
 
+/// The week's horizontal paging: it settles on a whole day column, three of them in view.
+private struct DayPaging: ScrollTargetBehavior {
+    let column: CGFloat
+
+    func updateTarget(_ target: inout ScrollTarget, context: TargetContext) {
+        target.rect.origin.x = WeekMetrics.snappedOffset(target.rect.origin.x, column: column)
+    }
+}
+
 /// What the week's horizontal scroll reports: how far it has moved.
 private struct WeekScroll: Equatable {
     var offset: CGFloat = 0
@@ -149,9 +158,10 @@ private struct WeekBody: View {
     let openDay: (Date) -> Void
 
     @State private var vertical: ScrollPosition
-    @State private var horizontal: ScrollPosition
+    @State private var horizontal = ScrollPosition(x: 0)
     @State private var scroll = WeekScroll()
     @State private var pageWidth: CGFloat = 390
+    @State private var positioned = false
     private let clusters: [[WeekCluster]]
     private let lanes: [[(plan: Plan, columns: ClosedRange<Int>)]]
 
@@ -169,7 +179,6 @@ private struct WeekBody: View {
         let thisWeek = days.contains { Calendar.current.isDateInToday($0) }
         let top = M.opening(starts: segments.flatMap { $0 }.map(\.startMin), nowMinute: thisWeek ? PlannerLayout.minute(of: .now) : nil)
         _vertical = State(initialValue: ScrollPosition(y: CGFloat(top) * M.scale))
-        _horizontal = State(initialValue: ScrollPosition(id: days.first { Calendar.current.isDateInToday($0) } ?? days[0], anchor: .leading))
     }
 
     private var column: CGFloat { M.column(pageWidth: pageWidth) }
@@ -181,14 +190,13 @@ private struct WeekBody: View {
         let header = header
         ZStack(alignment: .top) {
             ScrollView {
-                HStack(alignment: .top, spacing: 0) {
+                HStack(alignment: .top, spacing: M.gutter) {
                     axis
                     ScrollView(.horizontal) {
                         grid
-                            .scrollTargetLayout()
                     }
                     .scrollIndicators(.hidden)
-                    .scrollTargetBehavior(.viewAligned)
+                    .scrollTargetBehavior(DayPaging(column: column))
                     .scrollPosition($horizontal)
                     .onScrollGeometryChange(for: WeekScroll.self) { WeekScroll(offset: $0.contentOffset.x) } action: { _, new in scroll = new }
                 }
@@ -207,6 +215,12 @@ private struct WeekBody: View {
             pinned
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { pageWidth = $0 }
+        .task(id: pageWidth) {
+            guard !positioned else { return }
+            await Task.yield()
+            positioned = true
+            horizontal.scrollTo(x: M.offset(showing: days.firstIndex { Calendar.current.isDateInToday($0) } ?? 0, column: column))
+        }
     }
 
     private func badge(_ day: Date, now: Date) -> DayBadge? {
@@ -238,6 +252,7 @@ private struct WeekBody: View {
                     .offset(x: -scroll.offset)
                 }
                 .clipped()
+                .padding(.trailing, M.cardPad)
         }
         .overlay(alignment: .bottomTrailing) {
             if overflow, let first = lanes.dropFirst(M.maxBarRows).flatMap({ $0 }).map(\.columns.lowerBound).min() {
@@ -286,10 +301,11 @@ private struct WeekBody: View {
                 }
             }
             .shadow(color: .black.opacity(today ? 0 : 0.06), radius: 1, y: 1)
-            .contentShape(.capsule)
+            .padding(.top, M.headerTop)
+            .frame(width: column, height: M.headerTop + M.bubble + M.bubbleGap, alignment: .top)
+            .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .padding(.top, M.headerTop)
         .accessibilityLabel("Show \(day.formatted(.dateTime.weekday(.wide).month().day()))")
     }
 
@@ -355,14 +371,12 @@ private struct WeekBody: View {
                     Rectangle().fill(Color.sageDeep.opacity(0.25)).frame(height: 2).offset(y: at - 1).allowsHitTesting(false)
                 }
                 HStack(alignment: .top, spacing: 0) {
-                    Color.clear.frame(width: M.gutter, height: 1)
                     ForEach(Array(days.enumerated()), id: \.element) { index, day in
                         dayColumn(index, day: day, now: now, column: column)
                     }
-                    Color.clear.frame(width: M.cardPad, height: 1)
                 }
             }
-            .frame(width: M.gutter + column * CGFloat(days.count) + M.cardPad, height: gridHeight, alignment: .topLeading)
+            .frame(width: column * CGFloat(days.count), height: gridHeight, alignment: .topLeading)
         }
     }
 
@@ -428,26 +442,29 @@ private struct WeekBlock: View {
         let timed = !narrow && height >= M.timeLineMinHeight
         let textWidth = width - 2 * padX - (narrow ? 0 : M.dot + M.dotGap)
         let lines = TitleFit.lines(plan.title, width: textWidth, size: 13, weight: .semibold, maxLines: max(1, Int((height - 2 * padY - (timed ? 16 : 0)) / 16)))
-        let current = state == .now
-        let shape = RoundedRectangle(cornerRadius: M.blockRadius, style: .continuous)
+        let look = PlanCardLook(plan, state: state)
+        let captioned = look.caption != nil && !narrow && height >= M.captionMinHeight
         Button { actions.sheet = .plan(plan) } label: {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .top, spacing: M.dotGap) {
-                    if plan.attended == true {
+                    if look.check {
                         Image(systemName: "checkmark").font(.system(size: 12, weight: .bold)).foregroundStyle(Color.sageDeep).frame(height: 16)
                     } else if !narrow {
                         Circle().fill(plan.tone).frame(width: M.dot, height: M.dot).padding(.top, 5)
                     }
                     Text(plan.title)
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(plan.declined || state == .past ? Color.inkMuted : .ink)
-                        .strikethrough(plan.attended == false)
+                        .foregroundStyle(plan.declined || state == .past || look.struck ? Color.inkMuted : .ink)
+                        .strikethrough(look.struck)
                         .lineLimit(lines)
                         .truncationMode(.tail)
                         .multilineTextAlignment(.leading)
                 }
                 if timed, !narrow, meetingLink(plan) != nil {
                     Image(systemName: "video").font(.system(size: 10, weight: .semibold)).foregroundStyle(.inkFaint).padding(.leading, M.dot + M.dotGap)
+                }
+                if captioned, let caption = look.caption {
+                    Text(caption).font(.system(size: 12, weight: .semibold)).foregroundStyle(look.check ? Color.sageDeep : .inkMuted).lineLimit(1).padding(.leading, look.check ? 20 : M.dot + M.dotGap)
                 }
                 if timed, let end = plan.endAt {
                     ViewThatFits(in: .horizontal) {
@@ -457,22 +474,15 @@ private struct WeekBlock: View {
                     .font(.system(size: 12).monospacedDigit())
                     .foregroundStyle(.inkMuted)
                     .lineLimit(1)
-                    .padding(.leading, plan.attended == true ? 20 : M.dot + M.dotGap)
+                    .padding(.leading, look.check ? 20 : M.dot + M.dotGap)
                 }
             }
             .padding(.horizontal, padX)
             .padding(.vertical, padY)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .frame(height: height)
-            .background {
-                shape.fill(Color.bone)
-                shape.fill(plan.declined ? Color.clear : state == .past ? Color.slabPast : Color.slab)
-                if current { shape.fill(Color.slabNowFill) }
-            }
-            .overlay {
-                shape.strokeBorder(current ? Color.slabNow : plan.declined ? Color.slabDeclined : Color.slabLine, style: StrokeStyle(lineWidth: 1, dash: plan.declined ? [4, 3] : []))
-            }
-            .shadow(color: .black.opacity(state == .past || plan.declined ? 0 : 0.06), radius: 1, y: 1)
+            .planCardSurface(look, radius: M.blockRadius)
+            .shadow(color: .black.opacity(look.opacity < 1 ? 0 : 0.06), radius: 1, y: 1)
             .contentShape(.rect)
         }
         .buttonStyle(.plain)

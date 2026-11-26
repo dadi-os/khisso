@@ -17,6 +17,12 @@ private enum Day {
 
     static var noon: Date { at("12:00") }
 
+    /// Local midnight of `date` (YYYY-MM-DD) in Detroit, right on either side of the November fall back.
+    static func midnight(_ date: String) -> Date {
+        let parts = date.split(separator: "-").compactMap { Int($0) }
+        return calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2]))!
+    }
+
     static func plan(_ id: String, _ start: String, _ end: String?, rsvp: Rsvp? = nil, allDay: Bool = false, hub: Hub? = nil, owner: String = "schedule-specialist", attended: Bool? = nil, date: String = "2026-11-15", title: String? = nil) -> Plan {
         Plan(id: id, title: title ?? id, body: nil, rsvp: rsvp, startAt: at(start, date), endAt: end.map { at($0, date) }, allDay: allDay, timeZone: nil, attended: attended, place: nil, hub: hub, owner: owner, notes: [])
     }
@@ -211,12 +217,6 @@ struct TimeStateTests {
     @Test func aPlanThatEndedAddsWhatAnkurSaid() {
         let plan = Day.plan("a", "03:00", "04:00", attended: true)
         #expect(PlanTime.situation(plan, now: Day.noon, state: .past, calendar: calendar) == "Ended 8 h ago · Attended")
-    }
-
-    @Test func aDaySummaryCountsPlansFreeTimeAndTasks() {
-        let plans = [Day.plan("a", "09:00", "10:00"), Day.plan("b", "11:00", "12:00"), Day.plan("c", "12:10", "13:00", rsvp: .no)]
-        #expect(PlanTime.daySummary(plans, tasks: (open: 6, pastDue: 2)) == "2 plans · 1 h free between plans · 8 tasks to do, 2 past due")
-        #expect(PlanTime.daySummary([], tasks: (open: 0, pastDue: 0)) == "Nothing planned")
     }
 
     @Test func aWeekSummaryNamesTheBusiestDay() {
@@ -536,10 +536,27 @@ struct WeekMetricsTests {
         #expect(WeekMetrics.headerHeight(rows: 3, overflow: true) == 140)
     }
 
-    @Test func aPhoneColumnIsAboutOneHundredThirtyPoints() {
-        #expect(WeekMetrics.column(pageWidth: 393) == max(112, min(150, (393 - 24 - 56 - 12) / 2.3)))
-        #expect(WeekMetrics.column(pageWidth: 200) == 112 && WeekMetrics.column(pageWidth: 2000) == 150)
-        #expect(WeekMetrics.tier(column: 150) == .full && WeekMetrics.tier(column: 130) == .noCount && WeekMetrics.tier(column: 100) == .letter)
+    @Test func aPhoneShowsThreeWholeColumnsBesideTheAxis() {
+        #expect(WeekMetrics.column(pageWidth: 393) == 100)
+        let visible = 393 - 2 * WeekMetrics.cardPad - WeekMetrics.axis - WeekMetrics.gutter
+        #expect(WeekMetrics.column(pageWidth: 393) * CGFloat(WeekMetrics.visibleDays) <= visible)
+        #expect(WeekMetrics.tier(column: 140) == .full && WeekMetrics.tier(column: 100) == .noCount && WeekMetrics.tier(column: 80) == .letter)
+    }
+
+    @Test func theWeekPagesOneDayAtATimeAndNeverPastTheLastFullWindow() {
+        let column: CGFloat = 100
+        #expect(WeekMetrics.snappedOffset(0, column: column) == 0)
+        #expect(WeekMetrics.snappedOffset(40, column: column) == 0)
+        #expect(WeekMetrics.snappedOffset(60, column: column) == 100)
+        #expect(WeekMetrics.snappedOffset(230, column: column) == 200)
+        #expect(WeekMetrics.snappedOffset(9000, column: column) == CGFloat(WeekMetrics.days - WeekMetrics.visibleDays) * column)
+        #expect(WeekMetrics.snappedOffset(-50, column: column) == 0)
+    }
+
+    @Test func aDayLateInTheWeekOpensOnTheLastFullWindow() {
+        #expect(WeekMetrics.offset(showing: 0, column: 100) == 0)
+        #expect(WeekMetrics.offset(showing: 2, column: 100) == 200)
+        #expect(WeekMetrics.offset(showing: 6, column: 100) == 400)
     }
 
     @Test func theWeekOpensOnTheHourBeforeTheEarliestPlanOrNow() {
@@ -651,5 +668,141 @@ struct PlannerRouteTests {
         #expect(route.reselect(calendar: calendar, now: Day.noon) == true)
         route.open(day: Day.at("12:00", "2026-11-18"), calendar: calendar)
         #expect(route.reselect(calendar: calendar, now: Day.noon) == false && route.day == nil)
+    }
+}
+
+
+/// How a plan card looks, so Attended reads at a glance: solid and sage with a firm border, never just a small check.
+struct PlanCardLookTests {
+    @Test func theCardStateFollowsWhatAnkurSaidThenTheClock() {
+        let plan = Day.plan("p", "09:00", "10:00")
+        #expect(PlanCardState.of(plan, state: .past) == .past)
+        #expect(PlanCardState.of(plan, state: .now) == .current)
+        #expect(PlanCardState.of(plan, state: .next) == .upcoming && PlanCardState.of(plan, state: .later) == .upcoming)
+        #expect(PlanCardState.of(Day.plan("p", "09:00", "10:00", attended: true), state: .past) == .attended)
+        #expect(PlanCardState.of(Day.plan("p", "09:00", "10:00", attended: true), state: .now) == .attended)
+        #expect(PlanCardState.of(Day.plan("p", "09:00", "10:00", attended: false), state: .past) == .missed)
+        #expect(PlanCardState.of(Day.plan("p", "09:00", "10:00", rsvp: .no, attended: true), state: .past) == .declined)
+    }
+
+    @Test func anAttendedCardIsSolidFirmlyBorderedAndCaptioned() {
+        let attended = PlanCardLook(.attended)
+        #expect(attended.fill == .attended && attended.border == .attended && attended.lineWidth > PlanCardLook(.upcoming).lineWidth)
+        #expect(attended.check && attended.caption == "Attended" && attended.opacity == 1 && !attended.dashed)
+    }
+
+    @Test func aPastUnansweredCardIsQuietAndADidntAttendCardIsMutedDashedAndStruck() {
+        let past = PlanCardLook(.past)
+        #expect(past.opacity < 1 && !past.dashed && !past.struck && past.caption == nil && !past.check)
+        let missed = PlanCardLook(.missed)
+        #expect(missed.dashed && missed.struck && missed.opacity < 1 && missed.fill == .none && missed.caption == "Didn’t attend")
+        let declined = PlanCardLook(.declined)
+        #expect(declined.dashed && !declined.struck)
+    }
+
+    @Test func everyStateLooksDifferent() {
+        let looks = [PlanCardState.upcoming, .current, .past, .attended, .missed, .declined].map { PlanCardLook($0) }
+        #expect(Set(looks.map { "\($0.fill)|\($0.border)|\($0.dashed)|\($0.opacity)|\($0.struck)" }).count == looks.count)
+    }
+}
+
+/// The month pager: months to page through, each a whole-week grid with the neighbours' head and tail days dimmed.
+@MainActor struct MonthPagingTests {
+    private let calendar = Day.calendar
+    private let november = Day.midnight("2026-11-01")
+
+    @Test func thePagerReachesMonthsEitherSideOfTheCurrentOne() {
+        let months = MonthPaging.months(around: Day.noon, calendar: calendar)
+        #expect(months.count == 2 * MonthPaging.reach + 1)
+        #expect(months[MonthPaging.reach] == november)
+        #expect(months.allSatisfy { calendar.component(.day, from: $0) == 1 })
+    }
+
+    @Test func aMonthPageHoldsWholeWeeksWithHeadAndTailDays() {
+        let days = PlannerLayout.monthGrid(november, calendar: calendar)
+        #expect(days.count == 42 && days.count % 7 == 0)
+        #expect(calendar.component(.weekday, from: days[0]) == 2)
+        #expect(calendar.component(.month, from: days[0]) == 10 && calendar.component(.day, from: days[0]) == 26)
+        #expect(calendar.component(.month, from: days[41]) == 12 && calendar.component(.day, from: days[41]) == 6)
+    }
+
+    @Test func onlyTheFocusedMonthsDaysAreAtFullStrength() {
+        let days = PlannerLayout.monthGrid(november, calendar: calendar)
+        let focused = days.filter { MonthPaging.isFocused($0, in: november, calendar: calendar) }
+        #expect(focused.count == 30)
+        #expect(days.count - focused.count == 12)
+        #expect(!MonthPaging.isFocused(days[0], in: november, calendar: calendar) && !MonthPaging.isFocused(days[41], in: november, calendar: calendar))
+    }
+
+    @Test func oneReadCoversTheMonthAndBothNeighboursWholeWeeks() throws {
+        let window = try #require(MonthPaging.window(of: november, calendar: calendar))
+        #expect(calendar.component(.month, from: window.from) == 9 && calendar.component(.day, from: window.from) == 28)
+        #expect(calendar.component(.month, from: window.to) == 1 && calendar.component(.day, from: window.to) == 4)
+    }
+}
+
+/// The drawer is the Planner's control centre: its choices change the one route, its month marks the days with plans.
+@MainActor struct PlannerDrawerLogicTests {
+    private let calendar = Day.calendar
+
+    @Test func pickingADayOnTheMonthOpensItInTheDayViewFromAnyPage() {
+        var route = PlannerRoute()
+        route.showChecklist()
+        let picked = PlannerDrawer.picking(day: Day.at("15:00", "2026-11-20"), from: route, calendar: calendar)
+        #expect(picked.section == .timeline && picked.mode == .day)
+        #expect(picked.day == Day.at("00:00", "2026-11-20"))
+    }
+
+    @Test func aDimmedDayOfAnotherMonthOpensToo() {
+        let picked = PlannerDrawer.picking(day: Day.midnight("2026-10-28"), from: PlannerRoute(), calendar: calendar)
+        #expect(picked.day == Day.midnight("2026-10-28") && picked.mode == .day)
+    }
+
+    @Test func theMonthChoosesTheDayOnlyWhileTheDayViewShowsOne() {
+        var route = PlannerRoute()
+        #expect(PlannerDrawer.selectedDay(route, now: Day.noon, calendar: calendar) == Day.at("00:00"))
+        route.open(day: Day.at("12:00", "2026-11-18"), calendar: calendar)
+        #expect(PlannerDrawer.selectedDay(route, now: Day.noon, calendar: calendar) == Day.at("00:00", "2026-11-18"))
+        route.show(.week)
+        #expect(PlannerDrawer.selectedDay(route, now: Day.noon, calendar: calendar) == nil)
+        route.showChecklist()
+        #expect(PlannerDrawer.selectedDay(route, now: Day.noon, calendar: calendar) == nil)
+    }
+
+    @Test func theViewPickKeepsTimelineAndTheSectionPickKeepsTheView() {
+        var route = PlannerRoute()
+        route.show(.month)
+        let checklist = PlannerDrawer.picking(.checklist, from: route)
+        #expect(checklist.section == .checklist && checklist.mode == .month)
+        let week = PlannerDrawer.picking(.week, from: checklist)
+        #expect(week.section == .timeline && week.mode == .week)
+    }
+
+    @Test func aDayIsMarkedWhenItHoldsAPlanAnkurKeeps() {
+        let days = [Day.at("00:00"), Day.at("00:00", "2026-11-16"), Day.at("00:00", "2026-11-17"), Day.at("00:00", "2026-11-18")]
+        let plans = [
+            Day.plan("a", "09:00", "10:00"),
+            Day.plan("b", "09:00", "10:00", rsvp: .no, date: "2026-11-16"),
+            Day.plan("c", "09:00", "10:00", date: "2026-11-17"),
+        ]
+        let marks = MiniCalendar.marks(plans, days: days, calendar: calendar)
+        #expect(marks == [Day.at("00:00"), Day.at("00:00", "2026-11-17")])
+    }
+
+    @Test func nowAndNextAreTheKeptPlansOnAndComingToday() {
+        let plans = [Day.plan("past", "09:00", "10:00"), Day.plan("now", "11:30", "12:30"), Day.plan("skipped", "13:00", "14:00", rsvp: .no), Day.plan("next", "14:00", "15:00"), Day.plan("later", "16:00", "17:00")]
+        let glance = PlannerDrawer.nowNext(plans, now: Day.noon, calendar: calendar)
+        #expect(glance.current?.id == "now" && glance.next?.id == "next")
+        let over = PlannerDrawer.nowNext(plans, now: Day.at("18:00"), calendar: calendar)
+        #expect(over.current == nil && over.next == nil)
+    }
+
+    @Test func aDayCardSaysHowFarTheDayIs() {
+        let now = Day.noon
+        #expect(DayCardSheet.relation(Day.at("00:00"), now: now, calendar: calendar) == "Today")
+        #expect(DayCardSheet.relation(Day.at("00:00", "2026-11-16"), now: now, calendar: calendar) == "Tomorrow")
+        #expect(DayCardSheet.relation(Day.at("00:00", "2026-11-14"), now: now, calendar: calendar) == "Yesterday")
+        #expect(DayCardSheet.relation(Day.at("00:00", "2026-11-21"), now: now, calendar: calendar) == "In 6 days")
+        #expect(DayCardSheet.relation(Day.at("00:00", "2026-11-03"), now: now, calendar: calendar) == "12 days ago")
     }
 }

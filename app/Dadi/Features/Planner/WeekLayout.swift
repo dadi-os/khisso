@@ -26,6 +26,7 @@ enum WeekMetrics {
     static let blockPadY: CGFloat = 8
     static let blockPadShort: CGFloat = 4
     static let timeLineMinHeight: CGFloat = 52
+    static let captionMinHeight: CGFloat = 68
     static let barRadius: CGFloat = 8
     static let barSquare: CGFloat = 2
     static let barMargin: CGFloat = 8
@@ -54,9 +55,25 @@ enum WeekMetrics {
         return height + headerBottom
     }
 
-    /// The width of one day column on a phone: about 130 pt, between 112 and 150.
+    /// How many day columns the week shows at once; it pages one day at a time.
+    static let visibleDays = 3
+    static let days = 7
+
+    /// The width of one day column: the room beside the axis shared by `visibleDays`, whole points.
     static func column(pageWidth: CGFloat) -> CGFloat {
-        max(112, min(150, (pageWidth - cardPad * 2 - axis - gutter) / 2.3))
+        ((pageWidth - cardPad * 2 - axis - gutter) / CGFloat(visibleDays)).rounded(.down)
+    }
+
+    /// The horizontal offset the days settle on: a whole number of columns, from the first day to the last window of
+    /// `visibleDays`.
+    static func snappedOffset(_ offset: CGFloat, column: CGFloat) -> CGFloat {
+        let last = CGFloat(days - visibleDays)
+        return min(last, max(0, (offset / column).rounded())) * column
+    }
+
+    /// The offset that shows day `index` first, kept inside the week so the last window stays full.
+    static func offset(showing index: Int, column: CGFloat) -> CGFloat {
+        snappedOffset(CGFloat(index) * column, column: column)
     }
 
     /// What a day bubble shows at a column width.
@@ -65,7 +82,7 @@ enum WeekMetrics {
     }
 
     static func tier(column: CGFloat) -> Tier {
-        column < 104 ? .letter : column < 136 ? .noCount : .full
+        column < 88 ? .letter : column < 120 ? .noCount : .full
     }
 
     /// The minute at the top of the hours when the week opens: the hour before the earliest plan of the week, or before

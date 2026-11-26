@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-/// One day of the Planner: the day's title (tap it for today) over one true line about it, the week strip, the
+/// One day of the Planner: the day's title (tap it for today) over its date, the week strip, the
 /// all-day band, and the full-height hour grid of the whole day, 12 AM to 12 AM, scrolling as a fixed layer with
 /// the plans overlaid; the Checklist stands pinned under it as a panel with its own scroll. Today opens at the hour
 /// 45 minutes before now or the next plan and carries the Now line, with a quiet "Now ↓" control when the line is
@@ -69,22 +69,12 @@ struct DayView: View {
         }
     }
 
-    /// The day's title over its date and one line about it; tapping it jumps to today.
+    /// The day's title over its date; tapping it jumps to today.
     private var header: some View {
         Button { go(to: .now) } label: {
             VStack(spacing: 1) {
                 Text(title).font(.title3.weight(.semibold)).foregroundStyle(.ink)
                 Text(day, format: .dateTime.month(.wide).day()).font(.footnote).foregroundStyle(.inkMuted)
-                if loaded {
-                    VStack(spacing: 0) {
-                        ForEach(SummaryLines.split(summary), id: \.self) { Text($0) }
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.inkFaint)
-                    .lineLimit(1)
-                    .multilineTextAlignment(.center)
-                    .padding(.top, 2)
-                }
             }
             .frame(maxWidth: .infinity)
             .contentTransition(.opacity)
@@ -100,12 +90,6 @@ struct DayView: View {
         if Calendar.current.isDateInTomorrow(day) { return "Tomorrow" }
         if Calendar.current.isDateInYesterday(day) { return "Yesterday" }
         return day.formatted(.dateTime.weekday(.wide))
-    }
-
-    private var summary: String {
-        let groups = TaskLogic.groups(actions.ticker.shown(tasks), on: day)
-        let timed = PlanFilter.grid(actions.shown(plans)).filter { PlanFilter.overlaps($0, day: day) }
-        return PlanTime.daySummary(timed, tasks: (open: groups.open.count, pastDue: groups.pastDue.count))
     }
 
     private func move(by days: Int) {
@@ -319,16 +303,21 @@ private struct BlockView: View {
 
     var body: some View {
         let plan = segment.block
-        let current = state == .now
+        let look = PlanCardLook(plan, state: state)
         let compact = height < 58
         let narrow = segment.lanes > 1 || width < 120
         Button { actions.sheet = .plan(plan) } label: {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Circle().fill(plan.tone).frame(width: 7, height: 7).alignmentGuide(.firstTextBaseline) { $0[.bottom] - 1 }
+                    if look.check {
+                        Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundStyle(Color.sageDeep).frame(width: 7)
+                    } else {
+                        Circle().fill(plan.tone).frame(width: 7, height: 7).alignmentGuide(.firstTextBaseline) { $0[.bottom] - 1 }
+                    }
                     Text(plan.title)
                         .font(.footnote.weight(.semibold))
-                        .foregroundStyle(plan.declined ? Color.inkMuted : .ink)
+                        .foregroundStyle(plan.declined || look.struck ? Color.inkMuted : .ink)
+                        .strikethrough(look.struck)
                         .lineLimit(TitleFit.lines(plan.title, width: width - 20 - 15, size: 13, weight: .semibold, maxLines: narrow ? max(1, Int((height - 8) / 17)) : compact ? 1 : 2))
                         .multilineTextAlignment(.leading)
                     if meetingLink(plan) != nil { Image(systemName: "video").font(.system(size: 10, weight: .semibold)).foregroundStyle(.inkFaint) }
@@ -344,7 +333,7 @@ private struct BlockView: View {
                     }
                 }
                 if !compact && !narrow {
-                    Text(PlanTime.situation(plan, now: now, state: state)).font(.caption).foregroundStyle(current ? Color.sageDeep : .inkMuted).lineLimit(1).padding(.leading, 15)
+                    Text(situation(plan)).font(.caption.weight(look.check ? .semibold : .regular)).foregroundStyle(look.check || state == .now ? Color.sageDeep : .inkMuted).lineLimit(1).padding(.leading, 15)
                     if let third = thirdLine(plan), height >= 78 {
                         Text(third).font(.caption).foregroundStyle(.inkMuted).lineLimit(1).padding(.leading, 15)
                     }
@@ -353,26 +342,20 @@ private struct BlockView: View {
             .padding(.horizontal, 10)
             .padding(.vertical, compact ? 0 : 8)
             .frame(height: height, alignment: compact ? .leading : .topLeading)
-            .overlay(alignment: .bottom) { if current { progress(plan) } }
-            .background {
-                RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.bone)
-                RoundedRectangle(cornerRadius: 12, style: .continuous).fill(fill(current: current))
-            }
+            .overlay(alignment: .bottom) { if state == .now && !look.check { progress(plan) } }
             .clipShape(.rect(cornerRadius: 12, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(current ? Color.sageDeep : plan.declined ? .inkFaint : .slabLine, style: StrokeStyle(lineWidth: 1, dash: plan.declined && !current ? [4, 3] : []))
-            }
+            .planCardSurface(look, radius: 12)
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .opacity(plan.declined ? 0.75 : state == .past ? 0.62 : 1)
         .contextMenu { PlanMenu(plan: plan, actions: actions) }
         .accessibilityLabel("\(plan.title), \(planWhen(plan)), \(PlanTime.situation(plan, now: now, state: state))")
     }
 
-    private func fill(current: Bool) -> AnyShapeStyle {
-        current ? AnyShapeStyle(Color.sage.opacity(0.22)) : AnyShapeStyle(segment.block.declined ? Color.bone : .slab)
+    /// The situation line: Ankur's answer first when he gave one ("Attended · Ended 8 h ago"), else the plan's own.
+    private func situation(_ plan: Plan) -> String {
+        guard let caption = PlanCardLook(plan, state: state).caption else { return PlanTime.situation(plan, now: now, state: state) }
+        return "\(caption) · \(PlanTime.status(plan, now: now, state: state))"
     }
 
     private func progress(_ plan: Plan) -> some View {

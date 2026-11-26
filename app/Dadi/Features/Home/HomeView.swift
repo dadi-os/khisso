@@ -46,7 +46,6 @@ struct HomeView: View {
     }
 
     let services: Services
-    let wordmark: Namespace.ID
     /// False while dadi is out of reach and Home shows what it last reported.
     let online: Bool
 
@@ -59,7 +58,7 @@ struct HomeView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        PhoneHome(services: services, wordmark: wordmark, store: store, online: online, page: $page)
+        PhoneHome(services: services, store: store, online: online, page: $page)
         .environment(live)
         .task { await store.load(services.hath) }
         .task(id: stream) { await store.follow(services.hath) }

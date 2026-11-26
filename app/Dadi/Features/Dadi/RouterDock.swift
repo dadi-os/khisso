@@ -119,7 +119,8 @@ struct RouterDockBar: View {
     }
 }
 
-/// The composer over the page: the page dims and the field sits above the keyboard.
+/// The composer over the page: the page dims and the field sits above the keyboard. It stays mounted while closed, so
+/// closing resigns the field and the composer glides down with the keyboard as it fades, with no view removed mid-motion.
 /// A second send waits while the router is active.
 struct RouterCompose: View {
     @Bindable var dock: RouterDock
@@ -128,11 +129,12 @@ struct RouterCompose: View {
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            Color.black.opacity(0.18)
+            Color.black.opacity(dock.composing ? 0.18 : 0)
                 .ignoresSafeArea()
+                .allowsHitTesting(dock.composing)
                 .onTapGesture { dock.composing = false }
             VStack(alignment: .leading, spacing: 8) {
-                Composer(text: $dock.draft, photos: $dock.photos, placeholder: "Message Dadi…", busy: active, focusOnAppear: true, send: send)
+                Composer(text: $dock.draft, photos: $dock.photos, placeholder: "Message Dadi…", busy: active, focusing: dock.composing, send: send)
                 if active {
                     Text("Available when Dadi has finished routing")
                         .font(.caption)
@@ -142,7 +144,10 @@ struct RouterCompose: View {
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 8)
+            .opacity(dock.composing ? 1 : 0)
+            .allowsHitTesting(dock.composing)
+            .accessibilityHidden(!dock.composing)
         }
-        .transition(.opacity)
+        .animation(.easeOut(duration: 0.25), value: dock.composing)
     }
 }

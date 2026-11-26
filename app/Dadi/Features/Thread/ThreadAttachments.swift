@@ -2,17 +2,18 @@ import PhotosUI
 import SwiftUI
 
 extension View {
-    /// Presents the photo library, the camera and the add-photo failure for `draft`, from the thread
-    /// itself so they outlive the composer moving between the dock and the keyboard.
-    func threadAttachments(_ draft: ThreadDraft) -> some View {
-        modifier(ThreadAttachments(draft: draft))
+    /// Presents the photo library and the add-photo failure for `draft`, from the thread itself. The
+    /// camera sits in the thread's page above the composer, so the keyboard stays up while it is open;
+    /// `camera` is prepared ahead.
+    func threadAttachments(_ draft: ThreadDraft, camera: CameraModel) -> some View {
+        modifier(ThreadAttachments(draft: draft, camera: camera))
     }
 }
 
 private struct ThreadAttachments: ViewModifier {
     let draft: ThreadDraft
+    let camera: CameraModel
 
-    @State private var camera = CameraModel()
     @State private var picked: [PhotosPickerItem] = []
 
     func body(content: Content) -> some View {
@@ -22,15 +23,6 @@ private struct ThreadAttachments: ViewModifier {
                 guard !items.isEmpty else { return }
                 picked = []
                 Task { await add(items) }
-            }
-            .fullScreenCover(isPresented: present(.camera)) {
-                CameraPanel(camera: camera, count: draft.photos.count, dismissing: false, add: { draft.photos.append($0) }, close: closeCamera)
-                    .background(.black)
-                    .ignoresSafeArea()
-                    .task { await camera.start() }
-            }
-            .onChange(of: draft.attaching) { _, source in
-                if source == .camera { Task { await camera.warm() } }
             }
             .task { await camera.prepare() }
             .alert("Photo not added", isPresented: Binding { draft.photoProblem != nil } set: { if !$0 { draft.photoProblem = nil } }) {
@@ -42,11 +34,6 @@ private struct ThreadAttachments: ViewModifier {
 
     private func present(_ source: ThreadAttach) -> Binding<Bool> {
         Binding { draft.attaching == source } set: { if !$0, draft.attaching == source { draft.attaching = nil } }
-    }
-
-    private func closeCamera() {
-        draft.attaching = nil
-        camera.release()
     }
 
     /// Adds the picked library photos, as many as the message has room for.

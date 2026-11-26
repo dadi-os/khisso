@@ -187,6 +187,7 @@ private struct PlanRow: View {
 
     var body: some View {
         let end = plan.endAt ?? plan.startAt
+        let look = PlanCardLook(plan, state: state)
         HStack(spacing: 0) {
             Text(Phrase.clock(plan.startAt))
                 .font(.caption.monospacedDigit())
@@ -197,24 +198,27 @@ private struct PlanRow: View {
                 .padding(.trailing, 8)
             ZStack {
                 Rectangle().fill(Color.rule).frame(width: 1)
-                Circle().fill(current ? Color.sageDeep : plan.tone).frame(width: 7, height: 7)
+                if look.check {
+                    Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)).foregroundStyle(Color.sageDeep).padding(2).background(Color.slabAttended, in: .circle)
+                } else {
+                    Circle().fill(current ? Color.sageDeep : plan.tone).frame(width: 7, height: 7)
+                }
             }
             .frame(width: 12)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 5) {
-                    Text(plan.title).font(.subheadline.weight(.semibold)).foregroundStyle(plan.declined ? Color.inkMuted : .ink).lineLimit(1)
+                    Text(plan.title).font(.subheadline.weight(.semibold)).foregroundStyle(plan.declined || look.struck ? Color.inkMuted : .ink).strikethrough(look.struck).lineLimit(1)
                     if meetingLink(plan) != nil { Image(systemName: "video").font(.system(size: 10, weight: .semibold)).foregroundStyle(.inkFaint) }
                 }
-                Text(fact(end: end)).font(.caption).foregroundStyle(current ? Color.sageDeep : .inkMuted).lineLimit(1)
+                Text(fact(end: end, caption: look.caption)).font(.caption.weight(look.check ? .semibold : .regular)).foregroundStyle(current || look.check ? Color.sageDeep : .inkMuted).lineLimit(1)
             }
             .padding(.leading, 12)
             Spacer(minLength: 0)
         }
         .padding(.trailing, 8)
         .frame(height: current ? WidgetLogic.currentHeight : WidgetLogic.planHeight)
-        .background(current ? Color.sage.opacity(0.22) : .clear, in: .rect(cornerRadius: 12, style: .continuous))
         .overlay(alignment: .bottomLeading) {
-            if current {
+            if current && !look.check {
                 let total = end.timeIntervalSince(plan.startAt)
                 GeometryReader { bar in
                     Rectangle().fill(Color.sageDeep).frame(width: bar.size.width * min(1, max(0, now.timeIntervalSince(plan.startAt) / max(total, 1))), height: 2)
@@ -223,21 +227,24 @@ private struct PlanRow: View {
             }
         }
         .clipShape(.rect(cornerRadius: 12, style: .continuous))
-        .overlay {
-            if plan.declined {
-                RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.inkFaint.opacity(0.7), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-            }
-        }
-        .opacity(plan.declined ? 0.6 : state == .past ? 0.55 : 1)
+        .planCardSurface(rowLook(look), radius: 12)
         .contentShape(.rect)
         .contextMenu { PlanMenu(plan: plan, actions: actions) }
         .accessibilityElement(children: .combine)
     }
 
+    /// Quiet rows (upcoming, past) draw no card: only a plan on now, attended, missed or declined has a surface.
+    private func rowLook(_ look: PlanCardLook) -> PlanCardLook {
+        switch PlanCardState.of(plan, state: state) {
+        case .upcoming, .past: PlanCardLook.row(ended: state == .past)
+        default: look
+        }
+    }
+
     /// "12 min left · Wells Hall room B115" while on, otherwise "54 min · Wells Hall room B115"; Declined in place of the
-    /// duration for a plan Ankur declined.
-    private func fact(end: Date) -> String {
-        let length = plan.declined ? "Declined" : current ? "\(Phrase.duration(end.timeIntervalSince(now))) left" : Phrase.duration(end.timeIntervalSince(plan.startAt))
+    /// duration for a plan Ankur declined, and Ankur's answer first once he gave one.
+    private func fact(end: Date, caption: String?) -> String {
+        let length = caption ?? (plan.declined ? "Declined" : current ? "\(Phrase.duration(end.timeIntervalSince(now))) left" : Phrase.duration(end.timeIntervalSince(plan.startAt)))
         let place = plan.place.map { place in place.room.map { "\(place.title) room \($0)" } ?? place.title }
         return [length, place].compactMap { $0 }.joined(separator: " · ")
     }

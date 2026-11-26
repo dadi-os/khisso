@@ -73,6 +73,16 @@ final class Toaster {
     }
 }
 
+extension View {
+    /// Floats `toaster`'s toasts at the top of the safe area, over the content, which they never move.
+    /// `shown` is false for a surface another one covers, so a toast appears once.
+    func toasts(_ toaster: Toaster, shown: Bool = true) -> some View {
+        overlay(alignment: .top) {
+            if shown { ToastStack(toaster: toaster).padding(.top, 8) }
+        }
+    }
+}
+
 /// The toasts, as glass cards 8 pt under the top bar.
 struct ToastStack: View {
     let toaster: Toaster

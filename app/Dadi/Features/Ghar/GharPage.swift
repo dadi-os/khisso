@@ -72,9 +72,6 @@ struct GharPage: View {
                 if let error = store.error {
                     notice(error)
                 }
-                if let problem = store.problem {
-                    notice(problem) { withAnimation(Motion.snap) { store.problem = nil } }
-                }
 
                 switch filter {
                 case .tag(let id):
@@ -100,6 +97,7 @@ struct GharPage: View {
         }
         .refreshable { await store.load() }
         .sensoryFeedback(.impact(weight: .medium), trigger: switched)
+        .toasts(store.toaster, shown: focused == nil && filling == nil && !naming && opened == nil)
         .sheet(item: $focused) { device in
             LightSheet(store: store, deviceId: device.id)
                 .fittedSheet()
@@ -261,20 +259,11 @@ struct GharPage: View {
         .contentShape(.rect(cornerRadius: 26))
     }
 
-    private func notice(_ text: String, dismiss: (() -> Void)? = nil) -> some View {
-        HStack(alignment: .top) {
-            Label(text, systemImage: "exclamationmark.triangle")
-                .font(.callout)
-                .foregroundStyle(.danger)
-            Spacer()
-            if let dismiss {
-                Button(action: dismiss) {
-                    Image(systemName: "xmark").font(.footnote.weight(.semibold)).foregroundStyle(.inkFaint)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Dismiss")
-            }
-        }
+    private func notice(_ text: String) -> some View {
+        Label(text, systemImage: "exclamationmark.triangle")
+            .font(.callout)
+            .foregroundStyle(.danger)
+            .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, 16)
         .transition(.opacity)
     }

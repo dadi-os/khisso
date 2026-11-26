@@ -3,7 +3,7 @@ import SwiftUI
 /// One agent's thread: its history by day, live replies from Hath's events,
 /// thaali's activity pill above the dock while the agent works or waits, a
 /// caret beside it that returns to the newest message once the thread is
-/// scrolled up. Replies are written in the thread's one composer, which sits in the dock until typing starts and then above the keyboard. Agent text runs the full
+/// scrolled up. Replies are written in the thread's own composer at the foot of its page, which slides in and out with the page and rides the keyboard. Agent text runs the full
 /// width on the field as rendered markdown and scrolls up under the bars;
 /// Ankur's words are sage bubbles. Holding a message lifts it with Copy,
 /// Reply with quote, Share and, for the agent's, its activity; swiping one
@@ -43,6 +43,10 @@ struct ThreadView: View {
     @State private var awayFromBottom = false
     /// What the agent's newest message leaves open, for the tag on that message.
     @State private var standing: Standing?
+    /// Whether the composer's field has the keyboard.
+    @FocusState private var focused: Bool
+    /// The camera the composer's plus opens, prepared ahead.
+    @State private var camera = CameraModel()
 
     /// What makes the standing read again: a reconnect, a new message, or the agent starting or ending a wake.
     private struct StandingKey: Hashable {
@@ -68,7 +72,7 @@ struct ThreadView: View {
                     if previous.map({ !Calendar.current.isDate($0.createdAt, inSameDayAs: message.createdAt) }) ?? true {
                         DayMark(date: message.createdAt)
                     }
-                    row(message, opensGroup: previous.map { $0.fromUser != message.fromUser } ?? true)
+                    bubble(message, opensGroup: previous.map { $0.fromUser != message.fromUser } ?? true)
                         .modifier(QuoteSwipe(enabled: true, fromUser: message.fromUser) { reply(to: message) })
                         .transition(.asymmetric(insertion: .move(edge: .bottom).combined(with: .opacity).combined(with: .scale(scale: 0.96, anchor: message.fromUser ? .bottomTrailing : .bottomLeading)), removal: .opacity))
                 }
@@ -87,7 +91,7 @@ struct ThreadView: View {
         .defaultScrollAnchor(.bottom)
         .scrollPosition($position)
         .scrollDismissesKeyboard(.interactively)
-        .simultaneousGesture(draft.editing ? TapGesture().onEnded { draft.editing = false } : nil)
+        .simultaneousGesture(focused ? TapGesture().onEnded { focused = false } : nil)
         .scrollEdgeEffectHidden(true, for: .bottom)
         .scrollEdgeEffectHidden(true, for: .top)
         .scrollEdge(.top, size: ScrollEdge.threadTop)
@@ -135,19 +139,24 @@ struct ThreadView: View {
                     PhotoStrip(photos: $draft.photos)
                         .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .bottomLeading)))
                 }
-                if draft.editing {
-                    ThreadComposerBar(name: name, draft: draft, placement: .keyboard) { draft.send(hath, to: agentId) }
-                        .transition(.opacity)
+                if draft.attaching == .camera {
+                    CameraPanel(camera: camera, count: draft.photos.count, dismissing: false, add: { draft.photos.append($0) }, report: { draft.photoProblem = $0 }, close: { draft.attaching = nil })
+                        .frame(height: CameraPanel.height)
+                        .background(.black)
+                        .clipShape(.rect(cornerRadius: 30, style: .continuous))
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
+                ThreadComposerBar(name: name, draft: draft, focus: $focused) { draft.send(hath, to: agentId) }
             }
             .animation(Motion.settle, value: draft.photos)
+            .animation(Motion.settle, value: draft.attaching)
             .padding(.horizontal, 16)
             .padding(.top, 8)
             .padding(.bottom, 8)
         }
         .navigationTitle(name)
-        .threadAttachments(draft)
-        .animation(Motion.snap, value: draft.editing)
+        .threadAttachments(draft, camera: camera)
+        .onDisappear { if draft.attaching == .camera { draft.attaching = nil } }
         .animation(Motion.snap, value: draft.quote)
         .animation(Motion.snap, value: draft.sendError)
         .sensoryFeedback(.impact(weight: .light), trigger: draft.sent)
@@ -178,17 +187,16 @@ struct ThreadView: View {
         .padding(.top, 80)
     }
 
-    private func row(_ message: DurableMessage, opensGroup: Bool) -> some View {
-        bubble(message, opensGroup: opensGroup)
-            .contextMenu {
-                Button { UIPasteboard.general.string = plainText(message.content) } label: { Label("Copy", systemImage: "doc.on.doc") }
-                Button { UIPasteboard.general.string = message.content } label: { Label("Copy as Markdown", systemImage: "doc.on.doc.fill") }
-                Button { reply(to: message) } label: { Label("Reply with quote", systemImage: "arrowshape.turn.up.left") }
-                ShareLink(item: message.content) { Label("Share", systemImage: "square.and.arrow.up") }
-                if !message.fromUser {
-                    Button(action: details) { Label("Show activity", systemImage: "clock.arrow.circlepath") }
-                }
-            }
+    /// What holding a message offers.
+    @ViewBuilder
+    private func actions(_ message: DurableMessage) -> some View {
+        Button { UIPasteboard.general.string = plainText(message.content) } label: { Label("Copy", systemImage: "doc.on.doc") }
+        Button { UIPasteboard.general.string = message.content } label: { Label("Copy as Markdown", systemImage: "doc.on.doc.fill") }
+        Button { reply(to: message) } label: { Label("Reply with quote", systemImage: "arrowshape.turn.up.left") }
+        ShareLink(item: message.content) { Label("Share", systemImage: "square.and.arrow.up") }
+        if !message.fromUser {
+            Button(action: details) { Label("Show activity", systemImage: "clock.arrow.circlepath") }
+        }
     }
 
     @ViewBuilder
@@ -200,10 +208,11 @@ struct ThreadView: View {
                         .font(.body)
                         .foregroundStyle(.bone)
                         .tint(.bone)
-                        .textSelection(.enabled)
                         .padding(.horizontal, 15)
                         .padding(.vertical, 10)
                         .background(.sageDeep, in: .rect(cornerRadius: 20, style: .continuous))
+                        .contentShape(.contextMenuPreview, .rect(cornerRadius: 20, style: .continuous))
+                        .contextMenu { actions(message) }
                 }
                 attachments(message.attachments)
                 time(message)
@@ -216,7 +225,13 @@ struct ThreadView: View {
                 if opensGroup {
                     Text(name).font(.footnote.weight(.semibold)).foregroundStyle(.inkMuted)
                 }
-                AgentMarkdown(source: message.content)
+                AgentMarkdown(source: message.content, selectable: false)
+                    .contextMenu { actions(message) } preview: {
+                        AgentMarkdown(source: message.content, selectable: false)
+                            .padding(16)
+                            .frame(width: 340, alignment: .leading)
+                            .background(Color.boneRaised)
+                    }
                 attachments(message.attachments)
                 HStack(spacing: 8) {
                     time(message)
@@ -282,6 +297,7 @@ struct ThreadView: View {
     private func reply(to message: DurableMessage) {
         quoted += 1
         withAnimation(Motion.snap) { draft.reply(to: message) }
+        focused = true
     }
 }
 

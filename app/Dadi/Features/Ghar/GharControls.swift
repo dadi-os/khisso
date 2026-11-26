@@ -277,11 +277,6 @@ struct DevicePicker: View {
             }
             .frame(maxHeight: 360)
             .fixedSize(horizontal: false, vertical: true)
-            if let problem = store.problem {
-                Label(problem, systemImage: "exclamationmark.circle")
-                    .font(.footnote)
-                    .foregroundStyle(.danger)
-            }
             Button {
                 working = true
                 Task {
@@ -299,6 +294,7 @@ struct DevicePicker: View {
         .padding(.horizontal, 22)
         .padding(.top, 28)
         .padding(.bottom, 22)
+        .toasts(store.toaster)
     }
 
     private var trimmed: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }

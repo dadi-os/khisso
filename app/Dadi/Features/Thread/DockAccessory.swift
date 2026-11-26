@@ -1,39 +1,25 @@
 import SwiftUI
 
-/// The thread the dock's accessory writes to.
-struct DockThread {
-    let name: String
-    let draft: ThreadDraft
-    /// Sends the draft to the agent.
-    let send: () -> Void
-}
-
-/// What the tab bar's bottom accessory shows, and whether the thread's composer is above the keyboard.
+/// What the tab bar's bottom accessory shows.
 enum DockPresentation: Equatable {
     /// Talk to Dadi's bar.
     case dadi
-    /// A thread's composer in the accessory.
-    case threadAccessory
-    /// A thread's composer above the keyboard, the accessory away.
-    case keyboardBar
-    /// Nothing: reserved for a page that carries no composer.
+    /// Nothing: an open thread carries its own composer in its page.
     case none
 
-    /// The presentation for `page`, while a thread's field is being typed in or not.
-    static func of(page: HomeView.Page, editing: Bool) -> DockPresentation {
+    /// The presentation for `page`.
+    static func of(page: HomeView.Page) -> DockPresentation {
         switch page {
-        case .dadi: .dadi
-        case .thread: editing ? .keyboardBar : .threadAccessory
-        case .planner, .ghar, .chaavi, .system: .dadi
+        case .thread: .none
+        case .dadi, .planner, .ghar, .chaavi, .system: .dadi
         }
     }
 
     /// Whether the tab bar's accessory is shown.
-    var showsAccessory: Bool { self == .dadi || self == .threadAccessory }
+    var showsAccessory: Bool { self == .dadi }
 }
 
-/// What the tab bar's bottom accessory holds: Talk to Dadi's bar on every page but Chats, and in an
-/// open thread that thread's composer, which moves above the keyboard while it is typed in.
+/// What the tab bar's bottom accessory holds: Talk to Dadi's bar on every page but an open thread.
 struct DockAccessory: View {
     let presentation: DockPresentation
     let router: RouterDock
@@ -41,19 +27,10 @@ struct DockAccessory: View {
     let active: Bool
     /// False while dadi is out of reach.
     let online: Bool
-    /// The open thread, or nil on every other page.
-    let thread: DockThread?
 
     var body: some View {
-        switch presentation {
-        case .dadi:
+        if presentation == .dadi {
             RouterDockBar(dock: router, active: active, online: online)
-        case .threadAccessory:
-            if let thread {
-                ThreadComposerBar(name: thread.name, draft: thread.draft, placement: .accessory, send: thread.send)
-            }
-        case .keyboardBar, .none:
-            EmptyView()
         }
     }
 }

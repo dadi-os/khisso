@@ -1,17 +1,18 @@
 import SwiftUI
 
 /// A plan's sheet in the shared detail anatomy: its situation ("Now · 12 min left", "Ended 8 h ago · Attended"), the
-/// facts in a fixed order, the actions (Going? opens the agent's chat with Ankur's answer ready and never writes;
-/// "Were you there?" saves), and its notes.
+/// facts in a fixed order, ONE action rail (Attended | Didn't attend saves; Going | Not going opens the agent's chat
+/// with Ankur's answer ready and never writes; Message agent; Join call), and its notes.
 struct PlanSheet: View {
     let plan: Plan
     let actions: PlannerActions
+
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 30)) { context in
             content(now: context.date)
         }
-        .padding(24)
         .animation(Motion.settle, value: plan)
     }
 
@@ -20,30 +21,36 @@ struct PlanSheet: View {
         let agent = actions.agent(for: plan.owner)
         let started = !plan.declined && !plan.allDay && plan.startAt <= now
         let tellable = agent != nil && !plan.declined && !(plan.endAt.map { $0 <= now } ?? false)
+        let items = rail(started: started, tellable: tellable, agent: agent)
         let notes = ([plan.body] + plan.notes.map(\.title)).compactMap { $0 }.filter { !$0.isEmpty }
-        return VStack(alignment: .leading, spacing: 16) {
-            header(now: now, state: state)
-            VStack(spacing: 0) { facts(agent: agent) }
-            if tellable, let agent { going(agent: agent) }
-            if started || agent != nil { rail(started: started, agent: agent) }
-            if !notes.isEmpty {
-                InsetCard(title: "Notes") {
-                    ForEach(Array(notes.enumerated()), id: \.offset) { _, text in
-                        Text(text).font(.callout).foregroundStyle(.ink).frame(maxWidth: .infinity, alignment: .leading)
-                    }
+        return DetailSheet(title: plan.title, hasRail: !items.isEmpty, hasSections: !notes.isEmpty) {
+            situation(now: now, state: state)
+        } facts: {
+            facts(agent: agent)
+        } rail: {
+            ActionRail(items: items)
+            if tellable, let agent {
+                Text("Going and Not going open \(actions.name(of: agent))’s chat with your answer ready.")
+                    .font(.caption)
+                    .foregroundStyle(.inkFaint)
+            }
+        } sections: {
+            InsetCard(title: "Notes") {
+                ForEach(Array(notes.enumerated()), id: \.offset) { _, text in
+                    Text(text).font(.callout).foregroundStyle(.ink).frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
         }
     }
 
-    private func header(now: Date, state: TimeState) -> some View {
+    private func situation(now: Date, state: TimeState) -> some View {
         let label: (String, SituationTone, Bool) = {
             if plan.declined { return ("Declined", .rest, false) }
             if plan.attended == true { return ("Attended", .live, true) }
             if plan.attended == false { return ("Didn’t attend", .rest, false) }
             return (PlanTime.status(plan, now: now, state: state), state == .now ? .live : state == .past ? .rest : .wait, false)
         }()
-        return SheetHeader(title: plan.title) { SituationLine(tone: label.1, text: label.0, done: label.2) }
+        return SituationLine(tone: label.1, text: label.0, done: label.2)
     }
 
     @ViewBuilder
@@ -70,24 +77,15 @@ struct PlanSheet: View {
         if let attended = plan.attended { FactRow(label: "Attended", value: attended ? "Yes, you were there" : "No, you were not") }
     }
 
-    private func going(agent: String) -> some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Going?").font(.subheadline).foregroundStyle(.inkMuted)
-                Text("Tell \(actions.name(of: agent))").font(.caption).foregroundStyle(.inkFaint).lineLimit(1)
-            }
-            Spacer(minLength: 8)
-            ChoiceControl(first: "Going", second: "Not going", selection: plan.rsvp.map { $0 == .yes }) { choice in
-                if let choice { actions.tell(plan, going: choice) }
-            }
-        }
-    }
-
-    private func rail(started: Bool, agent: String?) -> some View {
+    /// Every action in one rail, in a fixed order: Attended | Didn't attend once the plan has started, Going | Not going
+    /// while an agent keeps it and it has not ended, Message agent, and Join call for a virtual plan.
+    private func rail(started: Bool, tellable: Bool, agent: String?) -> [RailItem] {
         var items: [RailItem] = []
         if started { items.append(.choice(first: "Attended", second: "Didn’t attend", selection: plan.attended) { actions.setAttended($0, on: plan) }) }
+        if tellable { items.append(.choice(first: "Going", second: "Not going", selection: plan.rsvp.map { $0 == .yes }) { if let going = $0 { actions.tell(plan, going: going) } }) }
         if agent != nil { items.append(.action(title: "Message agent", symbol: "bubble.left") { actions.messageOwner(plan.owner) }) }
-        return ActionRail(items: items)
+        if let call = meetingLink(plan) { items.append(.action(title: "Join call", symbol: "video", emphasis: true) { openURL(call.url) }) }
+        return items
     }
 }
 

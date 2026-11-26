@@ -46,6 +46,8 @@ final class PlannerActions {
 
     /// The sheet that is up.
     var sheet: PlannerSheet?
+    /// Shows a day in the Day view, which the Planner page sets; nil where nothing can open a day.
+    var openDay: ((Date) -> Void)?
     /// Why the last attendance answer was not saved.
     private(set) var attendedFailure: String?
 

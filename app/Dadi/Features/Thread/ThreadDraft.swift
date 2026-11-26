@@ -5,10 +5,9 @@ enum ThreadAttach: Equatable {
     case library, camera
 }
 
-/// What a thread's composer holds for one agent: the words, the photos, the message being quoted,
-/// the send in flight and whether the person is typing. The composer in the dock's accessory and the
-/// one above the keyboard both write into it and the thread reads it, so one draft survives the
-/// thread being closed, the tab bar condensing and the composer moving above the keyboard.
+/// What a thread's composer holds for one agent: the words, the photos, the message being quoted
+/// and the send in flight. The composer in the thread's page writes into it and the thread reads it,
+/// so the draft survives the thread being closed and opened again.
 @MainActor
 @Observable
 final class ThreadDraft {
@@ -23,8 +22,6 @@ final class ThreadDraft {
     private(set) var delivered: DurableMessage?
     /// Counts accepted sends, for the thread's haptic.
     private(set) var sent = 0
-    /// True while the person is typing: the composer is above the keyboard instead of in the dock.
-    var editing = false
     /// The photo source being opened, which the thread presents.
     var attaching: ThreadAttach?
     /// Why the last photo was not added.
@@ -38,10 +35,9 @@ final class ThreadDraft {
         !sending && (photos > 0 || !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
 
-    /// Quotes `message` ahead of the reply and starts typing.
+    /// Quotes `message` ahead of the reply.
     func reply(to message: DurableMessage) {
         quote = message
-        editing = true
     }
 
     /// Sends the draft to `agentId`. A failure keeps the draft and sets `sendError`.

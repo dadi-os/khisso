@@ -35,20 +35,6 @@ struct TagPage: View {
                         .padding(.horizontal, 4)
                         .padding(.top, 8)
                 }
-                if let problem = store.problem {
-                    HStack(alignment: .top) {
-                        Label(problem, systemImage: "exclamationmark.triangle")
-                            .font(.callout)
-                            .foregroundStyle(.danger)
-                        Spacer()
-                        Button { withAnimation(Motion.snap) { store.problem = nil } } label: {
-                            Image(systemName: "xmark").font(.footnote.weight(.semibold)).foregroundStyle(.inkFaint)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Dismiss")
-                    }
-                    .padding(.top, 16)
-                }
                 heading("Lights")
                     .padding(.top, 22)
                 if devices.isEmpty {
@@ -116,6 +102,7 @@ struct TagPage: View {
             }
         }
         .sensoryFeedback(.impact(weight: .medium), trigger: switched)
+        .toasts(store.toaster, shown: focused == nil && !filling && !making)
         .sheet(item: $focused) { device in
             LightSheet(store: store, deviceId: device.id)
                 .fittedSheet()

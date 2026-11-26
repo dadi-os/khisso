@@ -3,7 +3,8 @@ import SwiftUI
 /// Ghar's devices and their tags for the Ghar pages, and every change made to them.
 /// A command changes what the pages show at once and is put back, with Ghar's
 /// reason, if Ghar refuses it; a rename or retag waits for Ghar's
-/// answer.
+/// answer. Every failure of a change is a toast on `toaster`, which the Ghar
+/// pages show over their content.
 @Observable @MainActor
 final class GharStore {
     let ghar: GharClient
@@ -12,9 +13,8 @@ final class GharStore {
     private(set) var loaded = false
     /// Why the last read of Ghar failed.
     private(set) var error: String?
-    /// Why the last change failed. It stays until a change succeeds or it is
-    /// dismissed.
-    var problem: String?
+    /// The failures of changes, which fade by themselves.
+    let toaster = Toaster()
     /// Commands in flight per device. A read keeps the page's version of these
     /// devices so a light does not flicker back while Ghar is still switching it.
     private var inFlight: [String: Int] = [:]
@@ -56,12 +56,12 @@ final class GharStore {
 
     /// Switches every device in `targets` that switches and answers.
     func setOn(_ on: Bool, _ targets: [GharDevice]) {
-        run(targets.filter { $0.has("on_off") && $0.online }) { $0.with("on", .bool(on)) } commands: { _ in [on ? .on : .off] }
+        run(answering(targets.filter { $0.has("on_off") })) { $0.with("on", .bool(on)) } commands: { _ in [on ? .on : .off] }
     }
 
     /// Sets every dimmable device in `targets` to `level`, which switches it on.
     func setLevel(_ level: Int, _ targets: [GharDevice]) {
-        run(targets.filter { $0.has("level") && $0.online }) {
+        run(answering(targets.filter { $0.has("level") })) {
             $0.with("brightness", .number(Double(level))).with("on", .bool(level > 0))
         } commands: { _ in [.level(level)] }
     }
@@ -108,7 +108,7 @@ final class GharStore {
     /// Gives `device` exactly the tags named in `names`.
     @discardableResult
     func setTags(_ names: [String], on device: GharDevice) async -> Bool {
-        await edit(device.name) {
+        await edit("Couldn't tag \(device.name)") {
             replace(try await ghar.update(device.id, GharDevicePatch(tags: names)))
         }
     }
@@ -132,7 +132,7 @@ final class GharStore {
     /// Renames `device`.
     @discardableResult
     func rename(_ device: GharDevice, to name: String) async -> Bool {
-        await edit(device.name) {
+        await edit("Couldn't rename \(device.name)") {
             replace(try await ghar.update(device.id, GharDevicePatch(name: name)))
         }
     }
@@ -140,7 +140,7 @@ final class GharStore {
     /// Renames the tag everywhere it is used.
     @discardableResult
     func rename(_ tag: GharDevice.Tag, to name: String) async -> Bool {
-        await edit(tag.name) {
+        await edit("Couldn't rename \(tag.name)") {
             _ = try await ghar.renameTag(tag.id, to: name)
             await load()
         }
@@ -155,16 +155,56 @@ final class GharStore {
         }
     }
 
-    /// Runs a registry change and shows why it failed, under `label`.
+    /// Runs a registry change and toasts why it failed, under `label`.
     private func edit(_ label: String, _ change: () async throws -> Void) async -> Bool {
         do {
             try await change()
-            withAnimation(Motion.snap) { problem = nil }
             return true
         } catch {
-            withAnimation(Motion.snap) { problem = "\(label): \(error.localizedDescription)" }
+            toaster.show(Toast(key: "ghar-edit", title: label, detail: error.localizedDescription, symbol: ToastModule.ghar.symbol, failure: true))
             return false
         }
+    }
+
+    /// Why a command failed, and whether the device simply did not answer, which Ghar reports as 504.
+    private struct Failure: Sendable {
+        let reason: String
+        let unreachable: Bool
+    }
+
+    /// Who is named when `names` cannot be reached: "Desk lamp is unreachable", "Desk lamp and Hall are unreachable".
+    nonisolated static func unreachableTitle(_ names: [String]) -> String {
+        switch names.count {
+        case 1: "\(names[0]) is unreachable"
+        case 2: "\(names[0]) and \(names[1]) are unreachable"
+        default: "\(names.count) devices are unreachable"
+        }
+    }
+
+    /// The toast for devices that did not take a change, with Ghar's reason when one answered.
+    nonisolated static func refusedToast(_ failures: [(name: String, reason: String)]) -> Toast {
+        let names = failures.map(\.name)
+        return Toast(
+            key: "ghar-refused",
+            title: names.count == 1 ? "Couldn't change \(names[0])" : "Couldn't change \(names.count) devices",
+            detail: failures.map { names.count == 1 ? $0.reason : "\($0.name): \($0.reason)" }.joined(separator: "\n"),
+            symbol: ToastModule.ghar.symbol,
+            failure: true
+        )
+    }
+
+    private func showUnreachable(_ names: [String]) {
+        toaster.show(Toast(key: "ghar-unreachable", title: Self.unreachableTitle(names), symbol: ToastModule.ghar.symbol, failure: true))
+    }
+
+    /// The part of `targets` that answers. When none does, the person is told who is unreachable, because
+    /// nothing else will happen; when some do, the rest are left out quietly.
+    private func answering(_ targets: [GharDevice]) -> [GharDevice] {
+        let online = targets.filter(\.online)
+        if online.isEmpty, !targets.isEmpty {
+            showUnreachable(targets.map(\.name))
+        }
+        return online
     }
 
     /// Shows each target changed at once, sends its commands in order, and
@@ -178,7 +218,7 @@ final class GharStore {
         }
         let ghar = ghar
         Task {
-            let failures = await withTaskGroup(of: (GharDevice, String?).self) { group in
+            let failures = await withTaskGroup(of: (GharDevice, Failure?).self) { group in
                 for job in jobs {
                     group.addTask {
                         do {
@@ -187,13 +227,13 @@ final class GharStore {
                             }
                             return (job.before, nil)
                         } catch {
-                            return (job.before, error.localizedDescription)
+                            return (job.before, Failure(reason: error.localizedDescription, unreachable: (error as? ServiceError)?.status == 504))
                         }
                     }
                 }
-                var failures: [(device: GharDevice, reason: String)] = []
-                for await (device, reason) in group {
-                    if let reason { failures.append((device, reason)) }
+                var failures: [(device: GharDevice, failure: Failure)] = []
+                for await (device, failure) in group {
+                    if let failure { failures.append((device, failure)) }
                 }
                 return failures
             }
@@ -203,8 +243,11 @@ final class GharStore {
             }
             withAnimation(Motion.snap) {
                 for failure in failures { replace(failure.device) }
-                problem = failures.isEmpty ? nil : failures.map { "\($0.device.name): \($0.reason)" }.joined(separator: "\n")
             }
+            let silent = failures.filter(\.failure.unreachable)
+            if !silent.isEmpty { showUnreachable(silent.map(\.device.name)) }
+            let refused = failures.filter { !$0.failure.unreachable }
+            if !refused.isEmpty { toaster.show(Self.refusedToast(refused.map { ($0.device.name, $0.failure.reason) })) }
             await load()
         }
     }

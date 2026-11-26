@@ -10,7 +10,6 @@ struct PlanTaskSheet: View {
         TimelineView(.periodic(from: .now, by: 30)) { context in
             content(now: context.date)
         }
-        .padding(24)
     }
 
     private func content(now: Date) -> some View {
@@ -24,22 +23,23 @@ struct PlanTaskSheet: View {
         case .soon, .open: .wait
         case .none: .rest
         }
-        return VStack(alignment: .leading, spacing: 16) {
-            SheetHeader(title: task.title) { SituationLine(tone: tone, text: status.label, done: done) }
-            VStack(spacing: 0) {
-                if let opens = Self.opens(task) { FactRow(label: "Opens", value: opens) }
-                if let close = task.closesAt { FactRow(label: "Closes", value: "\(close.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())) \(Phrase.clock(close))", late: status.tone == .late) }
-                if done { FactRow(label: "Done", value: "Yes") }
-                if let hub = task.hub { FactRow(label: "Course", value: hub.title) }
-                if let agent { FactRow(label: "Owner", value: actions.name(of: agent)) }
-                if let seen = task.verifiedAt { FactRow(label: "Last confirmed", value: Phrase.agoPhrase(now.timeIntervalSince(seen))) }
-            }
-            ActionRail(items: [.action(title: done ? "Take back" : "Mark done", symbol: done ? "arrow.uturn.backward" : "checkmark.circle", emphasis: !done) {
-                actions.ticker.tick(id: task.id, title: task.title, done: !done)
-            }] + (agent == nil ? [] : [.action(title: "Message agent", symbol: "bubble.left") { actions.messageOwner(task.owner) }]))
-            if let body = task.body, !body.isEmpty {
-                InsetCard(title: "Notes") { Text(body).font(.callout).foregroundStyle(.ink) }
-            }
+        let items: [RailItem] = [.action(title: done ? "Take back" : "Mark done", symbol: done ? "arrow.uturn.backward" : "checkmark.circle", emphasis: !done) {
+            actions.ticker.tick(id: task.id, title: task.title, done: !done)
+        }] + (agent == nil ? [] : [.action(title: "Message agent", symbol: "bubble.left") { actions.messageOwner(task.owner) }])
+        let notes = task.body.flatMap { $0.isEmpty ? nil : $0 }
+        return DetailSheet(title: task.title, hasSections: notes != nil) {
+            SituationLine(tone: tone, text: status.label, done: done)
+        } facts: {
+            if let opens = Self.opens(task) { FactRow(label: "Opens", value: opens) }
+            if let close = task.closesAt { FactRow(label: "Closes", value: "\(close.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())) \(Phrase.clock(close))", late: status.tone == .late) }
+            if done { FactRow(label: "Done", value: "Yes") }
+            if let hub = task.hub { FactRow(label: "Course", value: hub.title) }
+            if let agent { FactRow(label: "Owner", value: actions.name(of: agent)) }
+            if let seen = task.verifiedAt { FactRow(label: "Last confirmed", value: Phrase.agoPhrase(now.timeIntervalSince(seen))) }
+        } rail: {
+            ActionRail(items: items)
+        } sections: {
+            if let notes { InsetCard(title: "Notes") { Text(notes).font(.callout).foregroundStyle(.ink) } }
         }
     }
 
@@ -50,7 +50,8 @@ struct PlanTaskSheet: View {
     }
 }
 
-/// A day's card over Month: every plan and every task closing that day, each with its status in words.
+/// A day's card over Month and Week in the shared detail anatomy: how far the day is, facts (plans, free time, tasks
+/// closing), Open day, and every plan and task closing that day as a row with its status in words.
 struct DayCardSheet: View {
     let day: Date
     let yaad: YaadClient
@@ -65,30 +66,37 @@ struct DayCardSheet: View {
         TimelineView(.periodic(from: .now, by: 30)) { context in
             content(now: context.date)
         }
-        .padding(24)
         .task { await load() }
+    }
+
+    /// How far `day` is from `now` in words: "Today", "Tomorrow", "Yesterday", "In 6 days", "12 days ago".
+    static func relation(_ day: Date, now: Date, calendar: Calendar = .current) -> String {
+        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: now), to: calendar.startOfDay(for: day)).day ?? 0
+        switch days {
+        case 0: return "Today"
+        case 1: return "Tomorrow"
+        case -1: return "Yesterday"
+        default: return days > 0 ? "In \(days) days" : "\(-days) days ago"
+        }
     }
 
     private func content(now: Date) -> some View {
         let shown = actions.shown(plans)
         let nextID = PlanTime.nextPlanID(shown, now: now)
         let closing = tasks.filter { $0.closesAt.map { Calendar.current.isDate($0, inSameDayAs: day) } == true }
-        let open = actions.ticker.shown(tasks).filter { !$0.done }
-        let summary = PlanTime.daySummary(shown, tasks: (open: open.count - open.filter(\.pastDue).count, pastDue: open.filter(\.pastDue).count))
-        return VStack(alignment: .leading, spacing: 16) {
-            SheetHeader(title: day.formatted(.dateTime.weekday(.wide).month(.wide).day())) {
-                VStack(alignment: .leading, spacing: 2) {
-                    let lines = loaded ? SummaryLines.split(summary) : ["Loading"]
-                    SituationLine(tone: .rest, text: lines[0])
-                    if lines.count > 1 { Text(lines[1]).font(.system(size: 13.5, weight: .medium)).foregroundStyle(.ink).padding(.leading, 15) }
-                }
-            }
-            if let error, !loaded {
-                Text(error).font(.footnote).foregroundStyle(.danger)
-            }
-            if loaded && shown.isEmpty && closing.isEmpty {
-                Text("Nothing planned and nothing closing.").font(.subheadline).foregroundStyle(.inkMuted)
-            }
+        let closingShown = actions.ticker.shown(closing)
+        let counted = shown.filter { !$0.declined }
+        let free = PlanTime.freeBetween(shown, minimum: 30 * 60)
+        let doneCount = closingShown.filter(\.done).count
+        return DetailSheet(title: day.formatted(.dateTime.weekday(.wide).month(.wide).day()), hasFacts: loaded, hasRail: actions.openDay != nil, hasSections: error != nil && !loaded || loaded && !(shown.isEmpty && closing.isEmpty)) {
+            SituationLine(tone: .rest, text: loaded ? Self.relation(day, now: now) : "Loading")
+        } facts: {
+            FactRow(label: "Plans", value: counted.isEmpty ? "None" : "\(counted.count) \(counted.count == 1 ? "plan" : "plans")")
+            if free > 0 { FactRow(label: "Free time", value: Phrase.duration(free), hint: "between plans") }
+            if !closing.isEmpty { FactRow(label: "Tasks closing", value: "\(closing.count)", hint: doneCount == 0 ? "none done yet" : "\(doneCount) done") }
+        } rail: {
+            ActionRail(items: [.action(title: "Open day", symbol: "calendar", emphasis: true) { actions.openDay?(day) }])
+        } sections: {
             if !shown.isEmpty {
                 InsetCard(title: "Plans", count: "\(shown.count)") {
                     ForEach(shown) { plan in
@@ -102,7 +110,7 @@ struct DayCardSheet: View {
             }
             if !closing.isEmpty {
                 InsetCard(title: "Tasks closing", count: "\(closing.count)") {
-                    ForEach(actions.ticker.shown(closing)) { task in
+                    ForEach(closingShown) { task in
                         let status = PlanTime.taskStatus(task, now: now)
                         Button { actions.sheet = .task(task) } label: {
                             row(title: task.title, status: status.label, dot: status.tone == .late ? .lateDot : task.done ? .sageDeep : .inkFaint, muted: task.done, dashed: false)
@@ -111,6 +119,7 @@ struct DayCardSheet: View {
                     }
                 }
             }
+            if let error, !loaded { Text(error).font(.footnote).foregroundStyle(.danger) }
         }
     }
 
@@ -145,6 +154,17 @@ struct DayCardSheet: View {
     }
 }
 
+/// How many things wait in Someday: the open tasks with no close and the plans with a start but no end.
+enum SomedayCount {
+    static func of(_ yaad: YaadClient, calendar: Calendar = .current) async throws -> Int {
+        let today = calendar.startOfDay(for: .now)
+        guard let end = calendar.date(byAdding: .day, value: SomedaySheet.lookAheadDays, to: today) else { return 0 }
+        async let tasks = yaad.somedayTasks()
+        async let plans = yaad.plans(from: today, to: end)
+        return try await tasks.count + PlanFilter.loose(plans).count
+    }
+}
+
 /// Someday: "25 things with no time yet", as Tasks and Plans, identical titles grouped ("Gym training split ×12") in
 /// the shared Expandable with their dates inside. A row names its keeper only when an agent keeps it and "checked 3d
 /// ago" only from a day on.
@@ -159,53 +179,44 @@ struct SomedaySheet: View {
     @State private var open: Set<String> = []
 
     /// How far ahead the loose plans are looked for.
-    static let lookAheadDays = 60
+    nonisolated static let lookAheadDays = 60
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 60)) { context in
             content(now: context.date)
         }
-        .padding(24)
         .task { await load() }
     }
 
     private func content(now: Date) -> some View {
         let openTasks = actions.ticker.placed(tasks).filter { !$0.done }
         let count = openTasks.count + plans.count
-        return VStack(alignment: .leading, spacing: 16) {
-            SheetHeader(title: "Someday") {
-                SituationLine(tone: .rest, text: loaded ? "\(count) \(count == 1 ? "thing" : "things") with no time yet" : "Loading")
-            }
+        return DetailSheet(title: "Someday", hasFacts: false, hasRail: false) {
+            SituationLine(tone: .rest, text: loaded ? "\(count) \(count == 1 ? "thing" : "things") with no time yet" : "Loading")
+        } facts: {
+            EmptyView()
+        } rail: {
+            EmptyView()
+        } sections: {
             if let error, !loaded {
                 Text(error).font(.footnote).foregroundStyle(.danger)
             } else if loaded && count == 0 {
                 EmptyState(title: "Nothing someday", detail: "Things with no time yet appear here.")
             }
             if !openTasks.isEmpty {
-                section("Tasks", count: openTasks.count) {
+                InsetCard(title: "Tasks", count: "\(openTasks.count)") {
                     ForEach(TaskLogic.groupByTitle(openTasks)) { group in
                         grouped(group, prefix: "t") { task in taskRow(task, now: now) }
                     }
                 }
             }
             if !plans.isEmpty {
-                section("Plans", count: plans.count) {
+                InsetCard(title: "Plans", count: "\(plans.count)") {
                     ForEach(TaskLogic.groupByTitle(plans)) { group in
                         grouped(group, prefix: "p") { plan in planRow(plan, now: now) }
                     }
                 }
             }
-        }
-    }
-
-    private func section<Content: View>(_ title: String, count: Int, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 8) {
-                Text(title).font(.footnote.weight(.semibold)).foregroundStyle(.ink)
-                Text("\(count)").font(.footnote).foregroundStyle(.inkMuted)
-            }
-            .accessibilityAddTraits(.isHeader)
-            content()
         }
     }
 

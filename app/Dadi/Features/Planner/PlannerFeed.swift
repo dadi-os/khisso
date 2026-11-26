@@ -93,14 +93,3 @@ struct MonthSkeleton: View {
         .accessibilityLabel("Loading")
     }
 }
-
-/// A day's summary line cut into at most two balanced lines at its " · " breaks, so it never wraps with an orphan.
-enum SummaryLines {
-    /// The first two parts together, then the rest ("9 plans · 4 h free" / "8 tasks to do, 3 past due"); one line when
-    /// there are two parts or fewer.
-    static func split(_ summary: String) -> [String] {
-        let parts = summary.components(separatedBy: " · ")
-        guard parts.count > 2 else { return [summary] }
-        return [parts.prefix(2).joined(separator: " · "), parts.dropFirst(2).joined(separator: " · ")]
-    }
-}

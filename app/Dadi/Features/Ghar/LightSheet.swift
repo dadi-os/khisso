@@ -15,6 +15,7 @@ struct LightSheet: View {
     var body: some View {
         if let device = store.device(deviceId) {
             content(device)
+                .toasts(store.toaster)
         }
     }
 
@@ -107,14 +108,6 @@ struct LightSheet: View {
                 }
                 .padding(.top, 18)
                 .animation(Motion.snap, value: device.state)
-            }
-
-            if let problem = store.problem {
-                Label(problem, systemImage: "exclamationmark.circle")
-                    .font(.footnote)
-                    .foregroundStyle(.danger)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.top, 14)
             }
 
             VStack(spacing: 0) {
