@@ -2,6 +2,7 @@ import Combine
 import PhotosUI
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 /// The message field and its send button, two shapes of one liquid glass:
 /// once there is something to send, the button flows out of the field's end
@@ -12,8 +13,8 @@ import UIKit
 /// composer is this; a thread's is written in the dock's accessory.
 struct Composer: View {
     @Binding var text: String
-    /// Photos waiting to go with the message.
-    @Binding var photos: [DraftPhoto]
+    /// Photos and files waiting to go with the message.
+    @Binding var files: [DraftFile]
     let placeholder: String
     /// A send is in flight: the button spins and another send waits.
     let busy: Bool
@@ -26,7 +27,9 @@ struct Composer: View {
     @FocusState private var focused: Bool
     @State private var attach = Attach.closed
     @State private var camera = CameraModel()
+    @State private var batch = CaptureBatch<DraftFile>()
     @State private var libraryOpen = false
+    @State private var filesOpen = false
     @State private var picked: [PhotosPickerItem] = []
     @State private var problem: String?
     @State private var opened = 0
@@ -34,7 +37,7 @@ struct Composer: View {
     /// The composer's width, which the open viewfinder fills.
     @State private var width: CGFloat = 0
 
-    /// What the plus is showing: itself, with its menu of photo sources, or the camera.
+    /// What the plus is showing: itself, with its menu of sources, or the camera.
     private enum Attach: Equatable {
         case closed, camera
     }
@@ -44,15 +47,15 @@ struct Composer: View {
     /// How near the two shapes must be for their glass to meld.
     private let merge: CGFloat = 6
 
-    private var ready: Bool { !busy && (!text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !photos.isEmpty) }
+    private var ready: Bool { !busy && (!text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !files.isEmpty) }
 
     /// The button is out while there is something to send or a send is in flight.
     private var showsSend: Bool { ready || busy }
 
     var body: some View {
         VStack(spacing: 0) {
-            if !photos.isEmpty {
-                PhotoStrip(photos: $photos)
+            if !files.isEmpty {
+                FileStrip(files: $files)
                     .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .bottomLeading)))
             }
             if let problem {
@@ -66,22 +69,29 @@ struct Composer: View {
             }
             fieldRow
         }
-        .animation(Motion.settle, value: photos)
+        .animation(Motion.settle, value: files)
         .animation(Motion.snap, value: problem)
         .sensoryFeedback(.impact(flexibility: .soft), trigger: opened)
         .frame(maxWidth: 680)
-        .photosPicker(isPresented: $libraryOpen, selection: $picked, maxSelectionCount: max(1, DraftPhoto.limit - photos.count), matching: .images)
+        .photosPicker(isPresented: $libraryOpen, selection: $picked, maxSelectionCount: max(1, DraftFile.limit - files.count), matching: .images)
         .onChange(of: picked) { _, items in
             guard !items.isEmpty else { return }
             picked = []
             Task { await addPicked(items) }
         }
+        .fileImporter(isPresented: $filesOpen, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
+            switch result {
+            case .success(let urls): addDocuments(urls)
+            case .failure(let error): problem = error.localizedDescription
+            }
+        }
         .task { await camera.prepare() }
+        .onDisappear { batch.release(into: &files) }
         .onChange(of: focusing, initial: true) { _, now in focused = now }
     }
 
     /// The plus, which is also the viewfinder: a glass circle at the field's
-    /// start whose menu offers the photo sources. Choosing Camera grows it into
+    /// start whose menu offers the sources. Choosing Camera grows it into
     /// the viewfinder while the field stays mounted, unseen and still holding
     /// the keyboard, and the send button gives way; it shrinks back into the
     /// plus when closed. The viewfinder is laid out at its open size from the
@@ -92,7 +102,7 @@ struct Composer: View {
         return ZStack {
             switch attach {
             case .camera:
-                CameraPanel(camera: camera, count: photos.count, dismissing: dismissing, add: { photos.append($0) }, report: { problem = $0 }, close: closeCamera)
+                CameraPanel(camera: camera, count: files.count, dismissing: dismissing, add: { files.append($0) }, batch: $batch, report: { problem = $0 }, close: closeCamera)
                     .frame(width: max(width, 46), height: CameraPanel.height)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
                     .transition(.asymmetric(
@@ -173,6 +183,7 @@ struct Composer: View {
         switch source {
         case .camera: openCamera()
         case .library: libraryOpen = true
+        case .files: filesOpen = true
         }
     }
 
@@ -187,7 +198,18 @@ struct Composer: View {
     private func addPicked(_ items: [PhotosPickerItem]) async {
         for item in items {
             do {
-                photos.append(try await DraftPhoto.picked(item))
+                files.append(try await DraftFile.picked(item))
+            } catch {
+                problem = error.localizedDescription
+            }
+        }
+    }
+
+    /// Adds the files chosen in the document picker, as many as the message has room for.
+    private func addDocuments(_ urls: [URL]) {
+        for url in urls.prefix(max(0, DraftFile.limit - files.count)) {
+            do {
+                files.append(try DraftFile.document(at: url))
             } catch {
                 problem = error.localizedDescription
             }
@@ -198,6 +220,7 @@ struct Composer: View {
     /// into the plus, the frozen preview clipped inside it; the panel stops the
     /// camera as it leaves.
     private func closeCamera() {
+        batch.release(into: &files)
         guard attach == .camera, !dismissing else { return }
         dismissing = true
         attach = .closed
@@ -213,8 +236,8 @@ struct Composer: View {
 
     /// Sends, then eases the keyboard down behind the bubble.
     private func submit() {
-        guard ready else { return }
         closeCamera()
+        guard ready else { return }
         send()
         Task {
             do { try await Task.sleep(for: keyboardLag) } catch { return }
@@ -223,44 +246,94 @@ struct Composer: View {
     }
 }
 
-/// The photos waiting to be sent, as a row of thumbnails each with a button to
-/// take it back out.
-struct PhotoStrip: View {
-    @Binding var photos: [DraftPhoto]
+/// The photos and files waiting to be sent, as a row of tiles each with a button to take it back out: an image's own
+/// thumbnail, any other file's icon and name. A tile shows its upload as it goes, and a failed one its reason below.
+struct FileStrip: View {
+    @Binding var files: [DraftFile]
+
+    private var failures: [DraftFile] { files.filter(failed) }
 
     var body: some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: 8) {
-                ForEach(photos) { photo in
-                    Image(uiImage: photo.thumbnail)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: 64, height: 64)
-                        .clipShape(.rect(cornerRadius: 14, style: .continuous))
-                        .overlay(alignment: .topTrailing) {
-                            Button {
-                                photos.removeAll { $0.id == photo.id }
-                            } label: {
-                                Image(systemName: "xmark")
-                                    .font(.system(size: 9, weight: .heavy))
-                                    .foregroundStyle(.bone)
-                                    .frame(width: 20, height: 20)
-                                    .background(.ink.opacity(0.75), in: .circle)
-                                    .frame(width: 32, height: 32)
-                                    .contentShape(.rect)
-                            }
-                            .buttonStyle(.plain)
-                            .offset(x: 8, y: -8)
-                            .accessibilityLabel("Remove photo")
-                        }
-                        .transition(.scale(scale: 0.6).combined(with: .opacity))
+        VStack(alignment: .leading, spacing: 6) {
+            ScrollView(.horizontal) {
+                HStack(spacing: 8) {
+                    ForEach(files) { file in
+                        tile(file)
+                            .overlay(alignment: .topTrailing) { remove(file) }
+                            .transition(.scale(scale: 0.6).combined(with: .opacity))
+                    }
                 }
+                .padding(.top, 10)
+                .padding(.bottom, failures.isEmpty ? 12 : 2)
+                .padding(.horizontal, 4)
             }
-            .padding(.top, 10)
-            .padding(.bottom, 12)
-            .padding(.horizontal, 4)
+            .scrollIndicators(.hidden)
+            ForEach(failures) { file in
+                Label("\(file.name): \(message(file))", systemImage: "exclamationmark.circle")
+                    .font(.footnote)
+                    .foregroundStyle(.danger)
+                    .padding(.horizontal, 6)
+            }
         }
-        .scrollIndicators(.hidden)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func tile(_ file: DraftFile) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
+        return ZStack {
+            if let thumbnail = file.thumbnail {
+                Image(uiImage: thumbnail).resizable().scaledToFill()
+            } else {
+                VStack(spacing: 4) {
+                    Image(systemName: "doc").font(.system(size: 18)).foregroundStyle(.sageDeep)
+                    Text(file.name).font(.caption2).foregroundStyle(.ink).lineLimit(2).truncationMode(.middle)
+                }
+                .padding(6)
+                .background(.boneRaised)
+            }
+        }
+        .frame(width: 64, height: 64)
+        .clipShape(shape)
+        .overlay { shape.strokeBorder(failed(file) ? Color.danger : .clear, lineWidth: 2) }
+        .overlay { status(file) }
+        .accessibilityLabel(file.name)
+    }
+
+    private func failed(_ file: DraftFile) -> Bool {
+        if case .failed = file.upload { true } else { false }
+    }
+
+    private func message(_ file: DraftFile) -> String {
+        if case .failed(let message) = file.upload { message } else { "" }
+    }
+
+    @ViewBuilder
+    private func status(_ file: DraftFile) -> some View {
+        switch file.upload {
+        case .uploading:
+            ProgressView().controlSize(.small).tint(.bone).padding(8).background(.ink.opacity(0.55), in: .circle)
+        case .uploaded:
+            Image(systemName: "checkmark").font(.system(size: 12, weight: .bold)).foregroundStyle(.bone).padding(7).background(.sageDeep, in: .circle)
+        case .pending, .failed:
+            EmptyView()
+        }
+    }
+
+    private func remove(_ file: DraftFile) -> some View {
+        Button {
+            file.discard()
+            files.removeAll { $0.id == file.id }
+        } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 9, weight: .heavy))
+                .foregroundStyle(.bone)
+                .frame(width: 20, height: 20)
+                .background(.ink.opacity(0.75), in: .circle)
+                .frame(width: 32, height: 32)
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .offset(x: 8, y: -8)
+        .accessibilityLabel("Remove \(file.name)")
     }
 }

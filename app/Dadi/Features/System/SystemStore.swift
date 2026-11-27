@@ -16,7 +16,7 @@ final class SystemStore {
 
     private(set) var status: NasStatus?
     private(set) var devices: [NasClientDevice] = []
-    /// Every browser and terminal helper task, newest activity first.
+    /// Every browser and terminal helper task that is not asleep, newest activity first.
     private(set) var tasks: [NasTask] = []
     private(set) var errors: [NasLogEntry] = []
     private(set) var problem: String?
@@ -44,7 +44,7 @@ final class SystemStore {
             let (s, d, t) = try await (nextStatus, nextDevices, nextTasks)
             status = s
             devices = d.filter { $0.nodeName != Self.boxNode }.sorted { ($0.online ? 0 : 1, $0.nodeName) < ($1.online ? 0 : 1, $1.nodeName) }
-            tasks = t.sorted { $0.lastActivity > $1.lastActivity }
+            tasks = Self.awake(t)
             problem = nil
             problemStatus = nil
             lastRead = .now
@@ -54,6 +54,12 @@ final class SystemStore {
             problem = error.localizedDescription
             problemStatus = (error as? ServiceError)?.status
         }
+    }
+
+    /// The tasks System shows: working, idle, paused, asking and stopped ones, newest activity first. Asleep ones are
+    /// left out of the page, its tiles and its counts.
+    nonisolated static func awake(_ tasks: [NasTask]) -> [NasTask] {
+        tasks.filter { $0.status != "asleep" }.sorted { $0.lastActivity > $1.lastActivity }
     }
 
     /// Reads the latest errors in the logs.

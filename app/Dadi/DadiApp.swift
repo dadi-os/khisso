@@ -9,6 +9,15 @@ struct DadiApp: App {
     @State private var relay: WatchRelay
     @Environment(\.scenePhase) private var scenePhase
     @Namespace private var wordmark
+    /// An unstarted connection that `-holdConnecting` (debug builds) shows the Connecting screen for.
+    @State private var held = Connection()
+    private var holding: Bool {
+        #if DEBUG
+        CommandLine.arguments.contains("-holdConnecting")
+        #else
+        false
+        #endif
+    }
 
     init() {
         let connection = Connection()
@@ -22,7 +31,7 @@ struct DadiApp: App {
     var body: some Scene {
         WindowGroup {
             ZStack {
-                switch connection.state {
+                switch holding ? held.state : connection.state {
                 case .needsSetup:
                     JoinView(connection: connection, wordmark: wordmark)
                         .transition(.opacity)
@@ -36,7 +45,7 @@ struct DadiApp: App {
                                     .transition(.move(edge: .top).combined(with: .opacity))
                             }
                     } else {
-                        ConnectingView(connection: connection, wordmark: wordmark)
+                        ConnectingView(connection: holding ? held : connection, wordmark: wordmark)
                             .transition(.opacity)
                     }
                 case .online:

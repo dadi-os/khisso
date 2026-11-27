@@ -39,6 +39,7 @@ final class ChaaviStore {
 
     let chaavi: ChaaviClient
     let vault = VaultLock()
+    let icons: SiteIcons
 
     private(set) var items: [ChaaviItem] = []
     private(set) var folders: [ChaaviFolder] = []
@@ -50,6 +51,7 @@ final class ChaaviStore {
 
     init(chaavi: ChaaviClient) {
         self.chaavi = chaavi
+        icons = SiteIcons(chaavi: chaavi)
     }
 
     /// Reads every item and folder.

@@ -55,6 +55,15 @@ struct ThreadView: View {
         let newest: Int?
     }
 
+    /// The viewfinder the plus opens, in the thread's own surface.
+    private var viewfinder: some View {
+        @Bindable var draft = draft
+        return CameraPanel(camera: camera, count: draft.files.count, dismissing: false, add: { draft.files.append($0) }, batch: $draft.shots, report: { draft.photoProblem = $0 }, close: { draft.attaching = nil })
+            .frame(height: CameraPanel.height)
+            .background(.black)
+            .clipShape(.rect(cornerRadius: 30, style: .continuous))
+    }
+
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
@@ -134,28 +143,26 @@ struct ThreadView: View {
                     }
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
-                if !draft.photos.isEmpty {
+                if !draft.files.isEmpty {
                     @Bindable var draft = draft
-                    PhotoStrip(photos: $draft.photos)
+                    FileStrip(files: $draft.files)
                         .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .bottomLeading)))
                 }
                 if draft.attaching == .camera {
-                    CameraPanel(camera: camera, count: draft.photos.count, dismissing: false, add: { draft.photos.append($0) }, report: { draft.photoProblem = $0 }, close: { draft.attaching = nil })
-                        .frame(height: CameraPanel.height)
-                        .background(.black)
-                        .clipShape(.rect(cornerRadius: 30, style: .continuous))
+                    viewfinder
                         .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
-                ThreadComposerBar(name: name, draft: draft, focus: $focused) { draft.send(hath, to: agentId) }
+                ThreadComposerBar(name: name, draft: draft, focus: $focused) { draft.send(hath, nas: nas, to: agentId) }
             }
-            .animation(Motion.settle, value: draft.photos)
+            .animation(Motion.settle, value: draft.files)
             .animation(Motion.settle, value: draft.attaching)
             .padding(.horizontal, 16)
             .padding(.top, 8)
             .padding(.bottom, 8)
         }
         .navigationTitle(name)
-        .threadAttachments(draft, camera: camera)
+        .threadFilePickers(draft, camera: camera)
+        .boxLinks(nas: nas)
         .onDisappear { if draft.attaching == .camera { draft.attaching = nil } }
         .animation(Motion.snap, value: draft.quote)
         .animation(Motion.snap, value: draft.sendError)
@@ -202,9 +209,13 @@ struct ThreadView: View {
     @ViewBuilder
     private func bubble(_ message: DurableMessage, opensGroup: Bool) -> some View {
         if message.fromUser {
+            let opening = BoxLink.leading(in: message.content)
             VStack(alignment: .trailing, spacing: 6) {
-                if !message.content.isEmpty {
-                    Text(InlineMarkdown.attributed(message.content))
+                ForEach(Array(opening.links.enumerated()), id: \.offset) { _, link in
+                    FileChip(link: link) { Text(link.name).font(.footnote.weight(.medium)).foregroundStyle(.ink).lineLimit(1) }
+                }
+                if !opening.rest.isEmpty {
+                    Text(InlineMarkdown.attributed(opening.rest))
                         .font(.body)
                         .foregroundStyle(.bone)
                         .tint(.bone)
@@ -214,7 +225,6 @@ struct ThreadView: View {
                         .contentShape(.contextMenuPreview, .rect(cornerRadius: 20, style: .continuous))
                         .contextMenu { actions(message) }
                 }
-                attachments(message.attachments)
                 time(message)
             }
             .frame(maxWidth: .infinity, alignment: .trailing)
@@ -232,7 +242,6 @@ struct ThreadView: View {
                             .frame(width: 340, alignment: .leading)
                             .background(Color.boneRaised)
                     }
-                attachments(message.attachments)
                 HStack(spacing: 8) {
                     time(message)
                     if let tag = standingTag(message) { tag }
@@ -258,17 +267,6 @@ struct ThreadView: View {
         Text(message.createdAt, format: .dateTime.hour().minute())
             .font(.caption2)
             .foregroundStyle(.inkFaint)
-    }
-
-    @ViewBuilder
-    private func attachments(_ files: [AttachmentSummary]) -> some View {
-        if !files.isEmpty {
-            VStack(alignment: .leading, spacing: 6) {
-                ForEach(files) { file in
-                    AttachmentView(file: file, hath: hath)
-                }
-            }
-        }
     }
 
     private func load() async {

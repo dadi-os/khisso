@@ -8,28 +8,7 @@ struct StopState: Equatable {
     var error: String?
 }
 
-/// The Stop button of the actions row: quiet, and it opens `StopConfirm` under the row.
-struct StopButton: View {
-    let name: String
-    let stop: StopState
-    /// Whether there is anything to stop: the loop runs, or a job is open.
-    let stoppable: Bool
-    @Binding var confirming: Bool
-
-    var body: some View {
-        if stoppable || stop.pending {
-            Button { confirming.toggle() } label: {
-                Text(stop.pending ? "Stopping…" : "Stop").font(.subheadline.weight(.semibold)).foregroundStyle(.inkMuted).frame(minWidth: 56, minHeight: 44)
-            }
-            .buttonStyle(.plain)
-            .disabled(stop.pending)
-            .accessibilityLabel("Stop \(name)")
-            .accessibilityValue(confirming ? "Expanded" : "Collapsed")
-        }
-    }
-}
-
-/// The line that eases open under the actions row: what Stop does, Stop and Keep going; and, once it ran, what Hath
+/// The line that eases open under the action rail: what Stop does, Stop and Keep going; and, once it ran, what Hath
 /// could not halt.
 struct StopConfirm: View {
     let stop: StopState

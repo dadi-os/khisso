@@ -73,8 +73,8 @@ struct ChatsView: View {
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.top, 8)
-            .padding(.bottom, 140)
+            .padding(.top, 4)
+            .padding(.bottom, 200)
             .frame(maxWidth: 680)
             .frame(maxWidth: .infinity)
         }
@@ -100,8 +100,9 @@ struct ChatsView: View {
             }
         }
         .padding(.horizontal, 14)
-        .frame(minHeight: 44)
-        .glassEffect(.regular, in: .rect(cornerRadius: 22, style: .continuous))
+        .frame(minHeight: 52)
+        .glassEffect(.regular, in: .rect(cornerRadius: 26, style: .continuous))
+        .padding(.leading, 60)
     }
 
     private var days: [ChatGroups.Day] {
@@ -146,6 +147,7 @@ struct ChatsView: View {
             .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 20, style: .continuous))
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("chat-card")
         .contextMenu {
             Button { open(thread.agentId) } label: { Label("Open thread", systemImage: "bubble.left.and.text.bubble.right") }
             Button { details(thread.agentId) } label: { Label("Agent details", systemImage: "info.circle") }

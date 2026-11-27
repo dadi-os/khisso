@@ -28,6 +28,7 @@ struct AgentMarkdown: View {
             .markdownMathRenderingEnabled()
             .markdownFontGroup(AgentMarkdownFonts(compact: compact))
             .chatLinks()
+            .markdownElementRenderer(.link(BoxLinkRenderer(), urlScheme: "box"))
             .tint(.sageDeep, for: .inlineCodeBlock)
             .tint(.sageDeep, for: .blockQuote)
             .markdownBlockQuoteStyle(SageQuoteStyle())

@@ -38,6 +38,7 @@ struct ConnectingView: View {
                 .font(.wordmark(Self.wordmarkSize))
                 .inkCentered(.word, size: Self.wordmarkSize)
                 .foregroundStyle(.sageDeep)
+                .accessibilityIdentifier("connecting-wordmark")
                 .opacity(breathing ? 1 : 0.62)
                 .matchedGeometryEffect(id: "wordmark", in: wordmark)
                 .onAppear {
@@ -65,6 +66,7 @@ struct ConnectingView: View {
             .frame(height: 80, alignment: .top)
             .offset(y: Self.wordmarkSize + 8)
         }
+        .ignoresSafeArea()
         .overlay(alignment: .bottom) {
             Button("Forget this device") { connection.forget() }
                 .buttonStyle(.plain)

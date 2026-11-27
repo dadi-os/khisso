@@ -22,7 +22,7 @@ targets:
   Dadi:
     type: application
     scheme:
-      testTargets: [DadiTests]
+      testTargets: [DadiTests, DadiUITests]
     platform: iOS
     sources: [Dadi]
     dependencies:
@@ -72,6 +72,7 @@ targets:
       - Dadi/Shared/Components/AgentActivity.swift
       - Dadi/Shared/Components/Agent.swift
       - Dadi/Shared/Components/LinkFormat.swift
+      - Dadi/Shared/Components/BoxLink.swift
       - Dadi/Shared/Components/UnicodeMath.swift
       - Dadi/Shared/Components/MathDelimiters.swift
       - Dadi/Types/Hath.swift
@@ -111,3 +112,14 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         TEST_HOST: $(BUILT_PRODUCTS_DIR)/dadi.app/dadi
         BUNDLE_LOADER: $(TEST_HOST)
+  DadiUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [DadiUITests]
+    dependencies:
+      - target: Dadi
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.dadi.khisso.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: Dadi

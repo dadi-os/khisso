@@ -90,3 +90,49 @@ struct NasTask: Decodable, Sendable, Hashable, Identifiable {
     /// True while Hath can still halt it: it is working, paused, idle or asking.
     var stoppable: Bool { ["working", "paused", "idle", "asking"].contains(status) }
 }
+
+/// One file, folder or symlink in the dadi home, from GET /fs/stat and GET /fs/list.
+struct NasFileEntry: Decodable, Sendable, Hashable, Identifiable {
+    enum Kind: String, Decodable, Sendable {
+        case file, folder, symlink
+    }
+
+    let name: String
+    /// Absolute on the box, as in a `box://` link.
+    let path: String
+    let kind: Kind
+    let size: Int64
+    let modified: Date
+    /// By extension; empty for a folder, a symlink and an unknown extension.
+    let mediaType: String
+
+    var id: String { path }
+
+    private enum CodingKeys: String, CodingKey {
+        case name, path, kind, size, modified, mediaType
+    }
+
+    /// Nas writes `modified` as RFC 3339 with or without fractional seconds.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = try c.decode(String.self, forKey: .name)
+        path = try c.decode(String.self, forKey: .path)
+        kind = try c.decode(Kind.self, forKey: .kind)
+        size = try c.decode(Int64.self, forKey: .size)
+        modified = try c.decodeInstant(forKey: .modified)
+        mediaType = try c.decode(String.self, forKey: .mediaType)
+    }
+}
+
+/// GET /fs/list: a folder's entries, folders first and then by name.
+struct NasFileList: Decodable, Sendable {
+    let path: String
+    let entries: [NasFileEntry]
+}
+
+/// POST /fs/upload: where the file landed, which differs from the name sent when that name was taken.
+struct NasUploaded: Decodable, Sendable, Hashable {
+    let path: String
+    let name: String
+    let size: Int64
+}

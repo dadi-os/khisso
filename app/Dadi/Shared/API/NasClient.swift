@@ -1,6 +1,6 @@
 import Foundation
 
-/// Nas, the box itself: health, the devices on dadi, and its logs.
+/// Nas, the box itself: health, the devices on dadi, its logs, and the files in the dadi home.
 struct NasClient: Sendable {
     /// Nas's address on dadi, served by Caddy on the box.
     static let baseURL = URL(string: "http://nas.dadi")!
@@ -10,6 +10,9 @@ struct NasClient: Sendable {
     init(session: URLSession) {
         client = ServiceClient(session: session, baseURL: Self.baseURL)
     }
+
+    /// A file's bytes can take a while over the mesh.
+    static let fileTimeout: TimeInterval = 120
 
     /// GET /events: one element per change to the helper tasks, terminals and browsers.
     func changes() async throws -> AsyncThrowingStream<Void, Error> {
@@ -56,6 +59,27 @@ struct NasClient: Sendable {
     func stop(_ task: NasTask) async throws -> NasTask {
         struct Body: Encodable {}
         return try await client.post("/tasks/\(task.route)/stop", body: Body())
+    }
+
+    /// GET /fs/stat: one entry. A path that is gone is a `not_found` error (404), which is how a removed file is told.
+    func stat(_ path: String) async throws -> NasFileEntry {
+        try await client.get("/fs/stat", query: [URLQueryItem(name: "path", value: path)])
+    }
+
+    /// GET /fs/list: a folder's entries, folders first and then by name, without dotfiles.
+    func list(_ path: String) async throws -> NasFileList {
+        try await client.get("/fs/list", query: [URLQueryItem(name: "path", value: path)])
+    }
+
+    /// GET /fs/raw: the file's bytes, saved under its own name in a temporary folder for the caller to use and remove.
+    func download(_ entry: NasFileEntry) async throws -> URL {
+        try await client.download("/fs/raw", query: [URLQueryItem(name: "path", value: entry.path)], filename: entry.name, timeout: Self.fileTimeout)
+    }
+
+    /// POST /fs/upload: puts the file at `file` in `folder` (created when missing) under `name`. A taken name gets
+    /// " (2)", so the answer's path is where it landed, and a link is built from that.
+    func upload(_ file: URL, named name: String, mediaType: String, to folder: String) async throws -> NasUploaded {
+        try await client.upload("/fs/upload", fields: [(name: "path", value: folder)], file: file, filename: name, mediaType: mediaType, timeout: Self.fileTimeout)
     }
 
     private static func escaped(_ id: String) -> String {

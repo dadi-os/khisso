@@ -39,7 +39,10 @@ struct CameraPanel: View {
     let count: Int
     /// The composer is closing: the content leaves before the surface shrinks.
     let dismissing: Bool
-    let add: (DraftPhoto) -> Void
+    let add: (DraftFile) -> Void
+    /// What has been taken and not yet attached. The composer owns it, so closing the viewfinder by any route
+    /// attaches it.
+    @Binding var batch: CaptureBatch<DraftFile>
     /// Says why a photo taken just before the viewfinder closed was not added.
     let report: (String) -> Void
     let close: () -> Void
@@ -54,7 +57,6 @@ struct CameraPanel: View {
     @State private var libraryOpen = false
     @State private var picked: [PhotosPickerItem] = []
     @State private var problem: String?
-    @State private var batch = CaptureBatch<DraftPhoto>()
     @State private var taking = false
     @State private var shutter = 0
     @State private var arrived = false
@@ -78,7 +80,7 @@ struct CameraPanel: View {
         .contentShape(.rect)
         .onTapGesture(count: 2, perform: turn)
         .gesture(pinch)
-        .photosPicker(isPresented: $libraryOpen, selection: $picked, maxSelectionCount: max(1, DraftPhoto.limit - count), matching: .images)
+        .photosPicker(isPresented: $libraryOpen, selection: $picked, maxSelectionCount: max(1, DraftFile.limit - count), matching: .images)
         .onChange(of: picked) { _, items in
             guard !items.isEmpty else { return }
             picked = []
@@ -178,11 +180,13 @@ struct CameraPanel: View {
             ScrollView(.horizontal) {
                 HStack(spacing: 6) {
                     ForEach(batch.held) { photo in
-                        Image(uiImage: photo.thumbnail)
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: 44, height: 44)
-                            .clipShape(.rect(cornerRadius: 10, style: .continuous))
+                        if let thumbnail = photo.thumbnail {
+                            Image(uiImage: thumbnail)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 44, height: 44)
+                                .clipShape(.rect(cornerRadius: 10, style: .continuous))
+                        }
                     }
                 }
             }
@@ -297,8 +301,8 @@ struct CameraPanel: View {
     }
 
     private func take() {
-        guard count + batch.held.count < DraftPhoto.limit else {
-            problem = "A message holds up to \(DraftPhoto.limit) photos."
+        guard count + batch.held.count < DraftFile.limit else {
+            problem = "A message holds up to \(DraftFile.limit) photos."
             return
         }
         problem = nil
@@ -310,8 +314,8 @@ struct CameraPanel: View {
                 shutter += 1
                 if batch.mode == .single, batch.held.isEmpty {
                     close()
-                    do { add(try await DraftPhoto.make(data: data)) } catch { report(error.localizedDescription) }
-                } else if let photos = batch.take(try await DraftPhoto.make(data: data)) {
+                    do { add(try await DraftFile.photo(data: data)) } catch { report(error.localizedDescription) }
+                } else if let photos = batch.take(try await DraftFile.photo(data: data)) {
                     photos.forEach(add)
                     close()
                 }
@@ -321,9 +325,8 @@ struct CameraPanel: View {
         }
     }
 
-    /// Attaches whatever was taken and closes.
+    /// Closes; the composer attaches whatever was taken.
     private func finish() {
-        batch.finish().forEach(add)
         close()
     }
 
@@ -332,7 +335,7 @@ struct CameraPanel: View {
         problem = nil
         for item in items {
             do {
-                add(try await DraftPhoto.picked(item))
+                add(try await DraftFile.picked(item))
             } catch {
                 problem = error.localizedDescription
             }

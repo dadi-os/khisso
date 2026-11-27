@@ -18,9 +18,10 @@ struct ScrollEdge: View {
 
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
-    /// A thread's strips: the back button and name capsule block (68 pt) plus 44, and the composer with the activity pill plus 44.
-    static let threadTop: CGFloat = 112
-    static let threadBottom: CGFloat = 148
+    /// A thread's strips, which run from the screen's edges: the status bar (62 pt), the menu button and name capsule block (68 pt) plus 44,
+    /// and the composer, its activity pill and the dock plus 44.
+    static let threadTop: CGFloat = 176
+    static let threadBottom: CGFloat = 200
     /// The chat list's strips: the search row, and the dock.
     static let listTop: CGFloat = 88
     static let listBottom: CGFloat = 116

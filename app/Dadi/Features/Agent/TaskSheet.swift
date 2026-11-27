@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// The modal card for a helper task, watch only: its browser live in a window frame showing the active tab's
-/// address, or its terminal's output following the end. The header carries the task's kind, purpose, state and
-/// a menu to pause or resume it and to stop it for good. The card is as tall as its browser needs; a terminal
+/// The modal card for a helper task, watch only, in the shared sheet anatomy: its purpose over its state, its facts,
+/// a rail to pause or resume it and to stop it for good, and under them its browser live in a window frame showing
+/// the active tab's address, or its terminal's output following the end. The card is as tall as its browser needs; a terminal
 /// opens medium and pulls up to full height.
 struct TaskSheet: View {
     let hath: HathClient
@@ -35,20 +35,55 @@ struct TaskSheet: View {
     private var terminal: Bool { task.kind == "terminal" && task.resource != nil }
     private var problem: String? { actionProblem ?? readProblem }
 
+    /// The facts a task's sheet lists, in order: whose it is, which task, what it is doing now, the page in front, and
+    /// when it last did anything. Only the true ones.
+    static func facts(of task: NasTask, owner: String) -> [(label: String, value: String)] {
+        var rows = [("Agent", owner), ("Task", task.route)]
+        if task.status != "asking", !task.state.isEmpty { rows.append(("Now", task.state)) }
+        if let url = task.activeUrl, !url.isEmpty { rows.append(("Page", url)) }
+        rows.append(("Last active", task.lastActivity.formatted(.relative(presentation: .numeric, unitsStyle: .wide))))
+        return rows
+    }
+
+    /// The one situation line: the task's state in words, toned as the rows' state words are.
+    static func situation(of task: NasTask, owner: String) -> (tone: SituationTone, text: String) {
+        switch task.status {
+        case "working": (.live, "Working")
+        case "paused": (.wait, "Paused")
+        case "asking": (.wait, "Waiting on \(owner)")
+        case "stopped": (.late, "Stopped")
+        default: (.rest, task.status.capitalized)
+        }
+    }
+
     var body: some View {
-        VStack(spacing: 12) {
-            header
+        let situation = Self.situation(of: task, owner: owner)
+        VStack(alignment: .leading, spacing: SheetLayout.gap) {
+            SheetHeader(title: task.purpose) { SituationLine(tone: situation.tone, text: situation.text) }
+                .padding(.horizontal, SheetLayout.inset)
+            VStack(spacing: 0) {
+                ForEach(Self.facts(of: task, owner: owner), id: \.label) { row in
+                    FactRow(label: row.label, value: row.value, wrap: row.label == "Now" || row.label == "Page", long: row.label == "Now")
+                }
+            }
+            .padding(.horizontal, SheetLayout.inset)
+            if task.stoppable {
+                Divider().overlay(Color.rule).padding(.horizontal, SheetLayout.inset)
+                ActionRail(items: rail)
+                    .padding(.horizontal, SheetLayout.inset)
+                    .disabled(busy)
+            }
             if let problem {
                 Label(problem, systemImage: "exclamationmark.triangle")
                     .font(.footnote)
                     .foregroundStyle(.danger)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, SheetLayout.inset)
             }
             screen
         }
-        .padding(.top, 14)
-        .padding(.bottom, terminal ? 0 : 16)
+        .padding(.top, SheetLayout.inset)
+        .padding(.bottom, terminal ? 0 : SheetLayout.inset)
         .frame(maxHeight: terminal ? .infinity : nil, alignment: .top)
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { if !terminal { fitted = $0 } }
         .presentationDetents(terminal ? [.height(Self.terminalHeight), .large] : [.height(fitted)])
@@ -63,54 +98,21 @@ struct TaskSheet: View {
         }
     }
 
-    private var header: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: task.kind == "browser" ? "globe" : "terminal")
-                .font(.body.weight(.medium))
-                .foregroundStyle(.sageText)
-                .frame(width: 32, height: 32)
-                .background(.sage.opacity(0.12), in: .rect(cornerRadius: 10, style: .continuous))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(task.purpose).font(.subheadline.weight(.semibold)).foregroundStyle(.ink).lineLimit(2).multilineTextAlignment(.leading)
-                Text("\(task.route) \u{00B7} \(owner)").font(.caption.monospaced()).foregroundStyle(.inkMuted).lineLimit(1)
-            }
-            Spacer(minLength: 4)
-            TaskStateWord(status: task.status)
-            if task.stoppable { menu }
-            Button("Close", systemImage: "xmark") { dismiss() }
-                .labelStyle(.iconOnly)
-                .font(.footnote.weight(.bold))
-                .foregroundStyle(.inkMuted)
-                .frame(width: 32, height: 32)
-                .background(.ink.opacity(0.06), in: .circle)
-        }
-        .padding(.horizontal, 16)
-    }
-
-    private var menu: some View {
-        Menu {
-            if task.status == "paused" {
-                Button("Resume", systemImage: "play.fill") { change { try await nas.resume(task, note: nil) } }
-            } else {
-                Button("Pause", systemImage: "pause.fill") { change { try await nas.pause(task) } }
-            }
-            Button("Stop task", systemImage: "power", role: .destructive) { confirmingStop = true }
-        } label: {
-            Image(systemName: "ellipsis")
-                .font(.footnote.weight(.bold))
-                .foregroundStyle(.inkMuted)
-                .frame(width: 32, height: 32)
-                .background(.ink.opacity(0.06), in: .circle)
-        }
-        .disabled(busy)
-        .accessibilityLabel("More")
+    /// Pause or Resume, and Stop, in the sheet's one rail.
+    private var rail: [RailItem] {
+        [
+            task.status == "paused"
+                ? .action(title: "Resume", symbol: "play.fill") { change { try await nas.resume(task, note: nil) } }
+                : .action(title: "Pause", symbol: "pause.fill") { change { try await nas.pause(task) } },
+            .action(title: "Stop task", symbol: "power") { confirmingStop = true },
+        ]
     }
 
     @ViewBuilder
     private var screen: some View {
         if task.kind == "browser", let resource = task.resource, let browserId = Int(resource) {
             BrowserWindow(nas: nas, browserId: browserId, address: task.activeUrl)
-                .padding(.horizontal, 16)
+                .padding(.horizontal, SheetLayout.inset)
         } else if let resource = task.resource {
             GeometryReader { pane in
                 ScrollView {
@@ -120,10 +122,10 @@ struct TaskSheet: View {
                 .defaultScrollAnchor(.bottom)
                 .defaultScrollAnchor(.bottom, for: .sizeChanges)
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, SheetLayout.inset)
             .accessibilityLabel("Terminal output")
         } else {
-            Text(task.state).font(.footnote).foregroundStyle(.inkMuted).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 16)
+            Text(task.state).font(.footnote).foregroundStyle(.inkMuted).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, SheetLayout.inset)
         }
     }
 

@@ -2,8 +2,7 @@ import SwiftUI
 
 /// System: the box at a glance. Rings for its processor, memory and disk, how
 /// long it has been up, each module's health, every device on dadi but the
-/// box, every browser and terminal helper task (tapping one opens its card,
-/// where a sleeping one shows its summary), and the latest errors in the logs. The meters and devices refresh
+/// box, every browser and terminal helper task (tapping one opens its card), and the latest errors in the logs. The meters and devices refresh
 /// every two seconds while open, as in thaali; the slower log read keeps its
 /// own pace so it never holds them up. The drawer jumps to a section; holding
 /// a module shows its errors or copies its status, holding a device copies
@@ -173,7 +172,7 @@ struct SystemPage: View {
         .sheet(item: Binding(get: { opened.map(LogSheetItem.init) }, set: { opened = $0?.entry })) { item in
             LogDetail(entry: item.entry)
                 .presentationDetents([.medium, .large])
-                .presentationBackground(.thinMaterial)
+                .presentationBackground(Color.boneRaised)
         }
         .navigationTitle("System")
         .task(id: live?.nas) { await store.load() }
@@ -360,31 +359,30 @@ private struct LogSheetItem: Identifiable {
     var id: String { entry.raw }
 }
 
-/// A log entry's whole line: its message, code, and every field it carried.
+/// A log entry's sheet in the shared anatomy: its message over where and when, its module and code as fact rows, and
+/// the whole line, with every field it carried, in an inset card.
 private struct LogDetail: View {
     let entry: NasLogEntry
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    Text(entry.service).font(.headline).foregroundStyle(.danger)
-                    if let code = entry.code { Text(code).font(.caption.monospaced()).foregroundStyle(.inkMuted) }
-                    Spacer()
-                    Text(entry.time, format: .dateTime.month().day().hour().minute().second())
-                        .font(.caption)
-                        .foregroundStyle(.inkFaint)
+            DetailSheet(title: entry.msg, hasRail: false) {
+                SituationLine(tone: .late, text: "\(entry.service.capitalized) · \(entry.time.formatted(.relative(presentation: .numeric, unitsStyle: .wide)))")
+            } facts: {
+                FactRow(label: "Module", value: entry.service.capitalized)
+                if let code = entry.code { FactRow(label: "Code", value: code) }
+                FactRow(label: "Time", value: entry.time.formatted(.dateTime.month().day().hour().minute().second()))
+            } rail: {
+                EmptyView()
+            } sections: {
+                InsetCard(title: "Log line") {
+                    Text(pretty)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.ink)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                Text(entry.msg).font(.body.weight(.medium)).foregroundStyle(.ink)
-                Text(pretty)
-                    .font(.caption.monospaced())
-                    .foregroundStyle(.ink)
-                    .textSelection(.enabled)
-                    .padding(12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(.sage.opacity(0.08), in: .rect(cornerRadius: 12))
             }
-            .padding(24)
         }
     }
 

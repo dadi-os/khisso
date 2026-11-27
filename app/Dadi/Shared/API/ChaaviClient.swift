@@ -6,10 +6,29 @@ struct ChaaviClient: Sendable {
     /// Chaavi's adapter on dadi, cleartext on the mesh.
     static let baseURL = URL(string: "http://chaavi.dadi")!
 
+    /// The vault server itself, over HTTPS with the mesh CA; it serves the icon proxy.
+    static let vaultURL = URL(string: "https://chaavi.dadi")!
+
     let client: ServiceClient
+    private let vault: ServiceClient
 
     init(session: URLSession) {
         client = ServiceClient(session: session, baseURL: Self.baseURL)
+        vault = ServiceClient(session: session, baseURL: Self.vaultURL)
+    }
+
+    /// GET /icons/:domain/icon.png on Chaavi's own icon proxy, so a login's domain never reaches a third party. A
+    /// site the proxy cannot reach gets its generic icon, so callers compare against `iconPath(ChaaviClient.noIconDomain)`.
+    func icon(of domain: String) async throws -> Data {
+        try await vault.data(Self.iconPath(domain), timeout: 15)
+    }
+
+    /// The domain asked for to learn which image the proxy serves when it has no icon.
+    static let noIconDomain = "no-icon.invalid"
+
+    /// The proxy's route for `domain`'s icon.
+    static func iconPath(_ domain: String) -> String {
+        "/icons/\(domain)/icon.png"
     }
 
     /// GET /v1/events: one element per change to the vault's items or folders.

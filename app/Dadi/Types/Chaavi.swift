@@ -25,11 +25,36 @@ struct ChaaviItem: Decodable, Sendable, Hashable, Identifiable {
     let type: String
     let login: Login?
 
+    /// How a vault item type reads: "Login", "Secure note".
+    static func kindName(_ type: String) -> String {
+        switch type {
+        case "login": "Login"
+        case "note": "Secure note"
+        case "card": "Card"
+        case "identity": "Identity"
+        case "sshKey": "SSH key"
+        default: "Item"
+        }
+    }
+
     /// The first website's host, for matching and showing.
     var host: String? {
         guard let raw = login?.uris.first?.uri else { return nil }
         let withScheme = raw.contains("://") ? raw : "https://\(raw)"
         return URL(string: withScheme)?.host()
+    }
+
+    /// The site Chaavi's icon proxy is asked about: the first website's host of a login, lower-cased without `www.`
+    /// or a port, or nil for a note, a login without a website, or an address that is not a domain name (an IP
+    /// address, an app id, a bare word).
+    var siteDomain: String? {
+        guard type == "login", let first = login?.uris.first?.uri.trimmingCharacters(in: .whitespaces), !first.isEmpty else { return nil }
+        let schemed = first.range(of: #"^[a-zA-Z][a-zA-Z0-9+.-]*://"#, options: .regularExpression) != nil
+        guard let url = URL(string: schemed ? first : "https://\(first)"), url.scheme == "https" || url.scheme == "http", let host = url.host()?.lowercased() else { return nil }
+        let bare = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+        guard bare.range(of: #"^[a-z0-9-]+(\.[a-z0-9-]+)+$"#, options: .regularExpression) != nil,
+              bare.range(of: #"^\d+(\.\d+)+$"#, options: .regularExpression) == nil else { return nil }
+        return bare
     }
 }
 

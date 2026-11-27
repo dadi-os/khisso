@@ -47,7 +47,7 @@ enum LinkFormat {
     private static let pattern = try! NSRegularExpression(pattern: #"\[([^\]\n]*)\]\(([^)\s]+)\)|<(https?://[^>\s]+)>|(https?://[^\s<>()\[\]`]+)"#)
 
     /// `markdown` with every link in the form the renderer draws: a bare URL becomes a link labelled by its host and
-    /// path, a link whose text is only its URL takes that label, and a link to anything but http(s) is its text.
+    /// path, a link whose text is only its URL takes that label, and a link to anything but http(s) or the box is its text.
     /// Fenced code and inline code are left as written.
     static func normalize(_ markdown: String) -> String {
         var fenced = false
@@ -78,7 +78,13 @@ enum LinkFormat {
             }
             if let destination = group(2) {
                 let words = group(1) ?? ""
-                if let url = parseHTTP(destination) { out += "[\(label(words, url: url))](\(destination))" } else { out += words }
+                if let url = parseHTTP(destination) {
+                    out += "[\(label(words, url: url))](\(destination))"
+                } else if BoxLink(href: destination) != nil {
+                    out += source.substring(with: match.range)
+                } else {
+                    out += words
+                }
                 continue
             }
             let raw = group(3) ?? group(4) ?? ""

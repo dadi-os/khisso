@@ -171,6 +171,7 @@ struct DayView: View {
         }
         .scrollIndicators(.hidden)
         .scrollEdgeEffectStyle(.soft, for: .top)
+        .contentMargins(.bottom, 140, for: .scrollContent)
         .scrollPosition($position)
         .onScrollGeometryChange(for: GridScroll.self) { GridScroll(offset: $0.contentOffset.y, height: $0.containerSize.height) } action: { _, new in scroll = new }
         .task(id: Positioning(day: day, loaded: loaded, nudge: nudge)) {

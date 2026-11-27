@@ -13,9 +13,6 @@ struct HathClient: Sendable {
     /// A raw log row can run to megabytes.
     static let logTimeout: TimeInterval = 120
 
-    /// A large attachment can take a while to come over the mesh.
-    static let attachmentTimeout: TimeInterval = 120
-
     let client: ServiceClient
 
     init(session: URLSession) {
@@ -39,11 +36,6 @@ struct HathClient: Sendable {
         struct Response: Decodable { let messages: [DurableMessage] }
         let response: Response = try await client.get("/agents/\(agentId)/messages", query: limit.map { [URLQueryItem(name: "limit", value: String($0))] } ?? [])
         return response.messages
-    }
-
-    /// GET /attachments/:id: an attachment's bytes.
-    func attachment(_ id: String) async throws -> Data {
-        try await client.data("/attachments/\(id)", timeout: Self.attachmentTimeout)
     }
 
     /// GET /agents: every agent, active and retired, each with its parent.
@@ -121,14 +113,14 @@ struct HathClient: Sendable {
         return response.running
     }
 
-    /// POST /router: hand words to the router, which sends them on as Ankur.
-    func route(_ content: String, attachments: [OutboundAttachment] = []) async throws -> PostRouterResponse {
-        try await client.post("/router", body: RouterRequest(content: content, attachments: attachments.isEmpty ? nil : attachments), timeout: Self.routerTimeout)
+    /// POST /router: hand words to the router, which sends them on as Ankur. Files go as `box://` links in `content`.
+    func route(_ content: String) async throws -> PostRouterResponse {
+        try await client.post("/router", body: RouterRequest(content: content), timeout: Self.routerTimeout)
     }
 
-    /// POST /messages: send a message to an agent as Ankur.
-    func send(_ content: String, to agentId: String, attachments: [OutboundAttachment] = []) async throws -> PostMessageResponse {
-        try await client.post("/messages", body: MessageRequest(toAgentId: agentId, content: content, attachments: attachments.isEmpty ? nil : attachments), timeout: Self.attachmentTimeout)
+    /// POST /messages: send a message to an agent as Ankur. Files go as `box://` links in `content`.
+    func send(_ content: String, to agentId: String) async throws -> PostMessageResponse {
+        try await client.post("/messages", body: MessageRequest(toAgentId: agentId, content: content))
     }
 
     /// Hath pings its event stream every 20 s, so this long without a byte

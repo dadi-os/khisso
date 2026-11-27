@@ -60,11 +60,11 @@ import Testing
         #expect(!DockPresentation.none.showsAccessory)
     }
 
-    @Test func aDraftSendsWithWordsOrPhotosAndNotWhileOneIsGoing() {
-        #expect(!ThreadDraft.canSend(text: "  \n", photos: 0, sending: false))
-        #expect(ThreadDraft.canSend(text: "hi", photos: 0, sending: false))
-        #expect(ThreadDraft.canSend(text: "", photos: 1, sending: false))
-        #expect(!ThreadDraft.canSend(text: "hi", photos: 0, sending: true))
+    @Test func aDraftSendsWithWordsOrFilesAndNotWhileOneIsGoing() {
+        #expect(!ThreadDraft.canSend(text: "  \n", files: 0, sending: false))
+        #expect(ThreadDraft.canSend(text: "hi", files: 0, sending: false))
+        #expect(ThreadDraft.canSend(text: "", files: 1, sending: false))
+        #expect(!ThreadDraft.canSend(text: "hi", files: 0, sending: true))
     }
 
     @MainActor @Test func eachAgentKeepsItsOwnDraftAcrossVisits() {
@@ -77,7 +77,7 @@ import Testing
     @MainActor @Test func quotingAMessageKeepsItWithThatAgentsDraft() throws {
         let draft = ThreadDraft()
         #expect(draft.quote == nil)
-        let json = #"{"seq":4,"from_agent_id":"career","to_agent_id":null,"content":"hello","attachments":[],"created_at":"2026-11-09T10:00:00.000Z"}"#
+        let json = #"{"seq":4,"from_agent_id":"career","to_agent_id":null,"content":"hello","created_at":"2026-11-09T10:00:00.000Z"}"#
         draft.reply(to: try ServiceJSON.decoder.decode(DurableMessage.self, from: Data(json.utf8)))
         #expect(draft.quote?.seq == 4)
     }

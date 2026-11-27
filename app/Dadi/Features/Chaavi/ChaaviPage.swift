@@ -41,8 +41,10 @@ struct ChaaviPage: View {
                         .padding(.top, 40)
                 }
                 if query.isEmpty && store.kind == .all {
-                    if let scope = store.scope {
-                        breadcrumb(scope)
+                    if store.scope != nil {
+                        BreadcrumbBar(scope: store.scope, root: ChaaviStore.Kind.all.rawValue) { path in
+                            withAnimation(Motion.settle) { store.scope = path }
+                        }
                     }
                     ForEach(FolderTree.children(of: store.scope, folders: store.folders, items: store.items)) { folder in
                         Button { withAnimation(Motion.settle) { store.scope = folder.path } } label: {
@@ -64,7 +66,7 @@ struct ChaaviPage: View {
                     }
                 }
                 ForEach(shown) { item in
-                    ItemRow(item: item, copy: { copyPassword(item) })
+                    ItemRow(item: item, icons: store.icons, copy: { copyPassword(item) })
                         .onTapGesture { opened = item }
                         .modifier(ItemSwipe(copyable: item.login?.hasPassword == true, copy: { copyPassword(item) }, delete: { deleting = item }))
                         .contextMenu { menu(item) }
@@ -115,7 +117,7 @@ struct ChaaviPage: View {
         .sheet(item: $opened) { item in
             ItemDetail(item: item, chaavi: store.chaavi, vault: store.vault, copy: copy)
                 .fittedSheet()
-                .presentationBackground(.thinMaterial)
+                .presentationBackground(Color.boneRaised)
         }
         .sheet(isPresented: $creating) {
             NewItemSheet(store: store)
@@ -205,26 +207,6 @@ struct ChaaviPage: View {
         }
         Divider()
         Button(role: .destructive) { deleting = item } label: { Label("Delete", systemImage: "trash") }
-    }
-
-    /// The trail back from the browsed folder: the top, then each parent.
-    private func breadcrumb(_ scope: String) -> some View {
-        let parts = scope.split(separator: FolderTree.separator).map(String.init)
-        return ScrollView(.horizontal) {
-            HStack(spacing: 6) {
-                Button("Chaavi") { withAnimation(Motion.settle) { store.scope = nil } }
-                ForEach(parts.indices, id: \.self) { index in
-                    Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.inkFaint)
-                    let path = parts[0...index].joined(separator: String(FolderTree.separator))
-                    Button(parts[index]) { withAnimation(Motion.settle) { store.scope = path } }
-                        .disabled(index == parts.count - 1)
-                }
-            }
-            .font(.subheadline.weight(.semibold))
-            .tint(.sageDeep)
-            .padding(.vertical, 4)
-        }
-        .scrollIndicators(.hidden)
     }
 
     private func copyPassword(_ item: ChaaviItem) {
@@ -339,15 +321,12 @@ final class VaultLock {
 /// button for logins with a password.
 private struct ItemRow: View {
     let item: ChaaviItem
+    let icons: SiteIcons
     let copy: () -> Void
 
     var body: some View {
         HStack(spacing: 14) {
-            Text(String((item.host ?? item.name).prefix(1)).uppercased())
-                .font(.system(size: 17, weight: .bold, design: .rounded))
-                .foregroundStyle(SiteHue.of(item.host ?? item.name))
-                .frame(width: 42, height: 42)
-                .background(SiteHue.of(item.host ?? item.name).opacity(0.14), in: .rect(cornerRadius: 12, style: .continuous))
+            SiteTile(item: item, icons: icons)
                 .overlay(alignment: .topTrailing) {
                     if item.favorite {
                         Image(systemName: "star.fill").font(.system(size: 9)).foregroundStyle(.clay).offset(x: 4, y: -4)
@@ -355,7 +334,7 @@ private struct ItemRow: View {
                 }
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.name).font(.body.weight(.semibold)).foregroundStyle(.ink).lineLimit(1)
-                Text(item.login?.username ?? kind)
+                Text(item.login?.username ?? ChaaviItem.kindName(item.type))
                     .font(.footnote)
                     .foregroundStyle(.inkMuted)
                     .lineLimit(1)
@@ -376,139 +355,57 @@ private struct ItemRow: View {
         .background(.boneRaised.opacity(0.7), in: .rect(cornerRadius: 18, style: .continuous))
         .contentShape(.rect)
     }
-
-    private var kind: String {
-        switch item.type {
-        case "note": "Secure note"
-        case "card": "Card"
-        case "identity": "Identity"
-        case "sshKey": "SSH key"
-        default: "Item"
-        }
-    }
 }
 
-/// An item's detail: its username, a password that stays masked until it is
-/// revealed, the current one-time code with its countdown, and its website.
+/// An item's sheet in the shared detail anatomy: its name over its kind and site, then its username, a password that
+/// stays masked until it is revealed, the current one-time code with its countdown and its website as fact rows, and
+/// one rail of copy and open actions. Every secret asks for Face ID first.
 private struct ItemDetail: View {
     let item: ChaaviItem
     let chaavi: ChaaviClient
     let vault: VaultLock
     let copy: (String, String) -> Void
 
+    @Environment(\.openURL) private var openURL
     @State private var password: String?
     @State private var totp: ChaaviTotp?
     @State private var problem: String?
 
+    private var login: ChaaviItem.Login? { item.login }
+    private var site: URL? { item.host.flatMap { URL(string: "https://\($0)") } }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(spacing: 14) {
-                Text(String((item.host ?? item.name).prefix(1)).uppercased())
-                    .font(.system(size: 24, weight: .bold, design: .rounded))
-                    .foregroundStyle(SiteHue.of(item.host ?? item.name))
-                    .frame(width: 56, height: 56)
-                    .background(SiteHue.of(item.host ?? item.name).opacity(0.14), in: .rect(cornerRadius: 16, style: .continuous))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(item.name).font(.title3.weight(.semibold)).foregroundStyle(.ink)
-                    if let host = item.host { Text(host).font(.footnote).foregroundStyle(.inkMuted) }
+        let items = rail
+        DetailSheet(title: item.name, hasFacts: login != nil, hasRail: !items.isEmpty, hasSections: problem != nil) {
+            SituationLine(tone: .rest, text: [ChaaviItem.kindName(item.type), item.host].compactMap { $0 }.joined(separator: " · "))
+        } facts: {
+            if let username = login?.username { FactRow(label: "Username", value: username) }
+            if login?.hasPassword == true {
+                FactRow(label: "Password", hint: password == nil ? "Tap to show" : "Tap to hide") {
+                    Button(action: togglePassword) {
+                        Text(password ?? "••••••••••••").font(.system(size: 13, design: .monospaced)).blur(radius: password == nil ? 3 : 0)
+                    }
+                    .buttonStyle(.plain)
+                    .animation(Motion.settle, value: password == nil)
                 }
             }
-            if let login = item.login {
-                if let username = login.username {
-                    field("Username", value: username, secret: false) { copy(username, "Username copied") }
-                }
-                if login.hasPassword {
-                    field("Password", value: password ?? "••••••••••••", secret: password == nil) {
-                        run {
-                            let value = try await chaavi.reveal("password", of: item.id)
-                            copy(value, "Password copied")
-                        }
-                    } reveal: {
-                        if password == nil {
-                            run { password = try await chaavi.reveal("password", of: item.id) }
-                        } else {
-                            password = nil
-                        }
+            if login?.hasTotp == true {
+                FactRow(label: "One-time code", hint: totp.map { "\($0.remaining) s" }) {
+                    if let totp {
+                        Text(totp.code.chunked).font(.system(size: 13, design: .monospaced)).contentTransition(.numericText())
+                    } else {
+                        Button("Show") { run { totp = try await chaavi.totp(of: item.id) } }.buttonStyle(.plain)
                     }
-                }
-                if login.hasTotp {
-                    totpRow
-                }
-                if let host = item.host, let url = URL(string: "https://\(host)") {
-                    Link(destination: url) {
-                        Label("Open \(host)", systemImage: "safari")
-                            .font(.body.weight(.medium))
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.glass)
-                    .controlSize(.large)
                 }
             }
+            if let host = item.host { FactRow(label: "Website", value: host) }
+        } rail: {
+            ActionRail(items: items)
+        } sections: {
             if let problem {
                 Label(problem, systemImage: "exclamationmark.circle").font(.footnote).foregroundStyle(.danger)
             }
-            Spacer(minLength: 0)
         }
-        .padding(24)
-    }
-
-    private func field(_ title: String, value: String, secret: Bool, copy: @escaping () -> Void, reveal: (() -> Void)? = nil) -> some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.caption.weight(.semibold)).foregroundStyle(.inkFaint)
-                Text(value)
-                    .font(.body.monospaced())
-                    .foregroundStyle(.ink)
-                    .blur(radius: secret ? 3 : 0)
-                    .animation(Motion.settle, value: secret)
-                    .textSelection(.enabled)
-                    .lineLimit(1)
-            }
-            Spacer()
-            if let reveal {
-                Button(action: reveal) { Image(systemName: secret ? "eye" : "eye.slash") }
-                    .buttonStyle(.glass)
-                    .buttonBorderShape(.circle)
-                    .accessibilityLabel(secret ? "Show \(title)" : "Hide \(title)")
-            }
-            Button(action: copy) { Image(systemName: "doc.on.doc") }
-                .buttonStyle(.glass)
-                .buttonBorderShape(.circle)
-                .accessibilityLabel("Copy \(title)")
-        }
-        .padding(14)
-        .background(.boneRaised.opacity(0.7), in: .rect(cornerRadius: 16, style: .continuous))
-    }
-
-    private var totpRow: some View {
-        HStack(spacing: 14) {
-            if let totp {
-                ZStack {
-                    Circle().stroke(.sage.opacity(0.18), lineWidth: 4)
-                    Circle()
-                        .trim(from: 0, to: CGFloat(totp.remaining) / CGFloat(totp.period))
-                        .stroke(.sageDeep, style: StrokeStyle(lineWidth: 4, lineCap: .round))
-                        .rotationEffect(.degrees(-90))
-                    Text("\(totp.remaining)").font(.caption2.weight(.bold).monospacedDigit()).foregroundStyle(.sageDeep)
-                }
-                .frame(width: 34, height: 34)
-                Text(totp.code.chunked)
-                    .font(.title2.weight(.semibold).monospacedDigit())
-                    .foregroundStyle(.ink)
-                    .contentTransition(.numericText())
-                Spacer()
-                Button { copy(totp.code, "Code copied") } label: { Image(systemName: "doc.on.doc") }
-                    .buttonStyle(.glass)
-                    .buttonBorderShape(.circle)
-            } else {
-                Text("One-time code").font(.body.weight(.medium)).foregroundStyle(.ink)
-                Spacer()
-                Button("Show") { run { totp = try await chaavi.totp(of: item.id) } }
-                    .buttonStyle(.glass)
-            }
-        }
-        .padding(14)
-        .background(.boneRaised.opacity(0.7), in: .rect(cornerRadius: 16, style: .continuous))
         .task(id: totp?.code) {
             guard let current = totp else { return }
             do {
@@ -519,6 +416,27 @@ private struct ItemDetail: View {
             } catch {
                 problem = error.localizedDescription
             }
+        }
+    }
+
+    private var rail: [RailItem] {
+        var items: [RailItem] = []
+        if let username = login?.username { items.append(.action(title: "Copy username", symbol: "doc.on.doc", run: { copy(username, "Username copied") })) }
+        if login?.hasPassword == true {
+            items.append(.action(title: "Copy password", symbol: "key", emphasis: true) {
+                run { copy(try await chaavi.reveal("password", of: item.id), "Password copied") }
+            })
+        }
+        if let totp { items.append(.action(title: "Copy code", symbol: "doc.on.doc", run: { copy(totp.code, "Code copied") })) }
+        if let site { items.append(.action(title: "Open site", symbol: "safari", run: { openURL(site) })) }
+        return items
+    }
+
+    private func togglePassword() {
+        if password == nil {
+            run { password = try await chaavi.reveal("password", of: item.id) }
+        } else {
+            password = nil
         }
     }
 
@@ -540,14 +458,5 @@ private extension String {
     /// "123456" as "123 456".
     var chunked: String {
         count == 6 ? "\(prefix(3)) \(suffix(3))" : self
-    }
-}
-
-/// A site's color for its letter tile, the same every time: sage, clay or tide.
-private enum SiteHue {
-    static func of(_ site: String) -> Color {
-        let palette: [Color] = [.sageDeep, .clay, .tide]
-        let sum = site.unicodeScalars.reduce(0) { $0 &+ Int($1.value) }
-        return palette[sum % palette.count]
     }
 }

@@ -7,7 +7,7 @@ import SwiftUI
 @Observable
 final class RouterDock {
     var draft = ""
-    var photos: [DraftPhoto] = []
+    var files: [DraftFile] = []
     /// True while the composer is open over the page.
     var composing = false
     /// True while this device's words are with the router.
@@ -20,29 +20,29 @@ final class RouterDock {
         composing = true
     }
 
-    /// Hands the draft to the router. `sent` runs with each message the router
-    /// sent, once it is done; a run that sent nothing is a valid outcome and
-    /// leaves the dock quiet. `failed` runs with the router's own words after
-    /// the draft is back in the composer.
-    func send(_ hath: HathClient, sent: @escaping @MainActor ([RoutedMessage]) -> Void, failed: @escaping @MainActor (String) -> Void) {
+    /// Uploads the staged files to the month's Inbox through `nas`, then hands the router one link per file and the
+    /// draft. `sent` runs with each message the router sent, once it is done; a run that sent nothing is a valid outcome
+    /// and leaves the dock quiet. `failed` runs with the reason after the draft is back in the composer, the files
+    /// with their own upload states so a retry skips those already on the box.
+    func send(_ hath: HathClient, nas: NasClient, sent: @escaping @MainActor ([RoutedMessage]) -> Void, failed: @escaping @MainActor (String) -> Void) {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        let attached = photos
-        guard !text.isEmpty || !attached.isEmpty, !sending else { return }
+        guard !text.isEmpty || !files.isEmpty, !sending else { return }
         draft = ""
-        photos = []
         composing = false
         sending = true
         Task {
             defer { sending = false }
             do {
-                let response = try await hath.route(text, attachments: attached.map(\.outbound))
+                let paths = try await Inbox.upload(files, now: .now, put: { folder, file in try await nas.upload(file.url, named: file.name, mediaType: file.mediaType, to: folder) }, report: { files.setUpload($0, $1) })
+                let response = try await hath.route(Inbox.message(paths: paths, typed: text))
+                files.forEach { $0.discard() }
+                files = []
                 if !response.messages.isEmpty {
                     handedOff += 1
                     sent(response.messages)
                 }
             } catch {
                 draft = text
-                photos = attached
                 failed(error.localizedDescription)
             }
         }
@@ -134,7 +134,7 @@ struct RouterCompose: View {
                 .allowsHitTesting(dock.composing)
                 .onTapGesture { dock.composing = false }
             VStack(alignment: .leading, spacing: 8) {
-                Composer(text: $dock.draft, photos: $dock.photos, placeholder: "Message Dadi…", busy: active, focusing: dock.composing, send: send)
+                Composer(text: $dock.draft, files: $dock.files, placeholder: "Message Dadi…", busy: active, focusing: dock.composing, send: send)
                 if active {
                     Text("Available when Dadi has finished routing")
                         .font(.caption)

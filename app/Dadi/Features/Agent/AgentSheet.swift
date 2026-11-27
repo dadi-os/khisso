@@ -58,23 +58,13 @@ struct AgentSheet: View {
         NavigationStack {
             TimelineView(.periodic(from: .now, by: 15)) { context in
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 12) {
+                    Group {
                         if let agent {
-                            overview(agent, now: context.date)
+                            detail(agent, now: context.date)
                         } else {
-                            SkeletonRows(count: 2, height: 72)
+                            SkeletonRows(count: 2, height: 72).padding(SheetLayout.inset)
                         }
-                        if !tasks.isEmpty {
-                            HelperTasks(hath: services.hath, nas: services.nas, owner: name, tasks: tasks) { await loadHost() }
-                        }
-                        if let hostError { problem("Couldn't read the agent's tasks: \(hostError)") }
-                        RoutinesSection(feed: feed, cancelRoutine: cancelRoutine, cancelReminder: cancelReminder, message: openThread, now: context.date)
-                        WakeTimeline(hath: services.hath, agentId: agentId, nameOf: nameOf, selectAgent: selectAgent, refresh: .init(connections: connections, wakeChanges: wakeChanges), routines: routines)
-                        if let standingError { problem("Couldn't read what the thread waits on: \(standingError)") }
-                        if let agent { CharterRow(agent: agent) }
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 8)
                     .frame(maxWidth: 760, alignment: .leading)
                     .frame(maxWidth: .infinity)
                 }
@@ -93,41 +83,50 @@ struct AgentSheet: View {
         .task(id: live?.nas) { await loadHost() }
     }
 
-    /// The name over its situation line, the facts, and the actions row: one primary action (Reply when the thread
-    /// waits on Ankur, else Open thread) and a quiet Stop that confirms in place.
-    private func overview(_ agent: AgentRecord, now: Date) -> some View {
+    /// The shared detail anatomy: the name over its situation line, the true facts, one action rail (Reply when the
+    /// thread waits on Ankur, else Open thread; a quiet Stop that confirms in place), then the helper tasks, routines,
+    /// wakes and the charter as inset cards.
+    private func detail(_ agent: AgentRecord, now: Date) -> some View {
         let situation = AgentFacts.situation(agent, standing: standing, now: now)
         let parent = agent.parentAgentId.map { (id: $0, name: nameOf($0)) }
         let facts = AgentFacts.facts(AgentFactsInput(agent: agent, parent: parent, routines: routines, standing: standing, counts: counts, tasks: tasks, nameOf: nameOf, now: now))
         let stoppable = agent.running.working || (agent.running.job != nil && agent.running.job?.stopped == nil)
-        return VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 12) {
-                SheetHeader(title: name) {
-                    SituationLine(tone: situation.tone, text: situation.text)
-                }
-                Button(action: openThread) {
-                    Text(standing == nil ? "Open thread" : "Reply").font(.subheadline.weight(.semibold)).padding(.horizontal, 6).frame(minHeight: 32)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.sageDeep)
-                .buttonBorderShape(.capsule)
-                .controlSize(.small)
-            }
-            VStack(spacing: 0) {
-                ForEach(facts) { fact in
-                    FactRow(label: fact.label, hint: fact.hint, late: fact.tone == .late, wrap: fact.wrap, long: fact.long) {
-                        if let id = fact.agentId {
-                            AgentLink(agentId: id, name: fact.value, select: selectAgent)
-                        } else {
-                            Text(fact.value)
-                        }
+        return DetailSheet(title: name, hasFacts: !facts.isEmpty) {
+            SituationLine(tone: situation.tone, text: situation.text)
+        } facts: {
+            ForEach(facts) { fact in
+                FactRow(label: fact.label, hint: fact.hint, late: fact.tone == .late, wrap: fact.wrap, long: fact.long) {
+                    if let id = fact.agentId {
+                        AgentLink(agentId: id, name: fact.value, select: selectAgent)
+                    } else {
+                        Text(fact.value)
                     }
                 }
             }
-            StopButton(name: name, stop: stop, stoppable: stoppable, confirming: $confirming)
+        } rail: {
+            ActionRail(items: Self.rail(replying: standing != nil, stoppable: stoppable, stopping: stop.pending, openThread: openThread, toggleStop: { confirming.toggle() }))
             StopConfirm(stop: stop, confirming: $confirming) { Task { await stopAgent() } }
+        } sections: {
+            if !tasks.isEmpty {
+                HelperTasks(hath: services.hath, nas: services.nas, owner: name, tasks: tasks) { await loadHost() }
+            }
+            if let hostError { problem("Couldn't read the agent's tasks: \(hostError)") }
+            RoutinesSection(feed: feed, cancelRoutine: cancelRoutine, cancelReminder: cancelReminder, message: openThread, now: now)
+            WakeTimeline(hath: services.hath, agentId: agentId, nameOf: nameOf, selectAgent: selectAgent, refresh: .init(connections: connections, wakeChanges: wakeChanges), routines: routines)
+            if let standingError { problem("Couldn't read what the thread waits on: \(standingError)") }
+            CharterRow(agent: agent)
         }
         .sensoryFeedback(.warning, trigger: stop.pending)
+        .boxLinks(nas: services.nas)
+    }
+
+    /// The sheet's one rail: the primary action, then Stop while there is something to stop.
+    static func rail(replying: Bool, stoppable: Bool, stopping: Bool, openThread: @escaping () -> Void, toggleStop: @escaping () -> Void) -> [RailItem] {
+        var items: [RailItem] = [.action(title: replying ? "Reply" : "Open thread", symbol: nil, emphasis: true, run: openThread)]
+        if stoppable || stopping {
+            items.append(.action(title: stopping ? "Stopping…" : "Stop", symbol: nil) { if !stopping { toggleStop() } })
+        }
+        return items
     }
 
     private func problem(_ text: String) -> some View {

@@ -38,7 +38,7 @@ struct WakeUsage: Decodable, Sendable, Hashable {
     }
 }
 
-/// A message as the wake routes return it; its attachments are not read. A `notice` is Hath's note to the agent
+/// A message as the wake routes return it. A `notice` is Hath's note to the agent
 /// (a helper's report, a routine or reminder firing, the answer time, a failed run).
 struct WakeMessage: Decodable, Sendable, Hashable {
     let id: String

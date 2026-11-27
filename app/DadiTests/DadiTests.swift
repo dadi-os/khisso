@@ -60,7 +60,7 @@ struct HathEventTests {
             ": connected",
             "",
             #"data: {"type":"wake_started","agent_id":"finance-specialist","wake_id":"w1","reason":{"kind":"message","ref":null},"at":"2026-10-21T16:00:00.000Z"}"#,
-            #"data: {"type":"message","agent_id":"finance-specialist","from_agent_id":"finance-specialist","to_agent_id":null,"content":"$412 left","attachments":[],"seq":42,"at":"2026-10-21T16:00:01.250Z"}"#,
+            #"data: {"type":"message","agent_id":"finance-specialist","from_agent_id":"finance-specialist","to_agent_id":null,"content":"$412 left","seq":42,"at":"2026-10-21T16:00:01.250Z"}"#,
             #"data: {"type":"agent_spawned","agent_id":"x","parent_agent_id":null,"name":"x","at":"2026-10-21T16:00:02.000Z"}"#,
             ": ping",
         ])
@@ -154,28 +154,6 @@ struct ThinkingMarkTests {
         #expect(abs(middle.opacity - 1) < 0.01)
         #expect(middle.center.x > start.center.x)
         #expect(ProcessingMark.pose(0, ms: 1400).center.y > middle.center.y)
-    }
-}
-
-/// An attachment is kept under its own folder with its original name, made
-/// safe as one path component.
-struct AttachmentFileTests {
-    private func file(id: String, filename: String) -> AttachmentSummary {
-        AttachmentSummary(id: id, filename: filename, mediaType: "application/pdf", sizeBytes: 10, description: nil)
-    }
-
-    @Test func keepsTheOriginalNameInAFolderPerAttachment() {
-        let root = URL(filePath: "/tmp/attachments", directoryHint: .isDirectory)
-        let url = AttachmentFile.url(for: file(id: "att_1", filename: "Syllabus Fall 2026.pdf"), in: root)
-        #expect(url.path(percentEncoded: false) == "/tmp/attachments/att_1/Syllabus Fall 2026.pdf")
-    }
-
-    @Test func makesANameOnePathComponent() {
-        #expect(AttachmentFile.name("../etc/passwd") == "..-etc-passwd")
-        #expect(AttachmentFile.name("a:b.txt") == "a-b.txt")
-        #expect(AttachmentFile.name("  notes.md \n") == "notes.md")
-        #expect(AttachmentFile.name("") == "attachment")
-        #expect(AttachmentFile.name("..") == "attachment")
     }
 }
 

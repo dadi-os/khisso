@@ -225,10 +225,10 @@ struct DevicePicker: View {
 
     var body: some View {
         let ready = !chosen.isEmpty && (naming == nil || !trimmed.isEmpty) && !working
-        VStack(alignment: .leading, spacing: 14) {
-            Text(title)
-                .font(.system(size: 22, weight: .bold))
-                .foregroundStyle(.ink)
+        VStack(alignment: .leading, spacing: SheetLayout.gap) {
+            SheetHeader(title: title) {
+                SituationLine(tone: chosen.isEmpty ? .rest : .live, text: Self.summary(chosen: chosen.count))
+            }
             if let naming {
                 TextField(naming, text: $name)
                     .font(.system(size: 15))
@@ -277,24 +277,29 @@ struct DevicePicker: View {
             }
             .frame(maxHeight: 360)
             .fixedSize(horizontal: false, vertical: true)
-            Button {
+            Divider().overlay(Color.rule)
+            ActionRail(items: [.action(title: working ? "Working…" : action, symbol: nil, emphasis: true) {
                 working = true
                 Task {
                     let picked = devices.filter { chosen.contains($0.id) }
                     if await done(trimmed, picked) { dismiss() }
                     working = false
                 }
-            } label: {
-                Text(working ? "Working…" : action).frame(maxWidth: .infinity)
-            }
-            .buttonStyle(GharButtonStyle(prominent: true, height: 46))
+            }])
             .disabled(!ready)
             .opacity(ready ? 1 : 0.5)
         }
-        .padding(.horizontal, 22)
-        .padding(.top, 28)
-        .padding(.bottom, 22)
+        .padding(SheetLayout.inset)
         .toasts(store.toaster)
+    }
+
+    /// The header's one line: how many lights are chosen.
+    static func summary(chosen: Int) -> String {
+        switch chosen {
+        case 0: "Choose lights"
+        case 1: "1 light chosen"
+        default: "\(chosen) lights chosen"
+        }
     }
 
     private var trimmed: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }

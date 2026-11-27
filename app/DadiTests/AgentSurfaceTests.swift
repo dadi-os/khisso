@@ -112,7 +112,7 @@ struct AgentSurfaceTests {
     }
 
     private func message(_ seq: Int, from: String?, to: String?, status: MessageStatus?) -> DurableMessage {
-        DurableMessage(seq: seq, fromAgentId: from, toAgentId: to, content: "m\(seq)", attachments: [], kind: .message, status: status, createdAt: .now)
+        DurableMessage(seq: seq, fromAgentId: from, toAgentId: to, content: "m\(seq)", kind: .message, status: status, createdAt: .now)
     }
 
     @Test func standingFollowsTheNewestMessage() {
@@ -171,7 +171,7 @@ struct AgentSurfaceTests {
 
     @Test func readsStatusAndEventsFromTheStream() async throws {
         let lines = AsyncStream<String> { continuation in
-            continuation.yield(#"data: {"type":"message","agent_id":"a","from_agent_id":"a","to_agent_id":null,"content":"x","attachments":[],"seq":3,"status":"blocked","at":"2026-11-16T16:00:00.000Z"}"#)
+            continuation.yield(#"data: {"type":"message","agent_id":"a","from_agent_id":"a","to_agent_id":null,"content":"x","seq":3,"status":"blocked","at":"2026-11-16T16:00:00.000Z"}"#)
             continuation.yield(#"data: {"type":"schedules_changed","at":"2026-11-16T16:00:00.000Z"}"#)
             continuation.finish()
         }

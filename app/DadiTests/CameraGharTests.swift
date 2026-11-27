@@ -29,6 +29,19 @@ struct CaptureBatchTests {
         #expect(batch.take(2) == [1, 2])
     }
 
+    @Test func releasingAttachesEveryHeldPictureOnceWhateverRouteClosesTheViewfinder() {
+        var batch = CaptureBatch<Int>()
+        batch.toggle()
+        _ = batch.take(1)
+        _ = batch.take(2)
+        var message = [0]
+        batch.release(into: &message)
+        #expect(message == [0, 1, 2])
+        #expect(batch.held.isEmpty)
+        batch.release(into: &message)
+        #expect(message == [0, 1, 2])
+    }
+
     @Test func finishingWithNothingTakenAttachesNothing() {
         var batch = CaptureBatch<Int>()
         batch.toggle()
@@ -36,10 +49,10 @@ struct CaptureBatchTests {
     }
 }
 
-/// The plus offers each photo source once, with its own words.
+/// The plus offers each source once, with its own words.
 struct AttachMenuTests {
-    @Test func listsCameraThenPhotosWithDistinctTitles() {
-        #expect(ThreadAttach.options == [.camera, .library])
+    @Test func listsCameraPhotosThenFilesWithDistinctTitles() {
+        #expect(ThreadAttach.options == [.camera, .library, .files])
         #expect(Set(ThreadAttach.options.map(\.title)).count == ThreadAttach.options.count)
     }
 }

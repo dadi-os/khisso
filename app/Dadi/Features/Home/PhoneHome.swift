@@ -289,7 +289,7 @@ struct PhoneHome: View {
     /// failed run keeps the draft, copies it to the clipboard and toasts the
     /// router's own words; tapping the toast reopens the composer.
     private func sendToRouter() {
-        router.send(services.hath) { messages in
+        router.send(services.hath, nas: services.nas) { messages in
             guard let first = messages.first else { return }
             let agent = first.toAgentId
             toaster.show(Toast(key: "routed", title: "Sent to \(store.name(of: agent))", detail: first.content, symbol: "checkmark.circle.fill") { show(.thread(agent)) })
@@ -379,10 +379,10 @@ struct PhoneHome: View {
         .animation(Motion.snap, value: shown)
     }
 
-    /// The page's name for its bubble; Chats is the wordmark.
+    /// The page's name for its bubble; the Chats list has none, its search sits beside the menu button.
     private func title(of page: HomeView.Page) -> String? {
         switch page {
-        case .dadi: "દાદી"
+        case .dadi: nil
         case .thread(let agentId): store.name(of: agentId)
         case .planner: "Planner"
         case .ghar: "Ghar"

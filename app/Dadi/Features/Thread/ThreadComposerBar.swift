@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// A thread's own composer: attach, the field and send once there is something to send, on glass at the
-/// foot of the thread's page. It reads and writes the thread's `ThreadDraft`, so words, photos and the
+/// foot of the thread's page. It reads and writes the thread's `ThreadDraft`, so words, files and the
 /// quote are the agent's own. Its field rides the keyboard up and down with the page's safe area, and
 /// resigning `focus` is all it takes to lower both together.
 struct ThreadComposerBar: View {
@@ -70,7 +70,7 @@ struct ThreadComposerBar: View {
     }
 }
 
-/// The round plus that offers the photo sources: a plain 36 pt circle with a soft fill, no glass of
+/// The round plus that offers the sources: a plain 36 pt circle with a soft fill, no glass of
 /// its own, in a native menu that leaves the keyboard up.
 struct AttachButton: View {
     /// Called with the source the person chose.

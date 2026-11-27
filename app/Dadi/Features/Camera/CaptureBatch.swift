@@ -20,6 +20,12 @@ struct CaptureBatch<Shot> {
         return mode == .single ? finish() : nil
     }
 
+    /// Appends every held picture to `shots` and holds none. Whoever closes the viewfinder, by any route, calls it,
+    /// so what was taken is never dropped; a second call adds nothing.
+    mutating func release(into shots: inout [Shot]) {
+        shots.append(contentsOf: finish())
+    }
+
     /// Hands over every held picture.
     mutating func finish() -> [Shot] {
         defer { held = [] }

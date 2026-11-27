@@ -1,8 +1,7 @@
 import SwiftUI
 
-/// One light's sheet: its switch, a tall brightness pill, warmth and color
-/// sliders, preset swatches, and which tags it carries. Tap the name
-/// to rename it.
+/// One light's sheet in the shared sheet anatomy: its name over whether it is on, its switch, a tall brightness
+/// pill, warmth and color sliders, preset swatches, then its tags and model as fact rows and a rail to rename it.
 struct LightSheet: View {
     let store: GharStore
     let deviceId: String
@@ -27,37 +26,19 @@ struct LightSheet: View {
             case .hue: modes.contains("hue_sat")
             }
         }
-        return VStack(spacing: 0) {
-            HStack {
-                Button {
-                    name = device.name
-                    renaming = true
-                } label: {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(device.name)
-                            .font(.system(size: 22, weight: .bold))
-                            .foregroundStyle(.ink)
-                        Text(device.productName ?? "")
-                            .font(.system(size: 13))
-                            .foregroundStyle(.inkMuted)
-                    }
-                    .contentShape(.rect)
-                }
-                .buttonStyle(.plain)
-                .accessibilityHint("Renames the light")
-                Spacer()
+        return VStack(alignment: .leading, spacing: SheetLayout.gap) {
+            HStack(alignment: .top, spacing: 12) {
+                let situation = Self.situation(device)
+                SheetHeader(title: device.name) { SituationLine(tone: situation.tone, text: situation.text) }
                 if device.has("on_off") {
                     GharSwitch(isOn: device.isOn == true, label: "Switch \(device.name)") { store.toggle(device) }
                         .disabled(!device.online)
                 }
             }
-            .padding(.top, 18)
-            .padding(.bottom, 4)
 
             if device.has("level") {
                 BrightnessPill(device: device) { store.setLevel($0, [device]) }
-                    .padding(.top, 22)
-                    .padding(.bottom, 18)
+                    .frame(maxWidth: .infinity)
             }
 
             if modes.contains("color_temp") {
@@ -85,7 +66,6 @@ struct LightSheet: View {
                 } commit: { fraction in
                     store.setHue(Int((fraction * 254).rounded()), saturation: 254, device)
                 }
-                .padding(.top, 16)
             }
 
             if !presets.isEmpty {
@@ -106,19 +86,20 @@ struct LightSheet: View {
                     }
                     Spacer(minLength: 0)
                 }
-                .padding(.top, 18)
                 .animation(Motion.snap, value: device.state)
             }
 
+            Divider().overlay(Color.rule)
             VStack(spacing: 0) {
-                Divider().overlay(Color.rule)
-                tagsRow(device)
+                FactRow(label: "Tags") { tagsMenu(device) }
+                if let model = device.productName { FactRow(label: "Model", value: model) }
             }
-            .padding(.top, 26)
+            ActionRail(items: [.action(title: "Rename", symbol: "pencil") {
+                name = device.name
+                renaming = true
+            }])
         }
-        .padding(.horizontal, 22)
-        .padding(.top, 10)
-        .padding(.bottom, 26)
+        .padding(SheetLayout.inset)
         .alert("Rename light", isPresented: $renaming) {
             TextField("Light name", text: $name)
             Button("Cancel", role: .cancel) {}
@@ -142,9 +123,16 @@ struct LightSheet: View {
         }
     }
 
-    /// The Tags row: a menu that adds the light to a tag or takes it off, or
-    /// makes a new tag with it.
-    private func tagsRow(_ device: GharDevice) -> some View {
+    /// What the light's header says: whether it is on and how bright, off, or out of reach.
+    static func situation(_ device: GharDevice) -> (tone: SituationTone, text: String) {
+        guard device.online else { return (.late, "Unreachable") }
+        guard device.isOn == true else { return (.rest, "Off") }
+        guard device.has("level"), let level = device.number("brightness") else { return (.live, "On") }
+        return (.live, "On · \(Int(level.rounded()))%")
+    }
+
+    /// The Tags value: a menu that adds the light to a tag or takes it off, or makes a new tag with it.
+    private func tagsMenu(_ device: GharDevice) -> some View {
         Menu {
             ForEach(GharLayout.tags(store.devices)) { candidate in
                 Toggle(candidate.name, isOn: Binding(get: { device.tagNames.contains(candidate.name) }, set: { joined in
@@ -155,19 +143,9 @@ struct LightSheet: View {
             Divider()
             Button("New tag…", systemImage: "plus") { naming = true }
         } label: {
-            row("Tags", value: device.tagNames.isEmpty ? "None" : device.tagNames.joined(separator: ", "))
+            Text("\(device.tagNames.isEmpty ? "None" : device.tagNames.joined(separator: ", ")) ›").foregroundStyle(.ink)
         }
-    }
-
-    private func row(_ title: String, value: String) -> some View {
-        HStack {
-            Text(title).foregroundStyle(.ink)
-            Spacer()
-            Text("\(value) ›").foregroundStyle(.inkMuted).lineLimit(1)
-        }
-        .font(.system(size: 15))
-        .frame(height: 52)
-        .contentShape(.rect)
+        .accessibilityLabel("Tags")
     }
 
     /// The white on the warmth slider at `fraction`, warm on the left.

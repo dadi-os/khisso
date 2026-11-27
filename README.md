@@ -8,7 +8,7 @@ The network layer runs dadi's Tailscale node against the box's Headscale, so the
 
 - Headscale on the box (the control server in each setup code).
 - Tailscale `v1.82.0` (`tailscale.com`), used as a library: `ipn/ipnlocal`, `wgengine`, `ipn/store`, `wgengine/router`, and `tsnet` for the in-app node.
-- MarkdownView `3.0.0` (`github.com/LiYanan2004/MarkdownView`, MIT, on swift-markdown with Highlightr and SwiftMath) renders agent messages and Markdown attachments on the iPhone: CommonMark and GitHub tables, task lists, strikethrough and autolinks, LaTeX math (`\(…\)`, `$$…$$`, `\[…\]`, and `$…$` only when it reads as LaTeX, by thaali's rule, so prices stay prices), highlighted code, links, images and SVG, matching thaali's Streamdown. The watch does not link it (it cannot typeset math there); its previews, and the drawer's, read math as Unicode, the H.264 splitter, activity wakes.
+- MarkdownView `3.0.0` (`github.com/LiYanan2004/MarkdownView`, MIT, on swift-markdown with Highlightr and SwiftMath) renders agent messages on the iPhone: CommonMark and GitHub tables, task lists, strikethrough and autolinks, LaTeX math (`\(…\)`, `$$…$$`, `\[…\]`, and `$…$` only when it reads as LaTeX, by thaali's rule, so prices stay prices), highlighted code, links, images and SVG, matching thaali's Streamdown. The watch does not link it (it cannot typeset math there); its previews, and the drawer's, read math as Unicode, the H.264 splitter, activity wakes.
 - Apple: NetworkExtension, with an app signed for the Network Extension entitlement that embeds the extension. The in-app node needs no entitlement. WatchConnectivity between the iPhone and the watch.
 
 ## Layout
@@ -22,12 +22,16 @@ khisso/
   apple/              DadiTunnel Swift package: the packet-tunnel provider
   app/                the dadi app for iPhone and its watch app (XcodeGen project.yml)
     Dadi/Types/       Hath, Yaad timeline, Ghar, Chaavi and Nas contracts
-    Dadi/Shared/      API clients, Connection (setup code, in-app node), design, components, the watch link
+    Dadi/Shared/      API clients, Connection (setup code, in-app node), design, components (including `box://` file links and the file viewer), the watch link
     Dadi/Features/    Join, Home (the dock and the drawer), Dadi, Thread, Agent (the sheet behind an agent's name: situation, facts, Stop, helper tasks with their live screens, wakes, routines and reminders, charter), Timeline, Ghar, Chaavi, System (status, drives, helper tasks with their live screens, devices, errors), Watch (the relay)
     DadiWatch/        the watch app: Talk to Dadi, Today, Agents, Box
     DadiTests/        setup codes, errors, events, planner layout, timeline items, folders, new Chaavi items, Nas status, agent sheet facts, wakes, routines, links, math as Unicode
   scripts/            build-xcframework.sh
 ```
+
+## Files in messages
+
+Hath has no attachments. A photo (camera or library) or file (document picker) staged in a composer uploads through Nas (`POST /fs/upload`) to `~/Inbox/<yyyy-mm>/`, then the message is sent with one `box://<path>` link per file followed by the typed text, as thaali does. If an upload fails, the draft and every staged file stay with their own error, and a retry skips files already uploaded. A `box://` link in a message draws as a name chip with the file's icon; it opens in a viewer sheet (QuickLook and Share through Nas `GET /fs/raw`, a folder as a list), and shows struck through when Nas's `GET /fs/stat` answers 404.
 
 ## Config vs env
 

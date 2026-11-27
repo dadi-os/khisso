@@ -89,6 +89,55 @@ struct ServiceClient: Sendable {
         return data
     }
 
+    /// GET `path` into a file named `filename` in a fresh temporary folder and return its URL, so QuickLook and Share show
+    /// the real name. The caller owns the file.
+    func download(_ path: String, query: [URLQueryItem] = [], filename: String, timeout: TimeInterval) async throws -> URL {
+        let (temporary, response) = try await session.download(for: request("GET", path, query: query, timeout: timeout))
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(status) else {
+            let body = (try? Data(contentsOf: temporary)) ?? Data()
+            try? FileManager.default.removeItem(at: temporary)
+            throw Self.error(status: status, body: body)
+        }
+        let folder = URL.temporaryDirectory.appending(path: "downloads/\(UUID().uuidString)", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let destination = folder.appending(path: filename, directoryHint: .notDirectory)
+        try FileManager.default.moveItem(at: temporary, to: destination)
+        return destination
+    }
+
+    /// POST the file at `file` to `path` as multipart form data, after `fields` in order, and decode the response as `T`.
+    /// The body is assembled on disk and streamed, so a large file is never held in memory.
+    func upload<T: Decodable>(_ path: String, fields: [(name: String, value: String)], file: URL, filename: String, mediaType: String, timeout: TimeInterval) async throws -> T {
+        let boundary = "dadi-\(UUID().uuidString)"
+        let body = URL.temporaryDirectory.appending(path: "upload-\(UUID().uuidString)", directoryHint: .notDirectory)
+        defer { try? FileManager.default.removeItem(at: body) }
+        try Self.writeMultipart(to: body, boundary: boundary, fields: fields, file: file, filename: filename, mediaType: mediaType)
+        var req = request("POST", path, timeout: timeout)
+        req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        let (data, response) = try await session.upload(for: req, fromFile: body)
+        return try decode(data, response, req)
+    }
+
+    private static func writeMultipart(to body: URL, boundary: String, fields: [(name: String, value: String)], file: URL, filename: String, mediaType: String) throws {
+        FileManager.default.createFile(atPath: body.path(percentEncoded: false), contents: nil)
+        let out = try FileHandle(forWritingTo: body)
+        defer { try? out.close() }
+        func quoted(_ value: String) -> String {
+            value.replacing("\\", with: "\\\\").replacing("\"", with: "\\\"").replacing("\r", with: "").replacing("\n", with: "")
+        }
+        for field in fields {
+            try out.write(contentsOf: Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(quoted(field.name))\"\r\n\r\n\(field.value)\r\n".utf8))
+        }
+        try out.write(contentsOf: Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"\(quoted(filename))\"\r\nContent-Type: \(mediaType)\r\n\r\n".utf8))
+        let source = try FileHandle(forReadingFrom: file)
+        defer { try? source.close() }
+        while let chunk = try source.read(upToCount: 1 << 20), !chunk.isEmpty {
+            try out.write(contentsOf: chunk)
+        }
+        try out.write(contentsOf: Data("\r\n--\(boundary)--\r\n".utf8))
+    }
+
     /// POST `body` as JSON to `path` and decode the response as `T`.
     func post<B: Encodable, T: Decodable>(_ path: String, body: B, timeout: TimeInterval = 30, encoder: JSONEncoder = ServiceJSON.encoder) async throws -> T {
         var req = request("POST", path, timeout: timeout)
@@ -178,11 +227,11 @@ struct ServiceClient: Sendable {
     private func request(_ method: String, _ path: String, query: [URLQueryItem] = [], timeout: TimeInterval) -> URLRequest {
         var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)!
         components.percentEncodedPath = path.addingPercentEncoding(withAllowedCharacters: Self.encodedPath)!
-        var url = components.url!
         if !query.isEmpty {
-            url.append(queryItems: query)
+            components.queryItems = query
+            components.percentEncodedQuery = components.percentEncodedQuery?.replacing("+", with: "%2B")
         }
-        var req = URLRequest(url: url, timeoutInterval: timeout)
+        var req = URLRequest(url: components.url!, timeoutInterval: timeout)
         req.httpMethod = method
         req.setValue(UUID().uuidString.lowercased(), forHTTPHeaderField: "X-Request-Id")
         return req
@@ -190,11 +239,30 @@ struct ServiceClient: Sendable {
 
     private func send<T: Decodable>(_ req: URLRequest, decoder: JSONDecoder = ServiceJSON.decoder) async throws -> T {
         let (data, response) = try await session.data(for: req)
+        return try decode(data, response, req, decoder: decoder)
+    }
+
+    private func decode<T: Decodable>(_ data: Data, _ response: URLResponse, _ req: URLRequest, decoder: JSONDecoder = ServiceJSON.decoder) throws -> T {
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
             throw Self.error(status: status, body: data)
         }
-        return try decoder.decode(T.self, from: data)
+        do {
+            return try decoder.decode(T.self, from: data)
+        } catch let problem as DecodingError {
+            throw ServiceError(status: status, type: "unexpected_response", message: "\(req.url?.path ?? "The service") answered in a shape dadi does not understand: \(Self.describe(problem))")
+        }
+    }
+
+    /// What a decode failure is about: the missing key or wrong type, and where it is in the reply.
+    nonisolated static func describe(_ error: DecodingError) -> String {
+        func at(_ path: [CodingKey]) -> String { path.map { $0.intValue.map { "[\($0)]" } ?? ".\($0.stringValue)" }.joined() }
+        switch error {
+        case .keyNotFound(let key, let context): return "missing \"\(key.stringValue)\" at \(at(context.codingPath))"
+        case .valueNotFound(_, let context): return "no value at \(at(context.codingPath))"
+        case .typeMismatch(_, let context), .dataCorrupted(let context): return "\(context.debugDescription) at \(at(context.codingPath))"
+        @unknown default: return "unreadable reply"
+        }
     }
 
     /// The service's error from a non-2xx response body.

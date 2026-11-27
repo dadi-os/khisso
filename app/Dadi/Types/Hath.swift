@@ -7,16 +7,6 @@ struct HathHealth: Decodable, Sendable {
     let startedAt: Date
 }
 
-/// A file a message carries; its bytes are GET /attachments/:id.
-struct AttachmentSummary: Decodable, Sendable, Hashable, Identifiable {
-    let id: String
-    let filename: String
-    let mediaType: String
-    let sizeBytes: Int
-    /// What an image shows; nil for other files.
-    let description: String?
-}
-
 /// One human↔agent conversation from GET /threads.
 struct ThreadSummary: Decodable, Sendable, Hashable, Identifiable {
     let agentId: String
@@ -69,7 +59,6 @@ struct DurableMessage: Decodable, Sendable, Hashable, Identifiable {
     /// Nil when it was sent to Ankur.
     let toAgentId: String?
     let content: String
-    let attachments: [AttachmentSummary]
     /// Hath's own notes to agents are not part of the thread; a message is `message` or absent.
     let kind: MessageKind?
     /// What the sender says the message leaves open, set on a message to the job's requester. Hath's thread
@@ -81,11 +70,27 @@ struct DurableMessage: Decodable, Sendable, Hashable, Identifiable {
     var fromUser: Bool { fromAgentId == nil }
 }
 
+extension DurableMessage {
+    private enum CodingKeys: String, CodingKey {
+        case seq, fromAgentId, toAgentId, content, kind, status, createdAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        seq = try c.decode(Int.self, forKey: .seq)
+        fromAgentId = try c.decodeIfPresent(String.self, forKey: .fromAgentId)
+        toAgentId = try c.decodeIfPresent(String.self, forKey: .toAgentId)
+        content = try c.decode(String.self, forKey: .content)
+        kind = try c.decodeIfPresent(MessageKind.self, forKey: .kind)
+        status = try c.decodeIfPresent(MessageStatus.self, forKey: .status)
+        createdAt = try c.decode(Date.self, forKey: .createdAt)
+    }
+}
+
 /// One message the router sent to an agent as Ankur.
 struct RoutedMessage: Decodable, Sendable, Hashable {
     let toAgentId: String
     let content: String
-    let attachments: [AttachmentSummary]
     let seq: Int
     let createdAt: Date
 }
@@ -109,29 +114,19 @@ struct RouterRuns: Decodable, Sendable {
 struct PostMessageResponse: Decodable, Sendable {
     let toAgentId: String
     let content: String
-    let attachments: [AttachmentSummary]
     let seq: Int
     let createdAt: Date
-}
-
-/// A file sent with a message: its bytes as base64, no data-URL prefix.
-struct OutboundAttachment: Encodable, Sendable {
-    let mediaType: String
-    let data: String
-    let filename: String
 }
 
 /// Body of POST /router.
 struct RouterRequest: Encodable, Sendable {
     let content: String
-    var attachments: [OutboundAttachment]?
 }
 
 /// Body of POST /messages.
 struct MessageRequest: Encodable, Sendable {
     let toAgentId: String
     let content: String
-    var attachments: [OutboundAttachment]?
 }
 
 /// Where a wake stands. `waiting` appears only on an agent's latest wake, when the agent watches a task or agent.
@@ -204,7 +199,7 @@ enum HathEvent: Decodable, Sendable, Equatable {
     case unhandled(type: String)
 
     private enum Keys: String, CodingKey {
-        case type, agentId, fromAgentId, toAgentId, content, attachments, seq, kind, status, at, message, readSeq, unread, runId, wakeId, outcome, counts
+        case type, agentId, fromAgentId, toAgentId, content, seq, kind, status, at, message, readSeq, unread, runId, wakeId, outcome, counts
     }
 
     /// The counts as the stream's snake-case decoder hands them over.
@@ -222,7 +217,6 @@ enum HathEvent: Decodable, Sendable, Equatable {
                 fromAgentId: try c.decodeIfPresent(String.self, forKey: .fromAgentId),
                 toAgentId: try c.decodeIfPresent(String.self, forKey: .toAgentId),
                 content: try c.decode(String.self, forKey: .content),
-                attachments: try c.decode([AttachmentSummary].self, forKey: .attachments),
                 kind: try c.decodeIfPresent(MessageKind.self, forKey: .kind),
                 status: try c.decodeIfPresent(MessageStatus.self, forKey: .status),
                 createdAt: try c.decode(Date.self, forKey: .at)
