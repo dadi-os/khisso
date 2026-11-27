@@ -34,7 +34,7 @@ private struct Completion: View {
 
 /// One task of a list: a ring, its title (two lines at most) and ONE meta line that combines its facts ("Past due by
 /// 12 days · IBIO 150"). The ring ticks it or takes the tick back; the rest of the row opens its sheet.
-private struct ChecklistRow: View {
+struct ChecklistRow: View {
     let task: PlanTask
     let done: Bool
     let now: Date

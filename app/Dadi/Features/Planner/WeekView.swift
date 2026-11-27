@@ -1,59 +1,15 @@
 import SwiftUI
 
-/// The arrows and title that move the Week or Month by a period; tapping the title returns to the current one, with one
-/// true line about the period under it.
-struct PeriodBar: View {
-    let title: String
-    let summary: String?
-    let previousLabel: String
-    let nextLabel: String
-    let previous: () -> Void
-    let next: () -> Void
-    let current: () -> Void
-
-    var body: some View {
-        HStack {
-            Button(action: previous) { Image(systemName: "chevron.left").frame(width: 20, height: 20) }
-                .buttonStyle(.glass)
-                .buttonBorderShape(.circle)
-                .accessibilityLabel(previousLabel)
-            Spacer()
-            Button(action: current) {
-                VStack(spacing: 1) {
-                    Text(title).font(.title3.weight(.semibold)).foregroundStyle(.ink).contentTransition(.opacity)
-                    if let summary {
-                        ViewThatFits(in: .horizontal) {
-                            Text(summary).lineLimit(1)
-                            VStack(spacing: 0) { ForEach(summary.components(separatedBy: " · "), id: \.self) { Text($0) } }
-                        }
-                        .font(.caption)
-                        .foregroundStyle(.inkFaint)
-                        .multilineTextAlignment(.center)
-                    }
-                }
-            }
-            .buttonStyle(.plain)
-            Spacer()
-            Button(action: next) { Image(systemName: "chevron.right").frame(width: 20, height: 20) }
-                .buttonStyle(.glass)
-                .buttonBorderShape(.circle)
-                .accessibilityLabel(nextLabel)
-        }
-    }
-}
-
-/// The week from Monday as the Day timesheet widened: three day columns in view in one horizontal scroll that pages
-/// one day at a time, one shared vertical scroll, a sticky 64 pt hour axis on the left and a sticky header of one 36 pt line per
-/// day on top (weekday, numeral, task dot and count; today a small filled pill, past days quiet; a tap opens Day).
-/// There is no all-day rail: an all-day or multi-day plan is a hairline at the foot of that day's header, continuous
-/// across joined days. The grid runs edge to edge at 64 pt an hour to the bottom of its container, opens one hour
-/// before the week's earliest plan and never jumps.
+/// The week from Monday, what the Planner shows in landscape: seven readable day columns beside a 48 pt hour rail and
+/// one shared vertical scroll. Pinned over the grid, plain day headings (weekday over a
+/// big numeral, today ringed, past days quiet, a task dot and count) and the all-day and multi-day
+/// plans as quiet text over a hairline, continuous across joined days; the rail's corner holds the arrows to the
+/// neighbouring weeks. The week's range is the top bar's label. The grid runs at 64 pt an hour, opens one hour before the
+/// week's earliest plan and never jumps.
 struct WeekView: View {
     let yaad: YaadClient
     let actions: PlannerActions
     let online: Bool
-    /// Shows `day` in the Day view.
-    let openDay: (Date) -> Void
 
     @Environment(LiveData.self) private var live: LiveData?
     @State private var start = PlannerCalendar.monday(of: .now)
@@ -76,19 +32,18 @@ struct WeekView: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            PeriodBar(title: title, summary: loaded ? PlanTime.periodSummary(actions.shown(plans), days: days, noun: "week") : nil, previousLabel: "Previous week", nextLabel: "Next week", previous: { move(by: -1) }, next: { move(by: 1) }, current: { jump(to: PlannerCalendar.monday(of: .now)) })
-                .padding(.horizontal, 20)
             if !loaded && error == nil {
                 WeekSkeleton().padding(.horizontal, 20).frame(maxHeight: .infinity, alignment: .top)
             } else if !loaded, let error {
                 ErrorCard(service: "Yaad", status: nil, message: error) { retries += 1 }.padding(.horizontal, 20).frame(maxHeight: .infinity, alignment: .top)
             } else {
                 FeedBanner(online: online, error: error, readAt: readAt).padding(.horizontal, 20)
-                WeekBody(days: days, plans: actions.shown(plans), lists: lists, actions: actions, openDay: openDay)
+                WeekBody(days: days, plans: actions.shown(plans), lists: lists, actions: actions, page: move(by:))
                     .id(start)
                     .opacity(online ? 1 : 0.6)
             }
         }
+        .preference(key: PlannerLabelKey.self, value: title)
         .task(id: PeriodReload(start: start, change: live?.yaad ?? 0, retry: retries)) { await load() }
         .sensoryFeedback(.selection, trigger: start)
     }
@@ -132,47 +87,31 @@ struct WeekView: View {
     }
 }
 
-/// The week's horizontal paging: it settles on a whole day column, three of them in view.
-private struct DayPaging: ScrollTargetBehavior {
-    let column: CGFloat
-
-    func updateTarget(_ target: inout ScrollTarget, context: TargetContext) {
-        target.rect.origin.x = WeekMetrics.snappedOffset(target.rect.origin.x, column: column)
-    }
-}
-
-/// What the week's horizontal scroll reports: how far it has moved.
-private struct WeekScroll: Equatable {
-    var offset: CGFloat = 0
-}
-
 /// The sticky header and grid of one week, made fresh for each week so its scroll positions start where they should:
 /// the day columns on today (or the first day) and the hours on the hour before the earliest plan. Floating, with no
-/// container and no vertical rules: bubbles and bridging all-day bars pinned over a grid that scrolls under them,
+/// container and no vertical rules: day headings and bridging all-day lines pinned over a grid that scrolls under them,
 /// slab blocks, at most two lanes per overlap with "+N" for the rest, and a static now line.
 private struct WeekBody: View {
     let days: [Date]
     let plans: [Plan]
     let lists: [String: [PlanTask]]
     let actions: PlannerActions
-    let openDay: (Date) -> Void
+    /// Moves the week by this many weeks.
+    let page: (Int) -> Void
 
     @State private var vertical: ScrollPosition
-    @State private var horizontal = ScrollPosition(x: 0)
-    @State private var scroll = WeekScroll()
     @State private var pageWidth: CGFloat = 390
-    @State private var positioned = false
     private let clusters: [[WeekCluster]]
     private let lanes: [[(plan: Plan, columns: ClosedRange<Int>)]]
 
     private typealias M = WeekMetrics
 
-    init(days: [Date], plans: [Plan], lists: [String: [PlanTask]], actions: PlannerActions, openDay: @escaping (Date) -> Void) {
+    init(days: [Date], plans: [Plan], lists: [String: [PlanTask]], actions: PlannerActions, page: @escaping (Int) -> Void) {
         self.days = days
         self.plans = plans
         self.lists = lists
         self.actions = actions
-        self.openDay = openDay
+        self.page = page
         let segments = days.map { PlannerLayout.segments(PlanFilter.grid(plans), on: $0, minimum: 26) }
         clusters = segments.map(WeekLayout.clusters)
         lanes = PlanFilter.spanLanes(plans, in: days)
@@ -192,13 +131,7 @@ private struct WeekBody: View {
             ScrollView {
                 HStack(alignment: .top, spacing: M.gutter) {
                     axis
-                    ScrollView(.horizontal) {
-                        grid
-                    }
-                    .scrollIndicators(.hidden)
-                    .scrollTargetBehavior(DayPaging(column: column))
-                    .scrollPosition($horizontal)
-                    .onScrollGeometryChange(for: WeekScroll.self) { WeekScroll(offset: $0.contentOffset.x) } action: { _, new in scroll = new }
+                    grid
                 }
                 .padding(.top, header)
                 .padding(.horizontal, M.cardPad)
@@ -215,41 +148,38 @@ private struct WeekBody: View {
             pinned
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { pageWidth = $0 }
-        .task(id: pageWidth) {
-            guard !positioned else { return }
-            await Task.yield()
-            positioned = true
-            horizontal.scrollTo(x: M.offset(showing: days.firstIndex { Calendar.current.isDateInToday($0) } ?? 0, column: column))
-        }
     }
 
     private func badge(_ day: Date, now: Date) -> DayBadge? {
         lists[TaskLogic.key(day)].map { TaskLogic.dayBadge(actions.ticker.shown($0), on: day, now: now) }
     }
 
-    /// The bubbles, the bars and "+N more", floating over the grid and following its horizontal scroll.
+    /// The day headings, the all-day text and "+N more", floating over the grid.
     private var pinned: some View {
         let now = Date.now
         let column = column
         return HStack(alignment: .top, spacing: 0) {
-            Color.clear.frame(width: M.cardPad + M.axis + M.gutter, height: 1)
+            HStack(spacing: 0) {
+                weekArrow("chevron.left", label: "Previous week", by: -1)
+                weekArrow("chevron.right", label: "Next week", by: 1)
+            }
+            .frame(width: M.cardPad + M.axis + M.gutter, height: M.headerTop + M.dayHead, alignment: .trailing)
             Color.clear
                 .frame(maxWidth: .infinity)
                 .frame(height: header)
                 .overlay(alignment: .topLeading) {
                     ZStack(alignment: .topLeading) {
                         ForEach(Array(days.enumerated()), id: \.element) { index, day in
-                            bubble(day, now: now, column: column).frame(width: column).offset(x: column * CGFloat(index))
+                            dayHeading(day, now: now, column: column).frame(width: column).offset(x: column * CGFloat(index))
                         }
                         ForEach(Array(lanes.prefix(M.maxBarRows).enumerated()), id: \.offset) { row, lane in
                             ForEach(lane, id: \.plan.id) { entry in
                                 bar(entry.plan, columns: entry.columns, column: column)
-                                    .offset(x: column * CGFloat(entry.columns.lowerBound), y: M.headerTop + M.bubble + M.bubbleGap + CGFloat(row) * (M.barRow + M.barGap))
+                                    .offset(x: column * CGFloat(entry.columns.lowerBound), y: M.headerTop + M.dayHead + M.bubbleGap + CGFloat(row) * (M.barRow + M.barGap))
                             }
                         }
                     }
                     .frame(width: column * CGFloat(days.count), alignment: .topLeading)
-                    .offset(x: -scroll.offset)
                 }
                 .clipped()
                 .padding(.trailing, M.cardPad)
@@ -268,61 +198,56 @@ private struct WeekBody: View {
         .frame(height: header, alignment: .top)
     }
 
-    private func bubble(_ day: Date, now: Date, column: CGFloat) -> some View {
+    private func weekArrow(_ symbol: String, label: String, by weeks: Int) -> some View {
+        Button { page(weeks) } label: {
+            Image(systemName: symbol).font(.system(size: 13, weight: .semibold)).foregroundStyle(.inkMuted).frame(width: 24, height: M.dayHead).contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+    }
+
+    /// A day's heading over its column: the weekday small over a large numeral (ringed for today, quiet once past) with a
+    /// task dot and count beside it, red while one is urgent, a check once all are done.
+    private func dayHeading(_ day: Date, now: Date, column: CGFloat) -> some View {
         let today = Calendar.current.isDateInToday(day)
         let past = day < Calendar.current.startOfDay(for: now)
         let tasks = badge(day, now: now)
-        let tier = M.tier(column: column)
-        let ink: Color = today ? .todayInk : past ? .inkMuted : .ink
-        let weekday = day.formatted(.dateTime.weekday(tier == .letter ? .narrow : .abbreviated)).uppercased()
-        return Button { openDay(day) } label: {
-            HStack(spacing: 6) {
-                Text(weekday).font(.system(size: 11, weight: .semibold)).tracking(1.2).foregroundStyle(today ? Color.todayInk : .inkMuted)
-                Text(day, format: .dateTime.day()).font(.system(size: 13, weight: .semibold).monospacedDigit()).foregroundStyle(ink)
-                if let tasks, tasks.open > 0 || tasks.allDone {
-                    HStack(spacing: 4) {
-                        if tasks.open == 0 {
-                            Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)).foregroundStyle(today ? Color.todayInk : .sageDeep)
-                        } else {
-                            Circle().fill(tasks.urgent ? Color.lateDot : ink.opacity(0.6)).frame(width: 4, height: 4)
-                            if tier == .full { Text("\(tasks.open)").font(.system(size: 11, weight: .medium).monospacedDigit()).foregroundStyle(today ? Color.todayInk : .inkMuted) }
-                        }
+        let ink: Color = today ? .sageDeep : past ? .inkMuted : .ink
+        return HStack(spacing: 8) {
+            VStack(spacing: 0) {
+                Text(day.formatted(.dateTime.weekday(.abbreviated)).uppercased()).font(.system(size: 11, weight: .semibold)).tracking(1.2).foregroundStyle(.inkMuted)
+                Text(day, format: .dateTime.day()).font(.system(size: 20, weight: .semibold).monospacedDigit()).foregroundStyle(ink)
+            }
+            .padding(.horizontal, 8)
+            .background { if today { RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Color.sageDeep.opacity(0.55), lineWidth: 1.5) } }
+            if let tasks, tasks.open > 0 || tasks.allDone {
+                HStack(spacing: 4) {
+                    if tasks.open == 0 {
+                        Image(systemName: "checkmark").font(.system(size: 10, weight: .bold)).foregroundStyle(Color.sageDeep)
+                    } else {
+                        Circle().fill(tasks.urgent ? Color.lateDot : ink.opacity(0.6)).frame(width: 5, height: 5)
+                        Text("\(tasks.open)").font(.system(size: 12, weight: .medium).monospacedDigit()).foregroundStyle(.inkMuted)
                     }
                 }
             }
-            .padding(.horizontal, 10)
-            .frame(height: M.bubble)
-            .background {
-                if today {
-                    Capsule().fill(Color.today)
-                } else {
-                    Capsule().fill(Color.bone)
-                    Capsule().fill(Color.sage.opacity(0.1))
-                }
-            }
-            .shadow(color: .black.opacity(today ? 0 : 0.06), radius: 1, y: 1)
-            .padding(.top, M.headerTop)
-            .frame(width: column, height: M.headerTop + M.bubble + M.bubbleGap, alignment: .top)
-            .contentShape(.rect)
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Show \(day.formatted(.dateTime.weekday(.wide).month().day()))")
+        .padding(.leading, M.blockInset)
+        .padding(.top, M.headerTop)
+        .frame(width: column, height: M.headerTop + M.dayHead + M.bubbleGap, alignment: .topLeading)
+        .accessibilityElement(children: .combine)
     }
 
     private func bar(_ plan: Plan, columns: ClosedRange<Int>, column: CGFloat) -> some View {
-        let first = PlanFilter.barEdges(plan, day: days[columns.lowerBound])
-        let last = PlanFilter.barEdges(plan, day: days[columns.upperBound])
         let look = BarLook(plan)
-        let shape = UnevenRoundedRectangle(topLeadingRadius: first.before ? M.barSquare : M.barRadius, bottomLeadingRadius: first.before ? M.barSquare : M.barRadius, bottomTrailingRadius: last.after ? M.barSquare : M.barRadius, topTrailingRadius: last.after ? M.barSquare : M.barRadius, style: .continuous)
         return Button { actions.sheet = .plan(plan) } label: {
             Text(plan.title)
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(look.ink)
-                .lineLimit(1)
-                .padding(.horizontal, 12)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+                .padding(.horizontal, 4)
                 .frame(width: column * CGFloat(columns.count) - 2 * M.barMargin, height: M.barRow, alignment: .leading)
-                .background { shape.fill(Color.bone); shape.fill(look.fill) }
-                .overlay { shape.strokeBorder(look.line, style: StrokeStyle(lineWidth: 1, dash: look.dashed ? [4, 3] : [])) }
+                .overlay(alignment: .bottom) { Rectangle().fill(look.line).frame(height: 1) }
                 .padding(.leading, M.barMargin)
                 .contentShape(.rect)
         }

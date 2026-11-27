@@ -15,6 +15,9 @@ final class ThreadDraft {
     var files: [DraftFile] = []
     /// The message being replied to, quoted ahead of the reply.
     var quote: DurableMessage?
+    /// Whether the composer's field has the keyboard. The composer sits in the tab bar's accessory, apart from the thread,
+    /// so the thread asks for the keyboard (a reply starts one) and puts it away through this.
+    var focusing = false
     var sendError: String?
     /// True while the message is with Hath.
     private(set) var sending = false

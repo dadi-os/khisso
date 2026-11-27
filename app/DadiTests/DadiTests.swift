@@ -173,6 +173,15 @@ struct ReadStateTests {
         for try await event in HathClient.events(from: lines.async) { got.append(event) }
         #expect(got == [.threadRead(agentId: "finance-specialist", readSeq: 42, unread: 0)])
     }
+
+    @Test func onlyMessagesBetweenAnkurAndAnAgentCountForReadMarks() throws {
+        func message(from: String?, to: String?) -> DurableMessage {
+            DurableMessage(seq: 27712, fromAgentId: from, toAgentId: to, content: "x", kind: nil, status: nil, createdAt: .now)
+        }
+        #expect(message(from: nil, to: "a").inHumanThread)
+        #expect(message(from: "a", to: nil).inHumanThread)
+        #expect(!message(from: "router", to: "a").inHumanThread)
+    }
 }
 
 /// Math in previews and on the watch reads as Unicode, by the same rule the

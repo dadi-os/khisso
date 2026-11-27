@@ -40,9 +40,15 @@ struct PhoneHome: View {
     @State private var drafts = ThreadDrafts()
     /// The toasts over the page.
     @State private var toaster = Toaster()
+    /// The period the Planner shows, printed in its top bar.
+    @State private var plannerLabel = ""
     /// The dock's re-select of the tab already open.
     @State private var reselect = TabReselect()
     @Namespace private var sheetWordmark
+    @Environment(\.verticalSizeClass) private var vertical
+
+    /// True while the Planner is turned to landscape, where it shows the Week over the whole screen: no dock, a slim top bar.
+    private var wide: Bool { page.tab == .planner && vertical == .compact }
     /// What the Planner shows, set from its name bubble, its drawer, Week and Month, and a re-tap of its tab.
     @State private var planner = PlannerRoute()
     /// Bumped to bring the Planner's Day view to now.
@@ -166,6 +172,7 @@ struct PhoneHome: View {
         .onChange(of: page, initial: true) {
             if page.tab == .dadi { dadiPage = page }
         }
+        .onChange(of: page.tab, initial: true) { AppOrientation.allow(OrientationPolicy.mask(for: page.tab)) }
         .overlay {
             RouterCompose(dock: router, active: store.routing, send: sendToRouter)
         }
@@ -195,14 +202,15 @@ struct PhoneHome: View {
             Tab(value: HomeView.Tab.dadi) {
                 chrome(dadiContent, tab: .dadi)
             } label: {
-                Label("Chats", systemImage: "bubble.left.and.bubble.right")
+                Label("Chats", image: page.tab == .dadi ? "AgentMarkFill" : "AgentMark")
             }
             .badge(chatsBadge)
             Tab("Planner", systemImage: "calendar", value: HomeView.Tab.planner) {
                 chrome(
-                    PlannerPage(yaad: services.yaad, route: $planner, scrollNow: plannerScrollNow, online: online, message: plannerMessage(_:ready:), reachable: store.isActive, nameOf: store.name(of:)),
+                    PlannerPage(yaad: services.yaad, route: $planner, label: $plannerLabel, scrollNow: plannerScrollNow, online: online, message: plannerMessage(_:ready:), reachable: store.isActive, nameOf: store.name(of:)),
                     tab: .planner
                 )
+                .toolbarVisibility(wide ? .hidden : .automatic, for: .tabBar)
             }
             Tab("Ghar", systemImage: "house", value: HomeView.Tab.ghar) {
                 chrome(GharPage(store: ghar, filter: $gharFilter), tab: .ghar)
@@ -215,8 +223,8 @@ struct PhoneHome: View {
             }
         }
         .tabBarMinimizeBehavior(page.isThread ? .onScrollUp : .onScrollDown)
-        .tabViewBottomAccessory(isEnabled: presentation.showsAccessory) {
-            DockAccessory(presentation: presentation, router: router, active: store.routing, online: online)
+        .tabViewBottomAccessory(isEnabled: !wide) {
+            DockAccessory(presentation: presentation, router: router, active: store.routing, online: online, thread: threadAccessory)
         }
         .tint(.sageDeep)
         .environment(reselect)
@@ -259,14 +267,17 @@ struct PhoneHome: View {
             if page.tab == .dadi { page = next }
         }) {
             ChatsView(threads: store.threads, filter: $chatsFilter, running: store.running(of:), error: store.error, loading: !store.loaded, retry: { Task { await store.load(services.hath) } }) { agentId in
-                show(.thread(agentId))
+                Task {
+                    await store.preloadThread(services.hath, agentId: agentId)
+                    show(.thread(agentId))
+                }
             } details: { agentId in
                 agentSheet = agentId
             }
             .background { FieldBloom() }
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: String.self) { agentId in
-                ThreadView(hath: services.hath, nas: services.nas, agentId: agentId, name: store.name(of: agentId), live: store.live, running: store.running(of: agentId), counts: store.counts(of: agentId), connections: store.connections, draft: drafts.draft(for: agentId)) { seq in
+                ThreadView(hath: services.hath, nas: services.nas, agentId: agentId, name: store.name(of: agentId), live: store.live, running: store.running(of: agentId), counts: store.counts(of: agentId), connections: store.connections, draft: drafts.draft(for: agentId), history: store.history[agentId]) { seq in
                     Task { await store.markRead(services.hath, agentId: agentId, through: seq) }
                 } details: {
                     agentSheet = agentId
@@ -275,6 +286,12 @@ struct PhoneHome: View {
                 .toolbar(.hidden, for: .navigationBar)
             }
         }
+    }
+
+    /// The open thread's composer for the dock's accessory, with its own draft.
+    private var threadAccessory: ThreadAccessory? {
+        guard case .thread(let agentId) = page else { return nil }
+        return ThreadAccessory(name: store.name(of: agentId), draft: drafts.draft(for: agentId))
     }
 
     /// What the dock's accessory shows for the open page.
@@ -319,11 +336,37 @@ struct PhoneHome: View {
             }
             .buttonStyle(.glass)
             .buttonBorderShape(.circle)
+            .frostedBacking(.circle)
             .accessibilityLabel("Open sidebar")
             Spacer()
-            if tab == .planner, planner.section == .checklist {
-                NameBubble(title: "Checklist", details: nil)
-            } else if tab == .planner {
+            if tab == .planner {
+                if planner.section == .checklist {
+                    NameBubble(title: "Checklist", details: nil)
+                } else {
+                    Text(plannerLabel)
+                        .font(.headline)
+                        .foregroundStyle(.ink)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .frame(maxWidth: .infinity)
+                        .contentTransition(.opacity)
+                }
+            } else if let title = title(of: shown) {
+                NameBubble(title: title, details: shown.isThread ? { if case .thread(let agentId) = shown { agentSheet = agentId } } : nil)
+                    .id(title)
+                    .transition(.opacity.combined(with: .scale(scale: 0.92)))
+            }
+            Spacer()
+            if tab == .chaavi {
+                Button { creatingItem = true } label: {
+                    Image(systemName: "plus")
+                        .font(.body.weight(.semibold))
+                        .frame(width: 22, height: 22)
+                }
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
+                .accessibilityLabel("New login or note")
+            } else if tab == .planner, planner.section == .timeline, !wide {
                 Menu {
                     Picker("View", selection: Binding(get: { planner.mode }, set: { mode in withAnimation(Motion.settle) { planner.show(mode) } })) {
                         ForEach(PlannerMode.allCases, id: \.self) { mode in
@@ -348,21 +391,6 @@ struct PhoneHome: View {
                 .glassEffect(.regular.interactive(), in: .capsule)
                 .accessibilityLabel("Planner view: \(planner.mode.rawValue)")
                 .sensoryFeedback(.selection, trigger: planner.mode)
-            } else if let title = title(of: shown) {
-                NameBubble(title: title, details: shown.isThread ? { if case .thread(let agentId) = shown { agentSheet = agentId } } : nil)
-                    .id(title)
-                    .transition(.opacity.combined(with: .scale(scale: 0.92)))
-            }
-            Spacer()
-            if tab == .chaavi {
-                Button { creatingItem = true } label: {
-                    Image(systemName: "plus")
-                        .font(.body.weight(.semibold))
-                        .frame(width: 22, height: 22)
-                }
-                .buttonStyle(.glass)
-                .buttonBorderShape(.circle)
-                .accessibilityLabel("New login or note")
             } else if shown.isThread {
                 RouterMark(active: store.routing)
                     .frame(width: 52, height: 52)
@@ -371,10 +399,10 @@ struct PhoneHome: View {
                 Color.clear.frame(width: 52, height: 52)
             }
         }
-        .controlSize(.large)
+        .controlSize(wide ? .regular : .large)
         .padding(.horizontal, 16)
-        .padding(.top, 4)
-        .padding(.bottom, 14)
+        .padding(.top, wide ? 0 : 4)
+        .padding(.bottom, wide ? 4 : 14)
         .opacity(arrived ? 1 : 0)
         .animation(Motion.snap, value: shown)
     }
@@ -507,6 +535,7 @@ struct NameBubble: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 9)
+        .frostedBacking(.capsule)
         .glassEffect(symbol == nil ? .regular : .regular.interactive(), in: .capsule)
         if let details {
             Button(action: details) { label }

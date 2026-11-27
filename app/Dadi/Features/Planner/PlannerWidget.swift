@@ -177,7 +177,7 @@ struct PlannerWidget: View {
 
 /// One plan of the widget: its start on the time column, a spine dot, its title and its fact; sage-filled with the
 /// time left and a progress hairline while it is on, muted once ended or declined.
-private struct PlanRow: View {
+struct PlanRow: View {
     let plan: Plan
     let current: Bool
     let state: TimeState
@@ -189,7 +189,7 @@ private struct PlanRow: View {
         let end = plan.endAt ?? plan.startAt
         let look = PlanCardLook(plan, state: state)
         HStack(spacing: 0) {
-            Text(Phrase.clock(plan.startAt))
+            Text(plan.allDay ? "All day" : Phrase.clock(plan.startAt))
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.inkMuted)
                 .lineLimit(1)
@@ -244,7 +244,7 @@ private struct PlanRow: View {
     /// "12 min left · Wells Hall room B115" while on, otherwise "54 min · Wells Hall room B115"; Declined in place of the
     /// duration for a plan Ankur declined, and Ankur's answer first once he gave one.
     private func fact(end: Date, caption: String?) -> String {
-        let length = caption ?? (plan.declined ? "Declined" : current ? "\(Phrase.duration(end.timeIntervalSince(now))) left" : Phrase.duration(end.timeIntervalSince(plan.startAt)))
+        let length = caption ?? (plan.declined ? "Declined" : plan.allDay ? nil : current ? "\(Phrase.duration(end.timeIntervalSince(now))) left" : Phrase.duration(end.timeIntervalSince(plan.startAt)))
         let place = plan.place.map { place in place.room.map { "\(place.title) room \($0)" } ?? place.title }
         return [length, place].compactMap { $0 }.joined(separator: " · ")
     }

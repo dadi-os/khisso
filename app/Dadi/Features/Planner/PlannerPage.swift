@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// The ways to look at the Planner's timeline, chosen from the page's name bubble or its drawer.
+/// The ways to look at the Planner's timeline in portrait, chosen from the top bar's menu. Week is not one of them: it is
+/// what the Planner shows when the phone is turned to landscape.
 enum PlannerMode: String, CaseIterable, Hashable {
     case day = "Day"
-    case week = "Week"
     case month = "Month"
 
     /// The symbol of the Someday button.
@@ -12,7 +12,6 @@ enum PlannerMode: String, CaseIterable, Hashable {
     var symbol: String {
         switch self {
         case .day: "clock"
-        case .week: "calendar.day.timeline.left"
         case .month: "calendar"
         }
     }
@@ -72,7 +71,17 @@ struct PlannerRoute: Equatable {
     }
 }
 
-/// The Planner: its plans (Day, Week, Month) or its tasks (the Checklist), one at a time. Plans and tasks are
+/// The period a timeline view shows (a month, a week's range, a day), which the top bar prints between its buttons.
+struct PlannerLabelKey: PreferenceKey {
+    static let defaultValue = ""
+
+    static func reduce(value: inout String, nextValue: () -> String) {
+        let next = nextValue()
+        if !next.isEmpty { value = next }
+    }
+}
+
+/// The Planner: its plans (Day and Month, and the Week when the phone is in landscape) or its tasks (the Checklist), one at a time. Plans and tasks are
 /// read-only here: Ankur ticks a task, says whether he attended a plan, and messages the agent that keeps either. A
 /// task swipes right to tick and left to message its agent; a plan or task taps open its sheet and a plan long-presses
 /// for a menu.
@@ -83,16 +92,22 @@ struct PlannerPage: View {
     let scrollNow: Int
     /// False while dadi is out of reach: every view shows the last answer.
     let online: Bool
+    /// Receives the label of the period the timeline shows.
+    @Binding var label: String
 
     @State private var actions: PlannerActions
+    @Environment(\.verticalSizeClass) private var vertical
+
+    private var landscape: Bool { vertical == .compact }
 
     /// - Parameters:
     ///   - message: opens the thread of the agent with this id, with the text ready in its composer when given.
     ///   - reachable: whether an agent can still be messaged.
     ///   - nameOf: an agent's name for display.
-    init(yaad: YaadClient, route: Binding<PlannerRoute>, scrollNow: Int, online: Bool, message: @escaping (String, String?) -> Void, reachable: @escaping (String) -> Bool, nameOf: @escaping (String) -> String) {
+    init(yaad: YaadClient, route: Binding<PlannerRoute>, label: Binding<String> = .constant(""), scrollNow: Int, online: Bool, message: @escaping (String, String?) -> Void, reachable: @escaping (String) -> Bool, nameOf: @escaping (String) -> String) {
         self.yaad = yaad
         _route = route
+        _label = label
         self.scrollNow = scrollNow
         self.online = online
         _actions = State(initialValue: PlannerActions(yaad: yaad, message: message, reachable: reachable, nameOf: nameOf))
@@ -104,14 +119,14 @@ struct PlannerPage: View {
             case .checklist:
                 ChecklistView(yaad: yaad, actions: actions, online: online)
                     .transition(.opacity)
+            case .timeline where landscape:
+                WeekView(yaad: yaad, actions: actions, online: online)
+                    .transition(.opacity)
             case .timeline:
                 switch route.mode {
                 case .day:
                     DayView(yaad: yaad, actions: actions, online: online, day: route.day ?? .now, scrollNow: scrollNow)
                         .id(route.day)
-                        .transition(.opacity)
-                case .week:
-                    WeekView(yaad: yaad, actions: actions, online: online, openDay: show(_:))
                         .transition(.opacity)
                 case .month:
                     MonthView(yaad: yaad, actions: actions, online: online, openDay: show(_:))
@@ -126,6 +141,7 @@ struct PlannerPage: View {
                 .animation(Motion.settle, value: actions.ticker.failure)
                 .animation(Motion.settle, value: actions.attendedFailure)
         }
+        .onPreferenceChange(PlannerLabelKey.self) { label = $0 }
         .plannerSheets(actions: actions, yaad: yaad)
         .onAppear {
             actions.openDay = { day in

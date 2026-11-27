@@ -86,6 +86,7 @@ struct JoinView: View {
                 slot(Self.wordmarkSize)
                 Spacer()
             }
+            .ignoresSafeArea()
             .transition(.opacity)
         case .scanning, .accepted:
             scannerChrome

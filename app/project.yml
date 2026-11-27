@@ -52,6 +52,7 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
         NSFaceIDUsageDescription: dadi asks for Face ID before showing or copying a password from Chaavi.

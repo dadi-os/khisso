@@ -1,25 +1,5 @@
 import SwiftUI
 
-/// A tile's task badge in plain type: how many tasks close that day with a late dot when one is past due, or a check
-/// when all are done.
-private struct MonthTaskBadge: View {
-    let badge: MonthBadge
-
-    var body: some View {
-        if badge.closing > 0 {
-            HStack(spacing: 2) {
-                if badge.allDone {
-                    Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)).foregroundStyle(Color.sageDeep)
-                } else {
-                    if badge.pastDue { Circle().fill(Color.lateDot).frame(width: 5, height: 5) }
-                    Text("\(badge.closing)").font(.system(size: 11, weight: .medium).monospacedDigit()).foregroundStyle(Color.inkMuted)
-                }
-            }
-            .accessibilityLabel(badge.allDone ? "All tasks done" : "\(badge.closing) \(badge.closing == 1 ? "task closes" : "tasks close")\(badge.pastDue ? ", one past due" : "")")
-        }
-    }
-}
-
 /// What the month pager decides without drawing.
 enum MonthPaging {
     /// How many months either side of the current one the pager reaches.
@@ -49,12 +29,37 @@ enum MonthPaging {
               let to = calendar.date(byAdding: .day, value: 1, to: last) else { return nil }
         return (from, to)
     }
+
+    /// The day the agenda shows after the pager lands on `month`: `selected` while it lies in the month, else today
+    /// when today does, else the month's first day.
+    static func selection(keeping selected: Date, in month: Date, now: Date, calendar: Calendar = .current) -> Date {
+        if isFocused(selected, in: month, calendar: calendar) { return selected }
+        return calendar.startOfDay(for: isFocused(now, in: month, calendar: calendar) ? now : month)
+    }
 }
 
-/// The months as a pager: one page to a month, swiped sideways with a snap or moved by the arrows, each page the whole
-/// weeks that touch the month with the neighbouring months' head and tail days dimmed. Each day is a tile of its plans
-/// as tinted pills with whole-word titles ("+N more" past two) and a small badge of the tasks closing that day; a tile,
-/// dimmed or not, opens its day.
+/// What a day of the month grid carries under its number: its plans (ahead or today, past, or past and all attended)
+/// and whether a task closing that day is past due.
+struct MonthMark: Equatable {
+    enum Plans: Equatable { case none, ahead, past, attended }
+
+    let plans: Plans
+    let lateTask: Bool
+
+    /// The mark of `day` from the plans Ankur keeps and the badge of the tasks closing that day.
+    static func of(_ day: Date, plans: [Plan], badge: MonthBadge?, now: Date, calendar: Calendar = .current) -> MonthMark {
+        let kept = PlanFilter.on(plans, day: day, calendar: calendar).filter { !$0.declined }
+        let late = badge?.pastDue ?? false
+        guard !kept.isEmpty else { return MonthMark(plans: .none, lateTask: late) }
+        guard calendar.startOfDay(for: day) < calendar.startOfDay(for: now) else { return MonthMark(plans: .ahead, lateTask: late) }
+        return MonthMark(plans: kept.allSatisfy { $0.attended == true } ? .attended : .past, lateTask: late)
+    }
+}
+
+/// The month: a grid of day numbers (its name is the top bar's label) that pages sideways a month at a time, each day with a small mark
+/// for its plans (ahead, past, attended) and a late dot for a past-due task, today ringed and the chosen day filled,
+/// the neighbouring months' head and tail days faint. Under the grid the chosen day's agenda reads as the Day view's
+/// rows, plans open their sheet and tasks tick; only the agenda scrolls. "Open day" shows the day in Day.
 struct MonthView: View {
     let yaad: YaadClient
     let actions: PlannerActions
@@ -62,11 +67,12 @@ struct MonthView: View {
     /// Shows `day` in the Day view.
     let openDay: (Date) -> Void
 
-    /// Plans a tile lists before "+N more".
-    static let tilePlans = 2
+    /// The height of one week of the grid; the pager holds six so the agenda never moves.
+    static let weekHeight: CGFloat = 48
 
     @Environment(LiveData.self) private var live: LiveData?
     @State private var month: Date? = MonthPaging.first(of: .now)
+    @State private var selected = Calendar.current.startOfDay(for: .now)
     @State private var plans: [Plan] = []
     @State private var lists: [String: [PlanTask]] = [:]
     @State private var loaded = false
@@ -77,38 +83,50 @@ struct MonthView: View {
     private var focus: Date { month ?? MonthPaging.first(of: .now) }
 
     var body: some View {
-        VStack(spacing: 10) {
-            PeriodBar(title: focus.formatted(.dateTime.month(.wide).year()), summary: loaded ? PlanTime.periodSummary(actions.shown(plans), days: PlannerLayout.monthGrid(focus).filter { MonthPaging.isFocused($0, in: focus) }, noun: "month") : nil, previousLabel: "Previous month", nextLabel: "Next month", previous: { move(by: -1) }, next: { move(by: 1) }, current: { jump(to: MonthPaging.first(of: .now)) })
-                .padding(.horizontal, 12)
-            if loaded { FeedBanner(online: online, error: error, readAt: readAt).padding(.horizontal, 12) }
+        VStack(spacing: 8) {
+            if loaded { FeedBanner(online: online, error: error, readAt: readAt).padding(.horizontal, 20) }
             if !loaded && error == nil {
-                MonthSkeleton().padding(.horizontal, 12).frame(maxHeight: .infinity, alignment: .top)
+                MonthSkeleton().padding(.horizontal, 20).frame(maxHeight: .infinity, alignment: .top)
             } else if !loaded, let error {
-                ErrorCard(service: "Yaad", status: nil, message: error) { retries += 1 }.padding(.horizontal, 12).frame(maxHeight: .infinity, alignment: .top)
+                ErrorCard(service: "Yaad", status: nil, message: error) { retries += 1 }.padding(.horizontal, 20).frame(maxHeight: .infinity, alignment: .top)
             } else {
-                pager.opacity(online ? 1 : 0.6)
+                VStack(spacing: 0) {
+                    weekdays
+                    pager
+                    agenda
+                }
+                .opacity(online ? 1 : 0.6)
             }
         }
+        .preference(key: PlannerLabelKey.self, value: focus.formatted(.dateTime.month(.wide).year()))
         .task(id: PeriodReload(start: focus, change: live?.yaad ?? 0, retry: retries)) { await load() }
+        .onChange(of: month) { _, next in
+            if let next { selected = MonthPaging.selection(keeping: selected, in: next, now: .now) }
+        }
         .sensoryFeedback(.selection, trigger: month)
+        .sensoryFeedback(.selection, trigger: selected)
     }
 
-    private func move(by months: Int) {
-        guard let next = Calendar.current.date(byAdding: .month, value: months, to: focus) else { return }
-        jump(to: next)
+    private func choose(_ day: Date) {
+        selected = Calendar.current.startOfDay(for: day)
+        if !MonthPaging.isFocused(day, in: focus) { withAnimation(Motion.settle) { month = MonthPaging.first(of: day) } }
     }
 
-    private func jump(to next: Date) {
-        guard next != month else { return }
-        withAnimation(Motion.settle) { month = next }
+    private var weekdays: some View {
+        HStack(spacing: 0) {
+            ForEach(Array(PlannerLayout.monthGrid(focus).prefix(7)), id: \.self) { day in
+                Text(day, format: .dateTime.weekday(.abbreviated)).font(.caption2.weight(.semibold)).foregroundStyle(.inkFaint).frame(maxWidth: .infinity)
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.bottom, 4)
     }
 
     private var pager: some View {
         ScrollView(.horizontal) {
             LazyHStack(spacing: 0) {
                 ForEach(MonthPaging.months(around: .now), id: \.self) { first in
-                    page(of: first)
-                        .containerRelativeFrame([.horizontal, .vertical])
+                    grid(of: first).containerRelativeFrame(.horizontal)
                 }
             }
             .scrollTargetLayout()
@@ -116,100 +134,122 @@ struct MonthView: View {
         .scrollIndicators(.hidden)
         .scrollTargetBehavior(.paging)
         .scrollPosition(id: $month)
+        .frame(height: 6 * Self.weekHeight)
     }
 
-    /// One month's page: the weekday row over the whole-week grid, its tiles sharing the page's height.
-    private func page(of first: Date) -> some View {
-        let days = PlannerLayout.monthGrid(first)
+    private func grid(of first: Date) -> some View {
         let shown = actions.shown(plans)
         let now = Date.now
-        let rows = days.count / 7
-        return VStack(spacing: 4) {
-            HStack(spacing: 4) {
-                ForEach(Array(days.prefix(7)), id: \.self) { day in
-                    Text(day, format: .dateTime.weekday(.abbreviated)).font(.caption2.weight(.semibold)).foregroundStyle(.inkMuted).frame(maxWidth: .infinity)
+        return LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 7), spacing: 0) {
+            ForEach(PlannerLayout.monthGrid(first), id: \.self) { day in
+                cell(day, month: first, mark: MonthMark.of(day, plans: shown, badge: lists[TaskLogic.key(day)].map { TaskLogic.monthBadge(actions.ticker.shown($0), on: day) }, now: now))
+            }
+        }
+        .padding(.horizontal, 20)
+        .frame(maxHeight: .infinity, alignment: .top)
+    }
+
+    private func cell(_ day: Date, month: Date, mark: MonthMark) -> some View {
+        let calendar = Calendar.current
+        let chosen = calendar.isDate(day, inSameDayAs: selected)
+        let today = calendar.isDateInToday(day)
+        return Button { choose(day) } label: {
+            VStack(spacing: 4) {
+                Text(day, format: .dateTime.day())
+                    .font(.system(size: 17, weight: chosen || today ? .semibold : .regular).monospacedDigit())
+                    .foregroundStyle(chosen ? Color.bone : today ? .sageDeep : .ink)
+                    .frame(width: 36, height: 36)
+                    .background {
+                        if chosen {
+                            Circle().fill(Color.sageDeep)
+                        } else if today {
+                            Circle().strokeBorder(Color.sageDeep.opacity(0.55), lineWidth: 1.5)
+                        }
+                    }
+                HStack(spacing: 2) {
+                    if let tone = Self.tone(mark.plans) { Circle().fill(tone).frame(width: 5, height: 5) }
+                    if mark.lateTask { Circle().fill(Color.lateDot).frame(width: 5, height: 5) }
+                }
+                .frame(height: 5)
+            }
+            .frame(maxWidth: .infinity, minHeight: Self.weekHeight)
+            .opacity(MonthPaging.isFocused(day, in: month) ? 1 : 0.38)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel((today ? "Today, " : "") + day.formatted(.dateTime.weekday(.wide).month().day()) + Self.words(mark))
+        .accessibilityAddTraits(chosen ? .isSelected : [])
+    }
+
+    private static func tone(_ plans: MonthMark.Plans) -> Color? {
+        switch plans {
+        case .none: nil
+        case .ahead: .sage
+        case .past: .inkFaint
+        case .attended: .sageDeep
+        }
+    }
+
+    private static func words(_ mark: MonthMark) -> String {
+        let plans = switch mark.plans {
+        case .none: ""
+        case .ahead: ", has plans"
+        case .past: ", had plans"
+        case .attended: ", attended"
+        }
+        return plans + (mark.lateTask ? ", a task is past due" : "")
+    }
+
+    /// The chosen day: its name with "Open day" at the right, then its plans and the tasks closing that day.
+    private var agenda: some View {
+        let own = PlanFilter.agenda(actions.shown(plans), day: selected)
+        let closing = (lists[TaskLogic.key(selected)] ?? []).filter { $0.closesAt.map { Calendar.current.isDate($0, inSameDayAs: selected) } == true }
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text(selected, format: .dateTime.weekday(.wide).month(.wide).day()).font(.headline).foregroundStyle(.ink)
+                Spacer()
+                Button { openDay(selected) } label: {
+                    Text("Open day").font(.subheadline.weight(.medium)).foregroundStyle(.sageDeep).frame(minHeight: 44).contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 20)
+            ScrollView {
+                if !own.isEmpty || !closing.isEmpty {
+                    TimelineView(.periodic(from: .now, by: 60)) { context in
+                        rows(own, tasks: closing, now: context.date)
+                    }
                 }
             }
-            GeometryReader { proxy in
-                let tile = max(Self.minimumTile, (proxy.size.height - CGFloat(rows - 1) * 4) / CGFloat(rows))
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 7), spacing: 4) {
-                    ForEach(days, id: \.self) { day in
-                        tileView(day, month: first, height: tile, plans: shown, now: now)
+            .scrollIndicators(.hidden)
+            .contentMargins(.bottom, 140, for: .scrollContent)
+        }
+        .frame(maxHeight: .infinity, alignment: .top)
+    }
+
+    private func rows(_ own: [Plan], tasks: [PlanTask], now: Date) -> some View {
+        let today = Calendar.current.isDate(selected, inSameDayAs: now)
+        let nextID = today ? PlanTime.nextPlanID(PlanFilter.grid(own), now: now) : nil
+        return VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: WidgetLogic.gap) {
+                ForEach(own) { plan in
+                    Button { actions.sheet = .plan(plan) } label: {
+                        PlanRow(plan: plan, current: PlanFilter.isCurrent(plan, now: now), state: PlanTime.state(plan, now: now, nextID: nextID), now: now, timeColumn: 68, actions: actions)
                     }
+                    .buttonStyle(.plain)
+                }
+            }
+            if !tasks.isEmpty {
+                Text("Tasks").font(.caption.weight(.semibold)).foregroundStyle(.inkFaint).padding(.top, 16).padding(.bottom, 4)
+                ForEach(tasks) { task in
+                    ChecklistRow(task: task, done: actions.ticker.isDone(task), now: now) {
+                        actions.ticker.tick(id: task.id, title: task.title, done: !actions.ticker.isDone(task))
+                    } open: { actions.sheet = .task(task) }
                 }
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.bottom, 12)
-    }
-
-    /// The least height of a tile, so its day and two plans always fit.
-    static let minimumTile: CGFloat = 72
-
-    private func tileView(_ day: Date, month: Date, height: CGFloat, plans: [Plan], now: Date) -> some View {
-        let today = Calendar.current.isDate(day, inSameDayAs: now)
-        let inMonth = MonthPaging.isFocused(day, in: month)
-        let (shown, more) = PlanFilter.monthTile(plans, day: day, limit: Self.tilePlans)
-        let badge = lists[TaskLogic.key(day)].map { TaskLogic.monthBadge(actions.ticker.shown($0), on: day) }
-        return VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 2) {
-                    Text(day, format: .dateTime.day())
-                        .font(.caption.weight(today ? .bold : .semibold).monospacedDigit())
-                        .foregroundStyle(today ? Color.sageDeep : .ink)
-                    Spacer(minLength: 0)
-                    if let badge { MonthTaskBadge(badge: badge) }
-                }
-                ForEach(shown) { plan in
-                    if PlanFilter.runsAsBar(plan) {
-                        let edge = PlanFilter.barEdges(plan, day: day)
-                        let look = BarLook(plan)
-                        let shape = UnevenRoundedRectangle(topLeadingRadius: edge.before ? 0 : 5, bottomLeadingRadius: edge.before ? 0 : 5, bottomTrailingRadius: edge.after ? 0 : 5, topTrailingRadius: edge.after ? 0 : 5, style: .continuous)
-                        Text(plan.title)
-                            .font(.system(size: 9.5, weight: .semibold))
-                            .foregroundStyle(look.ink)
-                            .lineLimit(1)
-                            .multilineTextAlignment(.leading)
-                            .padding(.horizontal, 3)
-                            .padding(.vertical, 1)
-                            .frame(maxWidth: .infinity, minHeight: 15, alignment: .leading)
-                            .background(look.fill, in: shape)
-                            .overlay { shape.strokeBorder(look.line, style: StrokeStyle(lineWidth: 0.75, dash: look.dashed ? [3, 2] : [])) }
-                            .padding(.leading, edge.before ? -4 : 0)
-                            .padding(.trailing, edge.after ? -4 : 0)
-                            .accessibilityLabel(plan.title)
-                    } else {
-                        HStack(alignment: .top, spacing: 3) {
-                            Circle().fill(plan.tone).frame(width: 4, height: 4).padding(.top, 3)
-                            Text(plan.title)
-                                .font(.system(size: 9.5, weight: .medium))
-                                .foregroundStyle(plan.declined ? Color.inkMuted : .ink)
-                                .lineLimit(2)
-                                .multilineTextAlignment(.leading)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .opacity(plan.declined ? 0.6 : 1)
-                        .accessibilityLabel(plan.title)
-                    }
-                }
-                if more > 0 {
-                    Button { actions.sheet = .day(day) } label: {
-                        Text("+\(more) more").font(.system(size: 10, weight: .medium)).foregroundStyle(.inkMuted).frame(maxWidth: .infinity, minHeight: 24, alignment: .leading).contentShape(.rect)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("\(more) more on \(day.formatted(.dateTime.weekday(.wide).month().day()))")
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(4)
-            .frame(maxWidth: .infinity, minHeight: height, maxHeight: height, alignment: .topLeading)
-            .background(today ? Color.boneRaised : Color.boneRaised.opacity(0.5), in: .rect(cornerRadius: 10, style: .continuous))
-            .overlay { RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(today ? Color.sageDeep : .rule, lineWidth: today ? 1.5 : 1) }
-            .opacity(inMonth ? 1 : 0.4)
-            .contentShape(.rect)
-            .onTapGesture { openDay(day) }
-            .accessibilityElement(children: .contain)
-            .accessibilityLabel("Show \(day.formatted(.dateTime.weekday(.wide).month().day()))")
-            .accessibilityAddTraits(.isButton)
+        .padding(.horizontal, 20)
+        .padding(.top, 4)
     }
 
     private func load() async {

@@ -59,6 +59,50 @@ struct NasLogEntry: Decodable, Sendable, Hashable {
     let code: String?
     /// The original JSON line, with fields like the agent's message.
     let raw: String
+
+    /// What failed, in words: a request line reads "POST /command failed with 500" from its method, path and status;
+    /// any other line is its own message.
+    var title: String {
+        guard let method = fields["method"] as? String, let path = fields["path"] as? String else { return msg }
+        let status = (fields["status"] as? Int).map { " with \($0)" } ?? ""
+        return "\(method) \(path) failed\(status)"
+    }
+
+    /// The line's own error text and the agent it concerns, when it carries them.
+    var detail: String? {
+        let parts = [fields["error"] as? String ?? fields["err"] as? String, (fields["agent"] ?? fields["agent_id"]) as? String]
+        let shown = parts.compactMap { $0 }.filter { !$0.isEmpty }
+        return shown.isEmpty ? nil : shown.joined(separator: " · ")
+    }
+
+    private var fields: [String: Any] {
+        (try? JSONSerialization.jsonObject(with: Data(raw.utf8))) as? [String: Any] ?? [:]
+    }
+}
+
+/// Identical recent errors folded into one row with how many times they happened.
+struct NasLogGroup: Hashable, Identifiable {
+    /// The newest occurrence.
+    let entry: NasLogEntry
+    let count: Int
+
+    var id: String { "\(entry.service)|\(entry.code ?? "")|\(entry.title)|\(entry.detail ?? "")" }
+
+    /// Groups `entries` (newest first) by module, code, title and detail, keeping the order of first appearance.
+    static func grouped(_ entries: [NasLogEntry]) -> [NasLogGroup] {
+        var order: [String] = []
+        var found: [String: NasLogGroup] = [:]
+        for entry in entries {
+            let key = NasLogGroup(entry: entry, count: 1)
+            if let known = found[key.id] {
+                found[key.id] = NasLogGroup(entry: known.entry, count: known.count + 1)
+            } else {
+                order.append(key.id)
+                found[key.id] = key
+            }
+        }
+        return order.compactMap { found[$0] }
+    }
 }
 
 /// A browser or terminal helper task, from GET /tasks.

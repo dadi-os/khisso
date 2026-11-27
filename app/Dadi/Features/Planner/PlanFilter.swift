@@ -57,10 +57,9 @@ enum PlanFilter {
         plans.filter { overlaps($0, day: day, calendar: calendar) }.sorted { $0.startAt < $1.startAt }
     }
 
-    /// One month tile's plans, all-day ones first: the first `limit` and how many more there are.
-    static func monthTile(_ plans: [Plan], day: Date, limit: Int, calendar: Calendar = .current) -> (shown: [Plan], more: Int) {
-        let own = on(plans, day: day, calendar: calendar).sorted { runsAsBar($0, calendar: calendar) && !runsAsBar($1, calendar: calendar) }
-        return (Array(own.prefix(limit)), max(0, own.count - limit))
+    /// One day's agenda in Month: its plans, all-day ones first, then by start.
+    static func agenda(_ plans: [Plan], day: Date, calendar: Calendar = .current) -> [Plan] {
+        on(plans, day: day, calendar: calendar).sorted { runsAsBar($0, calendar: calendar) && !runsAsBar($1, calendar: calendar) }
     }
 
     /// The first and last of `days` (indexes) a bar plan covers; nil when it touches none of them.

@@ -143,10 +143,10 @@ struct SystemPage: View {
                                             .frame(maxWidth: .infinity, alignment: .leading)
                                     }
                                 }
-                                ForEach(shownErrors, id: \.self) { entry in
-                                    errorRow(entry)
+                                ForEach(shownErrors) { group in
+                                    errorRow(group)
                                         .contextMenu {
-                                            Button { copy(entry.raw) } label: { Label("Copy line", systemImage: "doc.on.doc") }
+                                            Button { copy(group.entry.raw) } label: { Label("Copy line", systemImage: "doc.on.doc") }
                                         }
                                 }
                             }
@@ -191,9 +191,10 @@ struct SystemPage: View {
     }
 
     /// The errors to list: every module's, or the chosen module's.
-    private var shownErrors: [NasLogEntry] {
-        guard let errorsFrom else { return store.errors }
-        return store.errors.filter { $0.service == errorsFrom }
+    private var shownErrors: [NasLogGroup] {
+        let groups = NasLogGroup.grouped(store.errors)
+        guard let errorsFrom else { return groups }
+        return groups.filter { $0.entry.service == errorsFrom }
     }
 
     private func serviceCard(_ service: NasStatus.Service) -> some View {
@@ -240,18 +241,25 @@ struct SystemPage: View {
         .contentShape(.rect)
     }
 
-    private func errorRow(_ entry: NasLogEntry) -> some View {
-        Button { opened = entry } label: {
+    private func errorRow(_ group: NasLogGroup) -> some View {
+        let entry = group.entry
+        return Button { opened = entry } label: {
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
                     Text(entry.service).font(.caption.weight(.bold)).foregroundStyle(.danger)
                     if let code = entry.code {
                         Text(code).font(.caption2.monospaced()).foregroundStyle(.inkMuted)
                     }
+                    if group.count > 1 {
+                        Text("×\(group.count)").font(.caption2.weight(.semibold)).foregroundStyle(.inkMuted)
+                    }
                     Spacer()
                     Text(entry.time, style: .relative).font(.caption2).foregroundStyle(.inkFaint)
                 }
-                Text(entry.msg).font(.footnote).foregroundStyle(.ink).lineLimit(2).multilineTextAlignment(.leading)
+                Text(entry.title).font(.footnote).foregroundStyle(.ink).lineLimit(2).multilineTextAlignment(.leading)
+                if let detail = entry.detail {
+                    Text(detail).font(.caption).foregroundStyle(.inkMuted).lineLimit(2).multilineTextAlignment(.leading)
+                }
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -366,7 +374,7 @@ private struct LogDetail: View {
 
     var body: some View {
         ScrollView {
-            DetailSheet(title: entry.msg, hasRail: false) {
+            DetailSheet(title: entry.title, hasRail: false) {
                 SituationLine(tone: .late, text: "\(entry.service.capitalized) · \(entry.time.formatted(.relative(presentation: .numeric, unitsStyle: .wide)))")
             } facts: {
                 FactRow(label: "Module", value: entry.service.capitalized)

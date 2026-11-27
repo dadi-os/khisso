@@ -93,10 +93,19 @@ struct GharToastTests {
     }
 }
 
-/// The connecting line shows Hath's progress words when it has them.
-struct ConnectingStatusTests {
-    @Test func prefersProgressWordsOverTheDefault() {
-        #expect(ConnectingView.status(detail: "Logging in to your box…") == "Logging in to your box…")
-        #expect(ConnectingView.status(detail: nil) == "Connecting to dadi")
+/// System's recent errors say what failed and fold identical ones.
+struct ErrorGroupTests {
+    private func request(_ status: Int, at seconds: TimeInterval) -> NasLogEntry {
+        NasLogEntry(time: Date(timeIntervalSince1970: seconds), service: "ghar", level: "error", msg: "request", code: nil, raw: #"{"method":"POST","path":"/command","status":\#(status)}"#)
+    }
+
+    @Test func aRequestLineNamesTheRequestAndItsStatus() {
+        #expect(request(500, at: 1).title == "POST /command failed with 500")
+    }
+
+    @Test func identicalErrorsFoldWithACountAndKeepTheNewest() {
+        let groups = NasLogGroup.grouped([request(500, at: 3), request(500, at: 2), request(502, at: 1)])
+        #expect(groups.map(\.count) == [2, 1])
+        #expect(groups[0].entry.time == Date(timeIntervalSince1970: 3))
     }
 }

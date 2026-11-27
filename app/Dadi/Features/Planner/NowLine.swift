@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The current time on today's axis, as thaali draws it: a 2 pt sage-deep line across the day, and a 20 pt-tall
-/// rounded pill with the time (bone text, 11 bold) centred on it in the axis column. No dot, and it takes no touches.
+/// squared label (6 pt corners, 8 pt side padding) with the time (bone text, 11 bold) centred on it in the axis column. No dot, and it takes no touches.
 struct NowLine: View {
     /// The minute after midnight at the top of the axis.
     let origin: Int
@@ -18,7 +18,7 @@ struct NowLine: View {
     /// How visible the line is; the pill stays solid.
     var lineOpacity = 1.0
 
-    private static let pillHeight: CGFloat = 20
+    private static let pillHeight: CGFloat = 24
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 30)) { context in
@@ -30,10 +30,11 @@ struct NowLine: View {
                         .font(.system(size: 11, weight: .bold).monospacedDigit())
                         .foregroundStyle(Color.bone)
                         .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                        .frame(width: axisWidth - 10, height: Self.pillHeight)
-                        .background(Color.sageDeep, in: .capsule)
-                        .offset(x: 2, y: -(Self.pillHeight / 2 - 1))
+                        .padding(.horizontal, 8)
+                        .frame(minWidth: axisWidth - 8, minHeight: Self.pillHeight, maxHeight: Self.pillHeight)
+                        .background(Color.sageDeep, in: .rect(cornerRadius: 6))
+                        .fixedSize()
+                        .offset(x: 4, y: -(Self.pillHeight / 2 - 1))
                 }
                 .offset(y: inset + CGFloat(minute - origin) * scale)
                 .allowsHitTesting(false)

@@ -26,7 +26,6 @@ struct ChatsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                search
                 if filter != .all {
                     Button { filter = .all } label: {
                         Label("Showing \(filter.rawValue.lowercased()) chats. Show all", systemImage: "line.3.horizontal.decrease")
@@ -74,7 +73,7 @@ struct ChatsView: View {
             }
             .padding(.horizontal, 16)
             .padding(.top, 4)
-            .padding(.bottom, 200)
+            .padding(.bottom, 16)
             .frame(maxWidth: 680)
             .frame(maxWidth: .infinity)
         }
@@ -82,6 +81,14 @@ struct ChatsView: View {
         .scrollEdgeEffectHidden(true, for: .all)
         .scrollEdge(.top, size: ScrollEdge.listTop)
         .scrollEdge(.bottom, size: ScrollEdge.listBottom)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            search
+                .padding(.horizontal, 16)
+                .padding(.top, 4)
+                .padding(.bottom, 10)
+                .frame(maxWidth: 680)
+                .frame(maxWidth: .infinity)
+        }
         .animation(Motion.settle, value: days.map(\.id))
         .animation(Motion.snap, value: filter)
     }

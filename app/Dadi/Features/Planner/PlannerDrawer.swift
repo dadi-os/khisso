@@ -6,9 +6,9 @@ struct NowNext: Equatable {
     let next: Plan?
 }
 
-/// The Planner's drawer, its control centre: what is on now and next, the page (Timeline or Checklist) with the
-/// timeline's Day, Week and Month under Timeline, a jump to today, a month to jump to a date (a dot under each day with
-/// plans) and Someday with its true count.
+/// The Planner's drawer: what is on now and next as two quiet lines, the page (Timeline or Checklist), a month to jump
+/// to a date (a dot under each day with plans, a Today button) and Someday with its true count. The timeline's Day,
+/// Week and Month are chosen in the top bar. Sections are set apart by space, not by cards or headings.
 struct PlannerDrawer: View {
     let yaad: YaadClient
     let route: PlannerRoute
@@ -49,13 +49,6 @@ struct PlannerDrawer: View {
         return next
     }
 
-    /// `route` after Ankur picks a timeline view.
-    static func picking(_ mode: PlannerMode, from route: PlannerRoute) -> PlannerRoute {
-        var next = route
-        next.show(mode)
-        return next
-    }
-
     /// `route` after Ankur picks `day` on the month: the Day view on that day, whatever the page was.
     static func picking(day: Date, from route: PlannerRoute, calendar: Calendar = .current) -> PlannerRoute {
         var next = route
@@ -77,14 +70,14 @@ struct PlannerDrawer: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
+        VStack(alignment: .leading, spacing: 32) {
             FeedBanner(online: online, error: error, readAt: readAt)
             glance
             pages
-            jump
+            calendar
             someday
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, 16)
         .animation(Motion.snap, value: route.section)
         .plannerSheets(actions: actions, yaad: yaad)
         .task(id: Reload(month: month, change: live?.yaad ?? 0)) { await load() }
@@ -98,13 +91,12 @@ struct PlannerDrawer: View {
             let glance = Self.nowNext(actions.shown(todayPlans), now: context.date)
             Button { choose(Self.picking(day: .now, from: route)) } label: {
                 VStack(alignment: .leading, spacing: 12) {
-                    glanceRow("Now", plan: glance.current, detail: glance.current.map { PlanTime.status($0, now: context.date, state: .now) }, empty: "Nothing on now", dot: .sageDeep)
-                    glanceRow("Next", plan: glance.next, detail: glance.next.map { PlanTime.status($0, now: context.date, state: .next) }, empty: "Nothing else today", dot: .tide)
+                    glanceRow("Now", plan: glance.current, detail: glance.current.map { PlanTime.status($0, now: context.date, state: .now) }, empty: "Nothing on now")
+                    glanceRow("Next", plan: glance.next, detail: glance.next.map { PlanTime.status($0, now: context.date, state: .next) }, empty: "Nothing else today")
                 }
-                .padding(14)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.sage.opacity(0.14), in: .rect(cornerRadius: 16, style: .continuous))
-                .contentShape(.rect(cornerRadius: 16))
+                .padding(.horizontal, 8)
+                .contentShape(.rect)
             }
             .buttonStyle(.plain)
             .opacity(online ? 1 : 0.6)
@@ -112,16 +104,13 @@ struct PlannerDrawer: View {
         }
     }
 
-    private func glanceRow(_ label: String, plan: Plan?, detail: String?, empty: String, dot: Color) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            heading(label)
+    private func glanceRow(_ label: String, plan: Plan?, detail: String?, empty: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(label).font(.caption.weight(.medium)).foregroundStyle(.inkFaint).frame(width: 36, alignment: .leading)
             if let plan, let detail {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Circle().fill(dot).frame(width: 7, height: 7)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(plan.title).font(.subheadline.weight(.semibold)).foregroundStyle(.ink).lineLimit(2).multilineTextAlignment(.leading)
-                        Text(detail).font(.caption).foregroundStyle(.inkMuted)
-                    }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(plan.title).font(.subheadline.weight(.medium)).foregroundStyle(.ink).lineLimit(1)
+                    Text(detail).font(.caption).foregroundStyle(.inkMuted).lineLimit(1)
                 }
             } else {
                 Text(empty).font(.subheadline).foregroundStyle(.inkMuted)
@@ -131,32 +120,21 @@ struct PlannerDrawer: View {
 
     private var pages: some View {
         VStack(alignment: .leading, spacing: 4) {
-            heading("Page").padding(.horizontal, 6).padding(.bottom, 4)
             ForEach(PlannerSection.allCases, id: \.self) { section in
                 row(section.rawValue, symbol: section.symbol, current: route.section == section) { choose(Self.picking(section, from: route)) }
-                if section == .timeline && route.section == .timeline {
-                    Picker("View", selection: Binding(get: { route.mode }, set: { choose(Self.picking($0, from: route)) })) {
-                        ForEach(PlannerMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                    .padding(.horizontal, 6)
-                    .padding(.bottom, 8)
-                    .transition(.opacity)
-                }
             }
         }
     }
 
-    private var jump: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            heading("Jump to").padding(.horizontal, 6).padding(.bottom, 4)
-            row("Today", symbol: "scope", detail: Date.now.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()), current: route.isRoot()) { choose(PlannerRoute()) }
-            MiniCalendar(month: $month, marked: MiniCalendar.marks(actions.shown(monthPlans), days: PlannerLayout.monthGrid(month)), selected: Self.selectedDay(route)) { day in
-                choose(Self.picking(day: day, from: route))
-            }
-            .padding(.horizontal, 6)
-            .opacity(online ? 1 : 0.6)
-        }
+    private var calendar: some View {
+        MiniCalendar(month: $month, marked: MiniCalendar.marks(actions.shown(monthPlans), days: PlannerLayout.monthGrid(month)), selected: Self.selectedDay(route), pick: { day in
+            choose(Self.picking(day: day, from: route))
+        }, today: {
+            month = MonthPaging.first(of: .now)
+            choose(PlannerRoute())
+        })
+        .padding(.horizontal, 8)
+        .opacity(online ? 1 : 0.6)
     }
 
     private var someday: some View {
@@ -167,28 +145,23 @@ struct PlannerDrawer: View {
         .accessibilityLabel("Someday\(somedayCount.map { ", \($0)" } ?? "")")
     }
 
-    private func heading(_ text: String) -> some View {
-        Text(text.uppercased()).font(.caption2.weight(.semibold)).tracking(1.4).foregroundStyle(.inkFaint)
-    }
-
-    private func row(_ title: String, symbol: String, detail: String? = nil, current: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) { rowLabel(title, symbol: symbol, detail: detail, current: current) }
+    private func row(_ title: String, symbol: String, current: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) { rowLabel(title, symbol: symbol, detail: nil, current: current) }
             .buttonStyle(.plain)
+            .accessibilityAddTraits(current ? .isSelected : [])
     }
 
-    /// A drawer row as the other tabs draw it: a symbol, a title and a trailing value, lit sage while it is the page shown.
+    /// A drawer row: a symbol, a title and a trailing value; the page shown is set apart by sage and weight, not a fill.
     private func rowLabel(_ title: String, symbol: String, detail: String?, current: Bool) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: symbol).font(.system(size: 14, weight: .semibold)).foregroundStyle(.sageDeep).frame(width: 22)
-            Text(title).font(.subheadline.weight(.medium)).foregroundStyle(.ink).lineLimit(1)
+            Image(systemName: symbol).font(.system(size: 15, weight: .medium)).foregroundStyle(current ? Color.sageDeep : .inkMuted).frame(width: 24)
+            Text(title).font(.body.weight(current ? .semibold : .regular)).foregroundStyle(.ink).lineLimit(1)
             Spacer()
-            if let detail { Text(detail).font(.footnote.monospacedDigit()).foregroundStyle(.inkMuted).contentTransition(.numericText()) }
+            if let detail { Text(detail).font(.subheadline.monospacedDigit()).foregroundStyle(.inkMuted).contentTransition(.numericText()) }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 8)
         .frame(minHeight: 44)
-        .background(current ? Color.sage.opacity(0.16) : .clear, in: .rect(cornerRadius: 14, style: .continuous))
-        .contentShape(.rect(cornerRadius: 14))
+        .contentShape(.rect)
         .animation(Motion.snap, value: current)
     }
 

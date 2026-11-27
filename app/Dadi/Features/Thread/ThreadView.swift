@@ -27,13 +27,15 @@ struct ThreadView: View {
     let connections: Int
     /// The thread's draft, which its composer writes into.
     let draft: ThreadDraft
+    /// The messages Home read before opening the thread, shown from the first frame; nil when it has none.
+    let history: [DurableMessage]?
     /// Ankur has seen the thread through this message.
     let read: (Int) -> Void
     /// Opens the agent's sheet, where its activity is.
     let details: () -> Void
 
-    @State private var messages: [DurableMessage] = []
-    @State private var loaded = false
+    @State private var messages: [DurableMessage]
+    @State private var loaded: Bool
     @State private var loadError: String?
     @State private var quoted = 0
     @State private var received = 0
@@ -43,10 +45,29 @@ struct ThreadView: View {
     @State private var awayFromBottom = false
     /// What the agent's newest message leaves open, for the tag on that message.
     @State private var standing: Standing?
+    /// The message a tapped reply quote led to, shown briefly so the eye finds it.
+    @State private var highlighted: Int?
     /// Whether the composer's field has the keyboard.
     @FocusState private var focused: Bool
     /// The camera the composer's plus opens, prepared ahead.
     @State private var camera = CameraModel()
+
+    init(hath: HathClient, nas: NasClient, agentId: String, name: String, live: HathEvent?, running: AgentRecord.Running, counts: WakeCounts?, connections: Int, draft: ThreadDraft, history: [DurableMessage]?, read: @escaping (Int) -> Void, details: @escaping () -> Void) {
+        self.hath = hath
+        self.nas = nas
+        self.agentId = agentId
+        self.name = name
+        self.live = live
+        self.running = running
+        self.counts = counts
+        self.connections = connections
+        self.draft = draft
+        self.history = history
+        self.read = read
+        self.details = details
+        _messages = State(initialValue: history ?? [])
+        _loaded = State(initialValue: history != nil)
+    }
 
     /// What makes the standing read again: a reconnect, a new message, or the agent starting or ending a wake.
     private struct StandingKey: Hashable {
@@ -82,7 +103,15 @@ struct ThreadView: View {
                         DayMark(date: message.createdAt)
                     }
                     bubble(message, opensGroup: previous.map { $0.fromUser != message.fromUser } ?? true)
-                        .modifier(QuoteSwipe(enabled: true, fromUser: message.fromUser) { reply(to: message) })
+                        .id(message.seq)
+                        .background {
+                            if highlighted == message.seq {
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .fill(Color.sage.opacity(0.2))
+                                    .padding(.horizontal, -6)
+                                    .transition(.opacity)
+                            }
+                        }
                         .transition(.asymmetric(insertion: .move(edge: .bottom).combined(with: .opacity).combined(with: .scale(scale: 0.96, anchor: message.fromUser ? .bottomTrailing : .bottomLeading)), removal: .opacity))
                 }
                 Color.clear
@@ -91,16 +120,17 @@ struct ThreadView: View {
                         awayFromBottom = !visible
                     }
             }
+            .scrollTargetLayout()
             .padding(.horizontal, 18)
             .padding(.top, 12)
             .frame(maxWidth: 760)
             .frame(maxWidth: .infinity)
-            .animation(Motion.settle, value: messages)
+            .animation(loaded ? Motion.settle : nil, value: messages)
         }
         .defaultScrollAnchor(.bottom)
         .scrollPosition($position)
         .scrollDismissesKeyboard(.interactively)
-        .simultaneousGesture(focused ? TapGesture().onEnded { focused = false } : nil)
+        .simultaneousGesture(draft.focusing ? TapGesture().onEnded { draft.focusing = false } : nil)
         .scrollEdgeEffectHidden(true, for: .bottom)
         .scrollEdgeEffectHidden(true, for: .top)
         .scrollEdge(.top, size: ScrollEdge.threadTop)
@@ -152,8 +182,13 @@ struct ThreadView: View {
                     viewfinder
                         .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
-                ThreadComposerBar(name: name, draft: draft, focus: $focused) { draft.send(hath, nas: nas, to: agentId) }
+                if draft.focusing {
+                    ThreadComposerBar(name: name, draft: draft, focus: $focused) { draft.send(hath, nas: nas, to: agentId) }
+                        .onAppear { focused = true }
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                }
             }
+            .animation(Motion.snap, value: draft.focusing)
             .animation(Motion.settle, value: draft.files)
             .animation(Motion.settle, value: draft.attaching)
             .padding(.horizontal, 16)
@@ -174,10 +209,11 @@ struct ThreadView: View {
             standing = try? await Standing.read(hath: hath, agentId: agentId)
         }
         .onChange(of: live) { _, event in
-            guard case .message(let id, let message)? = event, id == agentId else { return }
+            guard case .message(let id, let message)? = event, id == agentId, message.inHumanThread else { return }
             if insert(message), !message.fromUser { received += 1 }
             read(message.seq)
         }
+        .onChange(of: focused) { _, has in if !has { draft.focusing = false } }
         .onChange(of: draft.delivered) { _, message in
             if let message { insert(message) }
         }
@@ -199,7 +235,7 @@ struct ThreadView: View {
     private func actions(_ message: DurableMessage) -> some View {
         Button { UIPasteboard.general.string = plainText(message.content) } label: { Label("Copy", systemImage: "doc.on.doc") }
         Button { UIPasteboard.general.string = message.content } label: { Label("Copy as Markdown", systemImage: "doc.on.doc.fill") }
-        Button { reply(to: message) } label: { Label("Reply with quote", systemImage: "arrowshape.turn.up.left") }
+        Button { reply(to: message) } label: { Label("Reply", systemImage: "arrowshape.turn.up.left") }
         ShareLink(item: message.content) { Label("Share", systemImage: "square.and.arrow.up") }
         if !message.fromUser {
             Button(action: details) { Label("Show activity", systemImage: "clock.arrow.circlepath") }
@@ -209,21 +245,29 @@ struct ThreadView: View {
     @ViewBuilder
     private func bubble(_ message: DurableMessage, opensGroup: Bool) -> some View {
         if message.fromUser {
-            let opening = BoxLink.leading(in: message.content)
+            let parts = ReplyQuote(message.content)
+            let opening = BoxLink.leading(in: parts.body)
             VStack(alignment: .trailing, spacing: 6) {
                 ForEach(Array(opening.links.enumerated()), id: \.offset) { _, link in
                     FileChip(link: link) { Text(link.name).font(.footnote.weight(.medium)).foregroundStyle(.ink).lineLimit(1) }
                 }
-                if !opening.rest.isEmpty {
-                    Text(InlineMarkdown.attributed(opening.rest))
-                        .font(.body)
-                        .foregroundStyle(.bone)
-                        .tint(.bone)
-                        .padding(.horizontal, 15)
-                        .padding(.vertical, 10)
-                        .background(.sageDeep, in: .rect(cornerRadius: 20, style: .continuous))
-                        .contentShape(.contextMenuPreview, .rect(cornerRadius: 20, style: .continuous))
-                        .contextMenu { actions(message) }
+                if parts.quote != nil || !opening.rest.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        if let quote = parts.quote {
+                            ReplyQuoteBlock(text: quote, onSage: true) { reveal(quote, before: message.seq) }
+                        }
+                        if !opening.rest.isEmpty {
+                            Text(InlineMarkdown.attributed(opening.rest))
+                                .font(.body)
+                                .foregroundStyle(.bone)
+                                .tint(.bone)
+                        }
+                    }
+                    .padding(.horizontal, 15)
+                    .padding(.vertical, 10)
+                    .background(.sageDeep, in: .rect(cornerRadius: 20, style: .continuous))
+                    .contentShape(.contextMenuPreview, .rect(cornerRadius: 20, style: .continuous))
+                    .contextMenu { actions(message) }
                 }
                 time(message)
             }
@@ -271,7 +315,10 @@ struct ThreadView: View {
 
     private func load() async {
         do {
-            messages = try await hath.messages(agentId: agentId).filter { $0.kind != .notice && $0.kind != .utterance }
+            let shown = try await hath.messages(agentId: agentId).shown
+            var quiet = Transaction()
+            quiet.disablesAnimations = !loaded
+            withTransaction(quiet) { messages = shown }
             loadError = nil
             if let newest = messages.last { read(newest.seq) }
         } catch is CancellationError {
@@ -291,11 +338,26 @@ struct ThreadView: View {
         return true
     }
 
+    /// Scrolls to the message `quote` was taken from, the nearest one before `seq`, and marks it for a moment. The quote carries
+    /// no id, so it is matched by its opening words; nothing happens when that message is not in the loaded history.
+    private func reveal(_ quote: String, before seq: Int) {
+        let opening = quote.hasSuffix("\u{2026}") ? String(quote.dropLast()) : quote
+        guard let original = messages.last(where: { $0.seq < seq && plainText($0.content).hasPrefix(opening) }) else { return }
+        withAnimation(Motion.settle) {
+            position.scrollTo(id: original.seq, anchor: .center)
+            highlighted = original.seq
+        }
+        Task {
+            do { try await Task.sleep(for: .seconds(1.4)) } catch { return }
+            withAnimation(Motion.settle) { highlighted = nil }
+        }
+    }
+
     /// Quotes `message` over the composer.
     private func reply(to message: DurableMessage) {
         quoted += 1
         withAnimation(Motion.snap) { draft.reply(to: message) }
-        focused = true
+        draft.focusing = true
     }
 }
 
@@ -317,6 +379,38 @@ private struct DayMark: View {
         if calendar.isDateInToday(date) { return "Today" }
         if calendar.isDateInYesterday(date) { return "Yesterday" }
         return date.formatted(.dateTime.weekday(.wide).month(.abbreviated).day())
+    }
+}
+
+/// A reply's quote at the top of its bubble: the arrow, then the quoted words in two lines. Tapping it goes to the
+/// original message.
+struct ReplyQuoteBlock: View {
+    let text: String
+    /// True on Ankur's sage bubble, where it reads in bone.
+    let onSage: Bool
+    let open: () -> Void
+
+    var body: some View {
+        Button(action: open) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "arrowshape.turn.up.left.fill")
+                    .font(.caption.weight(.semibold))
+                    .padding(.top, 2)
+                Text(text)
+                    .font(.footnote)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+            }
+            .foregroundStyle(onSage ? Color.bone.opacity(0.85) : .inkMuted)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background((onSage ? Color.bone : .sage).opacity(onSage ? 0.14 : 0.1), in: .rect(cornerRadius: 12, style: .continuous))
+            .contentShape(.rect(cornerRadius: 12, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Reply to: \(text)")
+        .accessibilityHint("Goes to the original message")
     }
 }
 
@@ -359,58 +453,14 @@ struct QuoteCard: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
         .frame(maxWidth: 680)
+        .frostedBacking(.rect(cornerRadius: 18, style: .continuous))
         .glassEffect(.regular.tint(Color.bone.opacity(0.5)), in: .rect(cornerRadius: 18, style: .continuous))
     }
 
     /// `content`'s opening as a markdown blockquote, ahead of a reply.
-    static func blockquote(_ content: String) -> String {
+    nonisolated static func blockquote(_ content: String) -> String {
         let text = content.count > quotedCharacters ? String(content.prefix(quotedCharacters)) + "…" : content
         return text.split(separator: "\n", omittingEmptySubsequences: false).map { "> \($0)" }.joined(separator: "\n") + "\n\n"
-    }
-}
-
-/// Swiping a message right to quote it: the message follows the finger with
-/// a reply arrow growing in behind it, and letting go past the mark quotes
-/// it. A vertical scroll is left alone.
-private struct QuoteSwipe: ViewModifier {
-    let enabled: Bool
-    /// Ankur's own bubbles sit on the right, so their arrow shows at their left edge.
-    let fromUser: Bool
-    let quote: () -> Void
-
-    @State private var offset: CGFloat = 0
-
-    /// How far the message travels before letting go quotes it.
-    private let reach: CGFloat = 64
-
-    func body(content: Content) -> some View {
-        content
-            .offset(x: offset)
-            .background(alignment: fromUser ? .center : .leading) {
-                if offset > 0 {
-                    Image(systemName: "arrowshape.turn.up.left.fill")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(offset >= reach ? Color.bone : .sageText)
-                        .frame(width: 32, height: 32)
-                        .background(offset >= reach ? Color.sageDeep : .sage.opacity(0.16), in: .circle)
-                        .scaleEffect(0.5 + 0.5 * min(1, offset / reach))
-                        .opacity(min(1, offset / (reach * 0.6)))
-                        .animation(Motion.snap, value: offset >= reach)
-                        .padding(.leading, fromUser ? 0 : 4)
-                }
-            }
-            .gesture(
-                DragGesture(minimumDistance: 18)
-                    .onChanged { drag in
-                        guard enabled, drag.translation.width > 0, abs(drag.translation.width) > abs(drag.translation.height) * 1.4 else { return }
-                        offset = min(reach * 1.4, drag.translation.width * 0.7)
-                    }
-                    .onEnded { _ in
-                        if offset >= reach { quote() }
-                        withAnimation(.spring(response: 0.36, dampingFraction: 0.78)) { offset = 0 }
-                    }
-            )
-            .sensoryFeedback(.selection, trigger: offset >= reach)
     }
 }
 
@@ -427,4 +477,9 @@ func plainText(_ markdown: String) -> String {
         .replacing(/`([^`\n]+)`/) { String($0.output.1) }
         .replacing(/\n{3,}/, with: "\n\n")
         .trimmingCharacters(in: .whitespacesAndNewlines)
+}
+
+extension Array where Element == DurableMessage {
+    /// The messages a thread shows: no notices or utterances.
+    var shown: [DurableMessage] { filter { $0.kind != .notice && $0.kind != .utterance } }
 }

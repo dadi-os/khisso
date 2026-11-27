@@ -172,6 +172,16 @@ final class HomeStore {
         }
     }
 
+    /// Each agent's messages as last read, so a thread opens already laid out instead of filling in during its push.
+    private(set) var history: [String: [DurableMessage]] = [:]
+
+    /// Reads `agentId`'s messages ahead of its thread opening. A failure is left to the thread, which reads again and shows why.
+    func preloadThread(_ hath: HathClient, agentId: String) async {
+        if let messages = try? await hath.messages(agentId: agentId) {
+            history[agentId] = messages.shown
+        }
+    }
+
     /// Loads every thread.
     func load(_ hath: HathClient) async {
         do {

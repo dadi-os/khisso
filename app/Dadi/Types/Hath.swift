@@ -68,6 +68,9 @@ struct DurableMessage: Decodable, Sendable, Hashable, Identifiable {
 
     var id: Int { seq }
     var fromUser: Bool { fromAgentId == nil }
+    /// Whether it is between Ankur and an agent (exactly one party is nil), as Hath's thread and read marks count it.
+    /// The event stream also carries agent-to-agent messages, whose seq Hath refuses as a read mark.
+    var inHumanThread: Bool { (fromAgentId == nil) != (toAgentId == nil) }
 }
 
 extension DurableMessage {

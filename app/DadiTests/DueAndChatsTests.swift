@@ -52,12 +52,11 @@ import Testing
         for page in [HomeView.Page.dadi, .planner, .ghar, .chaavi, .system] {
             #expect(DockPresentation.of(page: page) == .dadi)
         }
-        #expect(DockPresentation.dadi.showsAccessory)
     }
 
-    @Test func anOpenThreadCarriesItsOwnComposerSoTheDockAccessoryStepsAside() {
-        #expect(DockPresentation.of(page: .thread("career")) == .none)
-        #expect(!DockPresentation.none.showsAccessory)
+    @Test func anOpenThreadPutsItsOwnComposerInTheDockAccessory() {
+        #expect(DockPresentation.of(page: .thread("career")) == .thread("career"))
+        #expect(DockPresentation.of(page: .thread("health")) != .thread("career"))
     }
 
     @Test func aDraftSendsWithWordsOrFilesAndNotWhileOneIsGoing() {
@@ -86,7 +85,8 @@ import Testing
 /// Someday opens over the Day view, and the thread's status pill stays large.
 @Suite struct SomedayAndPillTests {
     @Test func somedayIsNotAViewSoOpeningItLeavesTheViewsAlone() {
-        #expect(PlannerMode.allCases == [.day, .week, .month])
+        #expect(PlannerMode.allCases == [.day, .month])
+        #expect(PlannerMode(rawValue: "Week") == nil)
         #expect(!PlannerMode.allCases.map(\.rawValue).contains("Someday"))
     }
 

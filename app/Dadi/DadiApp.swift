@@ -5,6 +5,7 @@ import SwiftUI
 /// relays for the watch app.
 @main
 struct DadiApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @State private var connection: Connection
     @State private var relay: WatchRelay
     @Environment(\.scenePhase) private var scenePhase

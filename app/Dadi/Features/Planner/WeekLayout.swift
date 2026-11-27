@@ -3,12 +3,12 @@ import SwiftUI
 /// Every measure of the Week view, in points on a 4 pt base. Gaps come only from `gaps`; the tests keep it so.
 enum WeekMetrics {
     static let cardPad: CGFloat = 12
-    static let axis: CGFloat = 56
+    static let axis: CGFloat = 48
     static let gutter: CGFloat = 12
-    static let headerTop: CGFloat = 12
-    static let bubble: CGFloat = 28
+    static let headerTop: CGFloat = 4
+    static let dayHead: CGFloat = 44
     static let bubbleGap: CGFloat = 8
-    static let barRow: CGFloat = 24
+    static let barRow: CGFloat = 32
     static let barGap: CGFloat = 4
     static let maxBarRows = 2
     static let moreRow: CGFloat = 24
@@ -27,11 +27,9 @@ enum WeekMetrics {
     static let blockPadShort: CGFloat = 4
     static let timeLineMinHeight: CGFloat = 52
     static let captionMinHeight: CGFloat = 68
-    static let barRadius: CGFloat = 8
-    static let barSquare: CGFloat = 2
     static let barMargin: CGFloat = 8
     static let todayRadius: CGFloat = 16
-    static let nowPill = CGSize(width: 56, height: 20)
+    static let nowPill = CGSize(width: 48, height: 20)
     static let nowHides: CGFloat = 28
     static let fade: CGFloat = 24
     static let dot: CGFloat = 6
@@ -45,44 +43,22 @@ enum WeekMetrics {
     /// Points per minute.
     static var scale: CGFloat { hour / 60 }
 
-    /// The pinned header's height: 12 top, the 28 bubble row, then 8 and the bar rows (24 each, 4 between) when
+    /// The pinned header's height: 4 top, the 44 day-heading row, then 8 and the bar rows (24 each, 4 between) when
     /// there are any, a 24 row for "+N more" 4 under them when bars overflow, and 12 above the first hour line.
     static func headerHeight(rows: Int, overflow: Bool) -> CGFloat {
         let shown = min(rows, maxBarRows)
-        var height = headerTop + bubble
+        var height = headerTop + dayHead
         if shown > 0 { height += bubbleGap + CGFloat(shown) * barRow + CGFloat(shown - 1) * barGap }
         if overflow { height += barGap + moreRow }
         return height + headerBottom
     }
 
-    /// How many day columns the week shows at once; it pages one day at a time.
-    static let visibleDays = 3
+    /// The day columns the week shows, all at once.
     static let days = 7
 
-    /// The width of one day column: the room beside the axis shared by `visibleDays`, whole points.
+    /// The width of one day column: the room beside the axis shared by the seven days, whole points.
     static func column(pageWidth: CGFloat) -> CGFloat {
-        ((pageWidth - cardPad * 2 - axis - gutter) / CGFloat(visibleDays)).rounded(.down)
-    }
-
-    /// The horizontal offset the days settle on: a whole number of columns, from the first day to the last window of
-    /// `visibleDays`.
-    static func snappedOffset(_ offset: CGFloat, column: CGFloat) -> CGFloat {
-        let last = CGFloat(days - visibleDays)
-        return min(last, max(0, (offset / column).rounded())) * column
-    }
-
-    /// The offset that shows day `index` first, kept inside the week so the last window stays full.
-    static func offset(showing index: Int, column: CGFloat) -> CGFloat {
-        snappedOffset(CGFloat(index) * column, column: column)
-    }
-
-    /// What a day bubble shows at a column width.
-    enum Tier: Equatable {
-        case full, noCount, letter
-    }
-
-    static func tier(column: CGFloat) -> Tier {
-        column < 88 ? .letter : column < 120 ? .noCount : .full
+        ((pageWidth - cardPad * 2 - axis - gutter) / CGFloat(days)).rounded(.down)
     }
 
     /// The minute at the top of the hours when the week opens: the hour before the earliest plan of the week, or before

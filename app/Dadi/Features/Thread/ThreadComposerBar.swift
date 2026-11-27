@@ -7,7 +7,7 @@ import SwiftUI
 struct ThreadComposerBar: View {
     let name: String
     let draft: ThreadDraft
-    /// Whether the field has the keyboard, which the thread owns so it can ask for it.
+    /// Whether the field has the keyboard.
     var focus: FocusState<Bool>.Binding
     /// Sends the draft to the agent.
     let send: () -> Void
@@ -33,6 +33,7 @@ struct ThreadComposerBar: View {
         .padding(.horizontal, 6)
         .padding(.vertical, 4)
         .frame(maxWidth: .infinity, minHeight: 44)
+        .frostedBacking(.rect(cornerRadius: 24, style: .continuous))
         .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 24, style: .continuous))
         .animation(Motion.snap, value: draft.canSend || draft.sending)
     }

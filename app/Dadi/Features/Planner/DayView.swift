@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-/// One day of the Planner: the day's title (tap it for today) over its date, the week strip, the
+/// One day of the Planner: the week strip (its title and date are the top bar's label), the
 /// all-day band, and the full-height hour grid of the whole day, 12 AM to 12 AM, scrolling as a fixed layer with
 /// the plans overlaid; the Checklist stands pinned under it as a panel with its own scroll. Today opens at the hour
 /// 45 minutes before now or the next plan and carries the Now line, with a quiet "Now ↓" control when the line is
@@ -53,36 +53,19 @@ struct DayView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            VStack(spacing: 8) {
-                header
-                WeekStrip(day: day, select: go(to:))
-            }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 8)
+            WeekStrip(day: day, select: go(to:))
+                .padding(.horizontal, 20)
+                .padding(.bottom, 8)
             timeline
                 .frame(maxHeight: .infinity)
         }
+        .preference(key: PlannerLabelKey.self, value: "\(title) · \(day.formatted(.dateTime.month(.abbreviated).day()))")
+        .sensoryFeedback(.selection, trigger: day)
         .task(id: Reload(day: day, change: live?.yaad ?? 0, retry: retries)) { await load() }
         .onChange(of: scrollNow) {
             go(to: .now)
             nudge += 1
         }
-    }
-
-    /// The day's title over its date; tapping it jumps to today.
-    private var header: some View {
-        Button { go(to: .now) } label: {
-            VStack(spacing: 1) {
-                Text(title).font(.title3.weight(.semibold)).foregroundStyle(.ink)
-                Text(day, format: .dateTime.month(.wide).day()).font(.footnote).foregroundStyle(.inkMuted)
-            }
-            .frame(maxWidth: .infinity)
-            .contentTransition(.opacity)
-            .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .accessibilityHint("Jumps to today")
-        .sensoryFeedback(.selection, trigger: day)
     }
 
     private var title: String {
@@ -125,15 +108,6 @@ struct DayView: View {
                     .padding(.horizontal, 20)
                 grid
                     .opacity(online ? 1 : 0.6)
-                    .overlay {
-                        if !plans.contains(where: { PlanFilter.overlaps($0, day: day) }) {
-                            EmptyState(title: "No plans today", detail: "Plans appear here as agents schedule them.")
-                                .padding(.vertical, 18)
-                                .background(Color.bone.opacity(0.94), in: .rect(cornerRadius: 22, style: .continuous))
-                                .padding(.horizontal, 20)
-                                .allowsHitTesting(false)
-                        }
-                    }
             }
             .offset(x: drift)
             .contentShape(.rect)

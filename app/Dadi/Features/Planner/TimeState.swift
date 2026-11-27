@@ -87,16 +87,4 @@ enum PlanTime {
         if left <= 0 { return TaskStatus(label: "Past due by \(Phrase.coarse(left))", tone: .late) }
         return TaskStatus(label: "Closes \(Phrase.moment(close, now: now, calendar: calendar)) · \(Phrase.inPhrase(left))", tone: left < 6 * 3600 ? .soon : .open)
     }
-
-    /// One true line about a week or a month: its plans and the busiest day with that day's count.
-    static func periodSummary(_ plans: [Plan], days: [Date], noun: String, calendar: Calendar = .current) -> String {
-        let counted = plans.filter { !$0.declined && !$0.allDay }
-        guard !counted.isEmpty, !days.isEmpty else { return "Nothing planned this \(noun)" }
-        let perDay = days.map { day in (day: day, n: counted.filter { calendar.isDate($0.startAt, inSameDayAs: day) }.count) }
-        let busiest = perDay.reduce(perDay[0]) { $1.n > $0.n ? $1 : $0 }
-        let locale = calendar.locale ?? .current
-        let style = Date.FormatStyle(locale: locale, calendar: calendar, timeZone: calendar.timeZone)
-        let name = noun == "month" ? busiest.day.formatted(style.weekday(.wide).month(.abbreviated).day()) : busiest.day.formatted(style.weekday(.wide))
-        return "\(counted.count) \(counted.count == 1 ? "plan" : "plans") this \(noun) · busiest \(name) with \(busiest.n)"
-    }
 }

@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// A compact month for jumping to a date: whole weeks from Monday with the neighbouring months' days dimmed, today
-/// ringed, the chosen day filled and a small dot under each day that has plans. A tap on any day picks it.
+/// A compact month for jumping to a date, with a Today button: whole weeks from Monday with the neighbouring months'
+/// days dimmed, today ringed, the chosen day filled and a small dot under each day that has plans. A tap on any day picks it.
 struct MiniCalendar: View {
     /// The first day of the month shown.
     @Binding var month: Date
@@ -11,6 +11,8 @@ struct MiniCalendar: View {
     let selected: Date?
     /// Picks `day`.
     let pick: (Date) -> Void
+    /// Goes back to today.
+    let today: () -> Void
 
     /// The height of a day's cell.
     static let cell: CGFloat = 40
@@ -30,6 +32,10 @@ struct MiniCalendar: View {
                     .foregroundStyle(.ink)
                     .contentTransition(.opacity)
                 Spacer()
+                Button(action: today) {
+                    Text("Today").font(.subheadline.weight(.medium)).foregroundStyle(.sageDeep).padding(.horizontal, 8).frame(minHeight: 44).contentShape(.rect)
+                }
+                .buttonStyle(.plain)
                 step("chevron.left", label: "Previous month", by: -1)
                 step("chevron.right", label: "Next month", by: 1)
             }
