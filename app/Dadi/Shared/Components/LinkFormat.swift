@@ -44,7 +44,7 @@ enum LinkFormat {
         text.trimmingCharacters(in: .whitespaces).isEmpty || isBare(text, url: url) ? bareLabel(url) : text
     }
 
-    private static let pattern = try! NSRegularExpression(pattern: #"\[([^\]\n]*)\]\(([^)\s]+)\)|<(https?://[^>\s]+)>|(https?://[^\s<>()\[\]`]+)"#)
+    private static let pattern = try! NSRegularExpression(pattern: #"\[([^\]\n]*)\]\(((?:[^()\s]|\([^()\s]*\))+)\)|<(https?://[^>\s]+)>|(https?://[^\s<>()\[\]`]+)"#)
 
     /// `markdown` with every link in the form the renderer draws: a bare URL becomes a link labelled by its host and
     /// path, a link whose text is only its URL takes that label, and a link to anything but http(s) or the box is its text.
