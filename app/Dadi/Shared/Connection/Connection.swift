@@ -39,6 +39,10 @@ final class Connection {
     private var misses = 0
     /// When Hath last stopped answering; nil while it answers.
     private var unansweredSince: ContinuousClock.Instant?
+    /// The app just returned to the foreground and Hath has not answered since.
+    /// iOS suspends the node in the background, so a miss now means a stale
+    /// node, not a dropped request, and the node restarts at once.
+    private var awaitingFirstAnswerAfterForeground = false
 
     /// How often an online connection checks Hath, and how long one check waits.
     private static let onlineEvery: Duration = .seconds(10)
@@ -126,15 +130,19 @@ final class Connection {
         }
     }
 
-    /// Checks Hath again when the app returns to the foreground.
+    /// Checks Hath again when the app returns to the foreground. A node iOS
+    /// suspended answers nothing, so if this first check is missed the node is
+    /// restarted at once instead of after a minute.
     func refresh() {
         guard node != nil else { return }
+        awaitingFirstAnswerAfterForeground = true
         nodeChanged()
     }
 
     private func run(_ code: SetupCode) throws {
         state = .connecting(detail: nil)
         unansweredSince = nil
+        awaitingFirstAnswerAfterForeground = false
         misses = 0
         nodeName = code.nodeName
         let started = try InAppNode.start(code: code, stateDirectory: try Self.stateDirectory()) { [weak self] in
@@ -185,10 +193,17 @@ final class Connection {
                 misses = 0
                 unansweredSince = nil
                 offlineSince = nil
+                awaitingFirstAnswerAfterForeground = false
                 state = .online
             } catch is CancellationError {
                 return
             } catch {
+                if awaitingFirstAnswerAfterForeground {
+                    awaitingFirstAnswerAfterForeground = false
+                    log.info("restarting the node: Hath did not answer after the app returned to the foreground")
+                    retry()
+                    return
+                }
                 misses += 1
                 let since = unansweredSince ?? .now
                 unansweredSince = since

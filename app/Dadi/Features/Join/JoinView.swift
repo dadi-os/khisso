@@ -1,7 +1,7 @@
 import AVFoundation
 import SwiftUI
 
-/// First run: join dadi with the setup code from dadiOS Preferences → Devices.
+/// First run: join dadi with the setup code from `dadi devices add` on the box.
 /// The iPhone opens with the દાદી wordmark resolving on the field, which rises
 /// as the camera fades in to scan the box's QR code; pasting the code is the
 /// alternative, on a glass card. One wordmark stays through
@@ -207,7 +207,7 @@ struct JoinView: View {
                         .frame(maxWidth: 340)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 } else {
-                    Text("In Preferences → Devices on your box, add this iPhone and point the camera at its code.")
+                    Text("On your box, run dadi devices add NAME --qr for this iPhone and point the camera at its code.")
                         .font(.footnote)
                         .foregroundStyle(.white.opacity(0.8))
                         .multilineTextAlignment(.center)
@@ -241,7 +241,7 @@ struct JoinView: View {
                 Text("Join dadi")
                     .font(.title2.weight(.semibold))
                     .foregroundStyle(.ink)
-                Text("On your box, open Preferences → Devices, add this device, and paste its setup code here.")
+                Text("On your box, run dadi devices add NAME for this device and paste its setup code here.")
                     .font(.callout)
                     .foregroundStyle(.inkMuted)
                     .multilineTextAlignment(.center)

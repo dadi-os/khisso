@@ -1,8 +1,8 @@
 import Foundation
 import Security
 
-/// A device's provisioning from a setup code made in dadiOS Preferences →
-/// Devices: base64 JSON with the Headscale control URL, a preauth key and the
+/// A device's provisioning from a setup code made with `dadi devices add` on
+/// the box: base64 JSON with the Headscale control URL, a preauth key and the
 /// device's name on dadi.
 struct SetupCode: Codable, Sendable, Equatable {
     let controlUrl: String
@@ -19,7 +19,7 @@ struct SetupCode: Codable, Sendable, Equatable {
             switch self {
             case .empty: "Paste a setup code from dadi."
             case .unreadable: "That isn't a dadi setup code. Check you copied the whole thing."
-            case .missing(let field): "The setup code has no \(field). Make a new one in Preferences → Devices."
+            case .missing(let field): "The setup code has no \(field). Make a new one with dadi devices add on the box."
             }
         }
     }

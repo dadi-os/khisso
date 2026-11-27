@@ -2,8 +2,8 @@ import AVFoundation
 import SwiftUI
 import VisionKit
 
-/// The live camera that reads the setup QR code the box shows in Preferences →
-/// Devices. `onScan` gets each new QR payload once; scanning keeps running so a
+/// The live camera that reads the setup QR code `dadi devices add NAME --qr`
+/// draws on the box. `onScan` gets each new QR payload once; scanning keeps running so a
 /// rejected code can be replaced by pointing at the right one. `onFail` gets
 /// the reason the camera stopped.
 struct QRScanner: UIViewControllerRepresentable {
